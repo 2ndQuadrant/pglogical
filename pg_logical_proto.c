@@ -428,7 +428,7 @@ pg_logical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 					outputstr =	OidOutputFunctionCall(typclass->typoutput,
 													  values[i]);
-					len = strlen(outputstr) + 1;
+					len = strlen(outputstr);
 					pq_sendint(out, len, 4); /* length */
 					appendBinaryStringInfo(out, outputstr, len); /* data */
 					pfree(outputstr);

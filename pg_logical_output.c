@@ -327,7 +327,12 @@ pg_decode_change_filter(LogicalDecodingContext *ctx, PGLogicalOutputData *data,
 }
 
 
-/* Param parsing */
+/*
+ * Param parsing
+ *
+ * This is not exactly fast but since it's only called on replication start
+ * we'll leave it for now.
+ */
 static Datum
 get_param(List *options, char *name, bool missing_ok, bool null_ok,
 		  PGLogicalOutputParamType type, bool *found)
