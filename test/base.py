@@ -6,6 +6,7 @@ from pg_logical_proto import ReplicationMessage
 SLOT_NAME = 'test'
 
 class PGLogicalOutputTest(unittest.TestCase):
+
     def setUp(self):
         self.conn = psycopg2.connect("dbname=postgres host=localhost")
         cur = self.conn.cursor()
@@ -23,6 +24,7 @@ class PGLogicalOutputTest(unittest.TestCase):
     def get_changes(self):
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM pg_logical_slot_get_binary_changes(%s, NULL, NULL, 'client_encoding', 'UTF8')", (SLOT_NAME,));
+        self.conn.commit()
         for row in cur:
             m = ReplicationMessage(row)
             yield m

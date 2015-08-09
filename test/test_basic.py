@@ -7,9 +7,21 @@ class BasicTest(PGLogicalOutputTest):
     def rand_string(self, length):
         return ''.join([random.choice(string.ascii_letters + string.digits) for n in xrange(length)])
 
-    def test_changes(self):
+    def setUp(self):
+        PGLogicalOutputTest.setUp(self)
         cur = self.conn.cursor()
         cur.execute("CREATE TABLE test_changes (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
+        self.conn.commit()
+
+    def tearDown(self):
+        cur = self.conn.cursor()
+        cur.execute("DROP TABLE test_changes;")
+        self.conn.commit()
+        PGLogicalOutputTest.tearDown(self)
+
+    def test_changes(self):
+
+        cur = self.conn.cursor()
         cur.execute("INSERT INTO test_changes(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'foobar'))
         cur.execute("INSERT INTO test_changes(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'bazbar'))
         self.conn.commit()
@@ -20,6 +32,13 @@ class BasicTest(PGLogicalOutputTest):
 
         messages = self.get_changes()
 
+        # CREATE TABLE produced empty TX
+        m = messages.next()
+        self.assertEqual(m.mesage_type, 'B')
+        m = messages.next()
+        self.assertEqual(m.mesage_type, 'C')
+
+        # two inserts in one tx
         m = messages.next()
         self.assertEqual(m.mesage_type, 'B')
         m = messages.next()
@@ -35,6 +54,7 @@ class BasicTest(PGLogicalOutputTest):
         m = messages.next()
         self.assertEqual(m.mesage_type, 'C')
 
+        # delete and update in one tx
         m = messages.next()
         self.assertEqual(m.mesage_type, 'B')
         m = messages.next()
@@ -50,10 +70,6 @@ class BasicTest(PGLogicalOutputTest):
         self.assertEqual(m.message['newtup'][2], 'foobar')
         m = messages.next()
         self.assertEqual(m.mesage_type, 'C')
-
-
-        cur.execute("DROP TABLE test_changes;")
-        self.conn.commit()
 
 if __name__ == '__main__':
     unittest.main()
