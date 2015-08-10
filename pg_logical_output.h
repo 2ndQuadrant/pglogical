@@ -27,16 +27,21 @@ typedef struct
 {
 	MemoryContext context;
 
-	bool allow_binary_protocol;
-	bool allow_sendrecv_protocol;
-	bool int_datetime_match;
-	bool forward_changesets;
+	/* protocol */
+	bool	allow_binary_protocol;
+	bool	allow_sendrecv_protocol;
+	bool	forward_changesets;
 
+	/* client info */
+	uint32	client_pg_version;
+	uint32	client_pg_catversion;
+	uint32	client_proto_version;
+	uint32	client_min_proto_version;
 	const char *client_encoding;
-	uint32 client_pg_version;
-	uint32 client_pg_catversion;
-	uint32 client_proto_version;
-	uint32 client_min_proto_version;
+
+	/* hooks */
+	const char *node_id;	/* hooks need to identify this node somehow */
+	Oid		table_change_filter_oid;
 } PGLogicalOutputData;
 
 typedef struct PGLogicalTupleData
