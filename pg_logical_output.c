@@ -18,6 +18,7 @@
 #include "access/sysattr.h"
 
 #include "catalog/pg_class.h"
+#include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 
 #include "mb/pg_wchar.h"
@@ -169,6 +170,12 @@ get_function_param(List *options, const char *name, int nargs,
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("function %s must return type \"boolean\"",
+						NameListToString(funcname))));
+
+	if (func_volatile(funcid) == PROVOLATILE_VOLATILE)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("function %s must not be VOLATILE",
 						NameListToString(funcname))));
 
 	return funcid;
