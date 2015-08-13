@@ -40,8 +40,10 @@ typedef struct
 	const char *client_encoding;
 
 	/* hooks */
-	const char *node_id;	/* hooks need to identify this node somehow */
-	Oid		table_change_filter_oid;
+	const char *node_id;				/* hooks need to identify this node somehow */
+	List   *table_change_filter;		/* name of the hook function */
+	Oid		table_change_filter_oid;	/* cached oid of the hook function */
+	uint32	table_change_filter_hash;	/* hash of the oid from the syscache */
 } PGLogicalOutputData;
 
 typedef struct PGLogicalTupleData

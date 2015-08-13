@@ -33,6 +33,7 @@
 
 #include "utils/builtins.h"
 #include "utils/int8.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -49,6 +50,7 @@ typedef enum PGLogicalOutputParamType
 	OUTPUT_PARAM_TYPE_BOOL,
 	OUTPUT_PARAM_TYPE_UINT32,
 	OUTPUT_PARAM_TYPE_STRING,
+	OUTPUT_PARAM_TYPE_QUALIFIED_NAME
 } PGLogicalOutputParamType;
 
 /* These must be available to pg_dlsym() */
@@ -66,6 +68,8 @@ static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
 
 /* hooks */
+static Oid get_table_filter_function_id(List *funcname, bool validate);
+static void hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue);
 static inline bool pg_decode_change_filter(PGLogicalOutputData *data,
 						Relation rel,
 						enum ReorderBufferChangeType change);
@@ -140,47 +144,6 @@ check_binary_compatibility(List *options)
 	return true;
 }
 
-/*
- * Returns Oid of the function specified in parameter name or InvalidOid if the
- * parameter is not found.
- *
- * TODO check permissions?
- */
-static Oid
-get_function_param(List *options, const char *name, int nargs,
-				   const Oid *argtypes)
-{
-	bool		found;
-	Datum		val;
-	List	   *funcname;
-	Oid			funcid;
-
-	val = get_param(options, name, true, false,
-					OUTPUT_PARAM_TYPE_STRING, &found);
-
-	if (!found)
-		return InvalidOid;
-
-	/* Parse and find the the function */
-	funcname = textToQualifiedNameList(cstring_to_text(DatumGetCString(val)));
-	funcid = LookupFuncName(funcname, nargs, argtypes, false);
-
-	/* Validate that the function returns boolean */
-	if (get_func_rettype(funcid) != BOOLOID)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("function %s must return type \"boolean\"",
-						NameListToString(funcname))));
-
-	if (func_volatile(funcid) == PROVOLATILE_VOLATILE)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("function %s must not be VOLATILE",
-						NameListToString(funcname))));
-
-	return funcid;
-}
-
 /* initialize this plugin */
 static void
 pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
@@ -208,8 +171,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	{
 		bool	found;
 		Datum	val;
-		Oid		funcargtypes[3];
-		bool	requirenodeid;
+		bool	requirenodeid = false;
 
 		/* check for encoding match */
 		val = get_param(ctx->output_plugin_options, "client_encoding", false,
@@ -252,17 +214,27 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		else
 			data->allow_sendrecv_protocol = false;
 
-		funcargtypes[0] = TEXTOID;	/* identifier of this node */
-		funcargtypes[1] = OIDOID;	/* relation */
-		funcargtypes[2] = CHAROID;	/* change type */
-		data->table_change_filter_oid =
-			get_function_param(ctx->output_plugin_options,
-							   "hooks.table_change_filter",
-							   3, funcargtypes);
+		/* Hooks */
+		val = get_param(ctx->output_plugin_options,
+						"hooks.table_change_filter", true, false,
+						OUTPUT_PARAM_TYPE_QUALIFIED_NAME, &found);
 
-		/* Node id is required parameter if there is hook which needs it */
-		requirenodeid = OidIsValid(data->table_change_filter_oid);
+		if (found)
+		{
+			List   *funcname = (List *) PointerGetDatum(val);
 
+			data->table_change_filter = funcname;
+			/* Validate the function but don't store the Oid */
+			(void) get_table_filter_function_id(funcname, true);
+
+			/* We need to properly invalidate the hooks */
+			CacheRegisterSyscacheCallback(PROCOID, hook_cache_callback, PointerGetDatum(data));
+
+			/* Node id is required parameter if there is hook which needs it */
+			requirenodeid = true;
+		}
+
+		/* Node id */
 		val = get_param(ctx->output_plugin_options, "node_id", !requirenodeid,
 						false, OUTPUT_PARAM_TYPE_STRING, &found);
 
@@ -402,10 +374,29 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 						enum ReorderBufferChangeType change)
 {
 	/* Call hook if provided. */
-	if (OidIsValid(data->table_change_filter_oid))
+	if (data->table_change_filter)
 	{
 		Datum	res;
 		char	change_type;
+
+		if (!OidIsValid(data->table_change_filter_oid))
+		{
+			Oid		funcoid =
+				get_table_filter_function_id(data->table_change_filter, false);
+
+			/*
+			 * Not found, this can be historical snapshot and we can't do
+			 * validation one way or the other so we act as if the hook
+			 * was not provided.
+			 */
+			if (!OidIsValid(funcoid))
+				return false;
+
+			/* Update the cache and continue */
+			data->table_change_filter_oid = funcoid;
+			data->table_change_filter_hash =
+				GetSysCacheHashValue1(PROCOID, funcoid);
+		}
 
 		switch (change)
 		{
@@ -435,6 +426,81 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 	return false;
 }
 
+/*
+ * Hook oid cache invalidation.
+ */
+static void
+hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
+{
+	PGLogicalOutputData *data;
+
+	Assert(cacheid == PROCOID);
+
+	data = (PGLogicalOutputData *) DatumGetPointer(arg);
+
+	if (hashvalue == data->table_change_filter_hash &&
+		OidIsValid(data->table_change_filter_oid))
+		data->table_change_filter_oid = InvalidOid;
+}
+
+/*
+ * Returns Oid of the function specified in funcname.
+ *
+ * Error is thrown if validate is true and function doesn't exist or doen't
+ * return correct datatype or is volatile. When validate is false InvalidOid
+ * will be returned instead of error.
+ *
+ * TODO check ACL
+ */
+static Oid
+get_table_filter_function_id(List *funcname, bool validate)
+{
+	Oid			funcid;
+	Oid			funcargtypes[3];
+
+	funcargtypes[0] = TEXTOID;	/* identifier of this node */
+	funcargtypes[1] = OIDOID;	/* relation */
+	funcargtypes[2] = CHAROID;	/* change type */
+
+	/* find the the function */
+	funcid = LookupFuncName(funcname, 3, funcargtypes, !validate);
+
+	if (!OidIsValid(funcid))
+	{
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_FUNCTION),
+					 errmsg("function %s not found",
+							NameListToString(funcname))));
+		else
+			return InvalidOid;
+	}
+
+	/* Validate that the function returns boolean */
+	if (get_func_rettype(funcid) != BOOLOID)
+	{
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("function %s must return type \"boolean\"",
+							NameListToString(funcname))));
+		else
+			return InvalidOid;
+	}
+
+	if (func_volatile(funcid) == PROVOLATILE_VOLATILE)
+	{
+		if (validate)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("function %s must not be VOLATILE",
+							NameListToString(funcname))));
+		else
+			return InvalidOid;
+	}
+
+	return funcid;
+}
 
 /*
  * Param parsing
@@ -481,6 +547,8 @@ get_param(List *options, const char *name, bool missing_ok, bool null_ok,
 				return BoolGetDatum(parse_param_bool(elem));
 			case OUTPUT_PARAM_TYPE_STRING:
 				return PointerGetDatum(pstrdup(strVal(elem->arg)));
+			case OUTPUT_PARAM_TYPE_QUALIFIED_NAME:
+				return PointerGetDatum(textToQualifiedNameList(cstring_to_text(pstrdup(strVal(elem->arg)))));
 			default:
 				elog(ERROR, "unknown parameter type %d", type);
 		}
