@@ -45,12 +45,12 @@ class BasicTest(PGLogicalOutputTest):
         self.assertEqual(m.mesage_type, 'R')
         m = messages.next()
         self.assertEqual(m.mesage_type, 'I')
-        self.assertEqual(m.message['newtup'][2], 'foobar')
+        self.assertEqual(m.message['newtup'][2], 'foobar\0')
         m = messages.next()
         self.assertEqual(m.mesage_type, 'R')
         m = messages.next()
         self.assertEqual(m.mesage_type, 'I')
-        self.assertEqual(m.message['newtup'][2], 'bazbar')
+        self.assertEqual(m.message['newtup'][2], 'bazbar\0')
         m = messages.next()
         self.assertEqual(m.mesage_type, 'C')
 
@@ -67,7 +67,7 @@ class BasicTest(PGLogicalOutputTest):
         m = messages.next()
         self.assertEqual(m.mesage_type, 'U')
         self.assertEqual(m.message['newtup'][0], '2')
-        self.assertEqual(m.message['newtup'][2], 'foobar')
+        self.assertEqual(m.message['newtup'][2], 'foobar\0')
         m = messages.next()
         self.assertEqual(m.mesage_type, 'C')
 
