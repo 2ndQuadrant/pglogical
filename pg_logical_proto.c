@@ -80,10 +80,10 @@ pg_logical_write_rel(StringInfo out, Relation rel)
 	if (nspname == NULL)
 		elog(ERROR, "cache lookup failed for namespace %u",
 			 rel->rd_rel->relnamespace);
-	nspnamelen = strlen(nspname);
+	nspnamelen = strlen(nspname) + 1;
 
 	relname = NameStr(rel->rd_rel->relname);
-	relnamelen = strlen(relname);
+	relnamelen = strlen(relname) + 1;
 
 	pq_sendbyte(out, nspnamelen);		/* schema name length */
 	pq_sendbytes(out, nspname, nspnamelen);
@@ -142,7 +142,7 @@ pg_logical_write_attrs(StringInfo out, Relation rel)
 
 		pq_sendbyte(out, 'N');		/* column name block follows */
 		attname = NameStr(att->attname);
-		len = strlen(attname);
+		len = strlen(attname) + 1;
 		pq_sendint(out, len, 2);
 		pq_sendbytes(out, attname, len); /* data */
 	}
@@ -197,7 +197,7 @@ pg_logical_write_origin(StringInfo out, const char *origin,
 	uint8	flags = 0;
 	uint8	len;
 
-	Assert(strlen(origin) < 256);
+	Assert(strlen(origin) < 255);
 
 	pq_sendbyte(out, 'O');		/* ORIGIN */
 
@@ -208,7 +208,7 @@ pg_logical_write_origin(StringInfo out, const char *origin,
 	pq_sendint64(out, origin_lsn);
 
 	/* origin */
-	len = strlen(origin);
+	len = strlen(origin) + 1;
 	pq_sendbyte(out, len);
 	pq_sendbytes(out, origin, len);
 }
@@ -280,11 +280,8 @@ pg_logical_write_delete(StringInfo out, PGLogicalOutputData *data,
 	pq_sendint(out, RelationGetRelid(rel), 4);
 
 	/* FIXME support whole tuple (O tuple type) */
-	if (oldtuple != NULL)
-	{
-		pq_sendbyte(out, 'K');	/* old key follows */
-		pg_logical_write_tuple(out, data, rel, oldtuple);
-	}
+	pq_sendbyte(out, 'K');	/* old key follows */
+	pg_logical_write_tuple(out, data, rel, oldtuple);
 }
 
 /*
@@ -428,7 +425,7 @@ pg_logical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 					outputstr =	OidOutputFunctionCall(typclass->typoutput,
 													  values[i]);
-					len = strlen(outputstr);
+					len = strlen(outputstr) + 1;
 					pq_sendint(out, len, 4); /* length */
 					appendBinaryStringInfo(out, outputstr, len); /* data */
 					pfree(outputstr);
