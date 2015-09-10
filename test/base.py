@@ -7,6 +7,8 @@ SLOT_NAME = 'test'
 
 class PGLogicalOutputTest(unittest.TestCase):
 
+    conn = None
+
     def setUp(self):
         self.conn = psycopg2.connect("dbname=postgres host=localhost")
         cur = self.conn.cursor()
@@ -22,6 +24,9 @@ class PGLogicalOutputTest(unittest.TestCase):
             self.tear_down()
 
     def doCleanups(self):
+        if (self.conn == None):
+            return
+
         self.conn.rollback()
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM pg_drop_replication_slot(%s)", (SLOT_NAME,))
