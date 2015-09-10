@@ -39,6 +39,7 @@
 #include "pg_logical_relcache.h"
 #include "pg_logical_proto.h"
 #include "pg_logical_conflict.h"
+#include "pg_logical_node.h"
 
 
 volatile sig_atomic_t got_SIGTERM = false;
@@ -127,8 +128,6 @@ static void
 handle_origin(StringInfo s)
 {
 	char		   *origin;
-	RepOriginId		originid;
-	XLogRecPtr		originlsn;
 
 	/*
 	 * ORIGIN message can only come inside remote transaction and before
@@ -254,8 +253,6 @@ handle_update(StringInfo s)
 	bool				found;
 	TupleTableSlot	   *localslot;
 	HeapTuple			remotetuple;
-	HeapTuple			applytuple;
-	PGLogicalConflictResolution resolution;
 
 	pg_logical_ensure_transaction();
 
@@ -293,7 +290,6 @@ handle_delete(StringInfo s)
 	PGLogicalTupleData	oldtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
-	Oid					idxoid;
 	Relation			idxrel;
 	TupleTableSlot	   *localslot;
 
@@ -428,11 +424,11 @@ apply_work(PGconn *streamConn)
 
 				if (c == 'w')
 				{
-					XLogRecPtr	start_lsn;
-					XLogRecPtr	end_lsn;
+//					XLogRecPtr	start_lsn;
+//					XLogRecPtr	end_lsn;
 
-					start_lsn = pq_getmsgint64(&s);
-					end_lsn = pq_getmsgint64(&s);
+//					start_lsn = pq_getmsgint64(&s);
+//					end_lsn = pq_getmsgint64(&s);
 					pq_getmsgint64(&s); /* sendTime */
 
 					replication_handler(&s);
@@ -451,16 +447,23 @@ apply_work(PGconn *streamConn)
 void
 pg_logical_apply_main(Datum main_arg)
 {
+	int			connid = DatumGetUInt32(main_arg);
+	PGLogicalConnection *conn = get_node_connection_by_id(connid);
+	PGLogicalNode	    *origin_node = conn->origin;
 	PGconn	   *streamConn;
 	PGresult   *res;
 	char	   *sqlstate;
 	StringInfoData conninfo_repl;
 	StringInfoData command;
-	RepOriginId origin;
+	RepOriginId originid;
 	XLogRecPtr	origin_startpos;
 
-	appendStringInfo(&conninfo_repl, "dbname=postgres host=localhost replication=database fallback_application_name='%s'",
-					 "pg_logical_apply");
+
+	elog(DEBUG1, "conneting to node %d (%s), dsn %s",
+		 origin_node->id, origin_node->name, origin_node->dsn);
+
+	appendStringInfo(&conninfo_repl, "%s fallback_application_name='%s_apply'",
+					 origin_node->dsn, origin_node->name);
 
 	streamConn = PQconnectdb(conninfo_repl.data);
 	if (PQstatus(streamConn) != CONNECTION_OK)
@@ -472,9 +475,12 @@ pg_logical_apply_main(Datum main_arg)
 				 errdetail("Connection string is '%s'", conninfo_repl.data)));
 	}
 
-	/* Setup the origin and get the starting position for the replication. */
-	origin = replorigin_by_name("replica", false);
-	replorigin_session_setup(origin);
+	/*
+	 * Setup the origin and get the starting position for the replication.
+	 * TODO: prefix the origin name with plugin name
+	 */
+	originid = replorigin_by_name((char *)origin_node->name, false);
+	replorigin_session_setup(originid);
 	origin_startpos = replorigin_session_get_progress(false);
 
 	initStringInfo(&command);
@@ -485,6 +491,7 @@ pg_logical_apply_main(Datum main_arg)
 					 (uint32) origin_startpos);
 
 	appendStringInfo(&command, "client_encoding '%s'", GetDatabaseEncodingName());
+	appendStringInfo(&command, "replication_sets '%s'", conn->replication_sets);
 
 	appendStringInfoChar(&command, ')');
 

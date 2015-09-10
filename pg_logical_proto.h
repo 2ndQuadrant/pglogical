@@ -13,6 +13,8 @@
 #ifndef PG_LOGICAL_PROTO_H
 #define PG_LOGICAL_PROTO_H
 
+#include "utils/timestamp.h"
+
 #include "pg_logical_relcache.h"
 
 typedef struct PGLogicalTupleData

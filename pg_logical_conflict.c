@@ -327,13 +327,6 @@ conflict_resolve_by_timestamp(RepOriginId local_node_id,
 	}
 	else
 	{
-		uint64		local_sysid,
-					remote_origin_sysid;
-		TimeLineID	local_tli,
-					remote_tli;
-		Oid			local_dboid,
-					remote_origin_dboid;
-
 		/*
 		 * The timestamps were equal, break the tie in a manner that is
 		 * consistent across all nodes.

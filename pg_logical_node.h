@@ -15,6 +15,7 @@
 
 typedef struct PGLogicalNode
 {
+	int			id;
 	const char *name;
 	char		role;
 	char		status;
@@ -24,23 +25,28 @@ typedef struct PGLogicalNode
 
 typedef struct PGLogicalConnection
 {
-	PGLogicalNode  *node;
+	int				id;
+	PGLogicalNode  *origin;
+	PGLogicalNode  *target;
 	char		   *replication_sets;
 } PGLogicalConnection;
 
 extern void create_node(PGLogicalNode *node);
 extern void alter_node(PGLogicalNode *node);
-extern void drop_node(const char *nodename);
+extern void drop_node(int nodeid);
 
-extern PGLogicalNode **get_nodes();
-extern PGLogicalNode *get_local_node();
-extern void set_node_status(const char *nodename, char status);
+extern PGLogicalNode **get_nodes(void);
+extern PGLogicalNode *get_node(int nodeid);
+extern PGLogicalNode *get_local_node(void);
+extern void set_node_status(int nodeid, char status);
 
-extern List *get_node_subscribers(const char *nodename);
-extern List *get_node_publishers(const char *nodename);
+extern List *get_node_subscribers(int nodeid);
+extern List *get_node_publishers(int nodeid);
 
-extern void create_node_connection(const char *originname, const char *targetname);
-extern void drop_node_connection(const char *originname, const char *targetname);
+extern int get_node_connectionid(int originid, int targetid);
+extern PGLogicalConnection *get_node_connection_by_id(int connid);
+extern void create_node_connection(int originid, int targetid);
+extern void drop_node_connection(int connid);
 
 #endif /* PG_LOGICAL_NODE_H */
 

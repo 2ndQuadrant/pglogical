@@ -1,5 +1,6 @@
 CREATE TABLE pg_logical.nodes (
-	node_name text primary key;
+	node_id serial primary key;
+	node_name text not null unique;
 	node_role "char" not null;
 	node_status "char" not null;
 	node_dsn text not null;
@@ -8,15 +9,16 @@ CREATE TABLE pg_logical.nodes (
 );
 
 CREATE TABLE pg_logical.connections (
-	conn_origin_name text not null references pg_logical_nodes(node_name);
-	conn_target_name text not null references pg_logical_nodes(node_name);
+	conn_id serial primary key;
+	conn_origin_id integer not null references pg_logical_nodes(node_id);
+	conn_target_id integer not null references pg_logical_nodes(node_id);
 	conn_replication_sets text[];
-	primary key (conn_origin_name, conn_target_name);
+	unique (conn_origin_name, conn_target_name);
 );
 
 
 CREATE TABLE pg_logical.local_node (
-	node_name text;
+	node_id integer;
 );
 
 CREATE UNIQUE INDEX local_node_onlyone ON pg_logical.local_node ((true));

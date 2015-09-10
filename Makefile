@@ -3,7 +3,8 @@
 MODULE_big = pg_logical
 PGFILEDESC = "pg_logical - logical replication"
 
-OBJS = pg_logical_apply.o pg_logical_proto.o pg_logical_relcache.o
+OBJS = pg_logical_apply.o pg_logical_conflict.o pg_logical_manager.o \
+	   pg_logical_node.o pg_logical_proto.o pg_logical_relcache.o
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
