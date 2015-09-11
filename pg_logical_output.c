@@ -109,42 +109,45 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 }
 
 static bool
-check_binary_compatibility(List *options)
+check_binary_compatibility(List *options, PGLogicalOutputData *data)
 {
 	bool	found;
 	Datum	val;
 
-	val = get_param(options, "binary.bigendian", false, false,
+	if (data->client_binary_basetypes_major_version != PG_VERSION_NUM / 100)
+		return false;
+
+	val = get_param(options, "binary.Bigendian", false, false,
 					OUTPUT_PARAM_TYPE_BOOL, &found);
 	if (DatumGetBool(val) != server_bigendian())
 		return false;
 
-	val = get_param(options, "binary.sizeof_datum", false, false,
+	val = get_param(options, "binary.Sizeof_datum", false, false,
 					OUTPUT_PARAM_TYPE_UINT32, &found);
 	if (DatumGetUInt32(val) != sizeof(Datum))
 		return false;
 
-	val = get_param(options, "binary.sizeof_int", false, false,
+	val = get_param(options, "binary.Sizeof_int", false, false,
 					OUTPUT_PARAM_TYPE_UINT32, &found);
 	if (DatumGetUInt32(val) != sizeof(int))
 		return false;
 
-	val = get_param(options, "binary.sizeof_long", false, false,
+	val = get_param(options, "binary.Sizeof_long", false, false,
 					OUTPUT_PARAM_TYPE_UINT32, &found);
 	if (DatumGetUInt32(val) != sizeof(long))
 		return false;
 
-	val = get_param(options, "binary.float4_byval", false, false,
+	val = get_param(options, "binary.Float4_byval", false, false,
 					OUTPUT_PARAM_TYPE_BOOL, &found);
 	if (DatumGetBool(val) != server_float4_byval())
 		return false;
 
-	val = get_param(options, "binary.float8_byval", false, false,
+	val = get_param(options, "binary.Float8_byval", false, false,
 					OUTPUT_PARAM_TYPE_BOOL, &found);
 	if (DatumGetBool(val) != server_float8_byval())
 		return false;
 
-	val = get_param(options, "binary.integer_datetimes", false, false,
+	val = get_param(options, "binary.Integer_datetimes", false, false,
 					OUTPUT_PARAM_TYPE_BOOL, &found);
 	if (DatumGetBool(val) != server_integer_datetimes())
 		return false;
@@ -165,9 +168,16 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
+	data->allow_binary_protocol = false;
+	data->allow_sendrecv_protocol = false;
 
 	ctx->output_plugin_private = data;
 
+	/*
+	 * Tell logical decoding that we will be doing binary output. This is
+	 * not the same thing as the selection of binary or text format for
+	 * output of individual fields.
+	 */
 	opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
 
 	/*
@@ -181,25 +191,48 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		Datum	val;
 		bool	requirenodeid = false;
 
+		/* Check protocol version before anything else */
+		val = get_param(ctx->output_plugin_options, "Max_proto_version", false, false,
+						OUTPUT_PARAM_TYPE_UINT32, &found);
+		data->client_max_proto_version = DatumGetUInt32(val);
+
+		if (data->client_max_proto_version < 1)
+		    ereport(ERROR,
+			    (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			     errmsg("client sent Max_proto_version=%d but we only support protocol 1",
+				 data->client_max_proto_version)));
+
+		val = get_param(ctx->output_plugin_options, "Min_proto_version", false, false,
+						OUTPUT_PARAM_TYPE_UINT32, &found);
+		data->client_min_proto_version = DatumGetUInt32(val);
+
+		if (data->client_min_proto_version > 1)
+		    ereport(ERROR,
+			    (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			     errmsg("client sent Min_proto_version=%d but we only support protocol 1",
+				 data->client_min_proto_version)));
+
+		/* Now parse the rest of the params and ERROR if we see any we don't recognise */
+
+
 		/* check for encoding match */
-		val = get_param(ctx->output_plugin_options, "client_encoding", false,
+		val = get_param(ctx->output_plugin_options, "Expected_encoding", false,
 						false, OUTPUT_PARAM_TYPE_STRING, &found);
-		data->client_encoding = DatumGetCString(val);
-		if (strcmp(data->client_encoding, GetDatabaseEncodingName()) != 0)
+		data->client_expected_encoding = DatumGetCString(val);
+		if (strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
 			elog(ERROR, "only \"%s\" encoding is supported by this server",
 				 GetDatabaseEncodingName());
 
 		/*
 		 * Check PostgreSQL version, this can be omitted to support clients
 		 * other than PostgreSQL.
+		 *
+		 * Must not be used for binary format compatibility tests, this is
+		 * informational only.
 		 */
 		val = get_param(ctx->output_plugin_options, "pg_version", true, false,
 						OUTPUT_PARAM_TYPE_UINT32, &found);
 		data->client_pg_version = found ? DatumGetUInt32(val) : 0;
-
-		val = get_param(ctx->output_plugin_options, "pg_catversion", true,
-						false, OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_pg_catversion = found ? DatumGetUInt32(val) : 0;
 
 		/*
 		 * Check to see if the client asked for changeset forwarding
@@ -213,29 +246,34 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		data->forward_changesets = found ? DatumGetBool(val) : false;
 
 		/* check if we want to use binary data representation */
-		val = get_param(ctx->output_plugin_options, "want_binary", true,
+		val = get_param(ctx->output_plugin_options, "binary.want_binary_basetypes", true,
 						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-
-		if (found && DatumGetBool(val) &&
-			data->client_pg_version / 100 == PG_VERSION_NUM / 100)
-			data->allow_binary_protocol =
-				check_binary_compatibility(ctx->output_plugin_options);
-		else
-			data->allow_binary_protocol = false;
+		data->client_want_binary_basetypes = found ? DatumGetBool(val) : false;
 
 		/* check if we want to use sendrecv data representation */
-		val = get_param(ctx->output_plugin_options, "want_sendrecv", true,
+		val = get_param(ctx->output_plugin_options, "binary.want_sendrecv_basetypes", true,
 						false, OUTPUT_PARAM_TYPE_BOOL, &found);
+		data->client_want_sendrecv_basetypes = found ? DatumGetBool(val) : false;
 
-		if (found && DatumGetBool(val) &&
-			data->client_pg_version / 100 == PG_VERSION_NUM / 100)
+		val = get_param(ctx->output_plugin_options, "binary.Basetypes_major_version", true, false,
+						OUTPUT_PARAM_TYPE_UINT32, &found);
+		data->client_binary_basetypes_major_version = found ? DatumGetUInt32(val) : 0;
+
+		if (data->client_want_binary_basetypes)
+		{
+			data->allow_binary_protocol =
+				check_binary_compatibility(ctx->output_plugin_options, data);
+		}
+
+		if (data->client_want_sendrecv_basetypes &&
+			data->client_binary_basetypes_major_version == PG_VERSION_NUM / 100)
+		{
 			data->allow_sendrecv_protocol = true;
-		else
-			data->allow_sendrecv_protocol = false;
+		}
 
 		/* Hooks */
 		val = get_param(ctx->output_plugin_options,
-						"hooks.table_change_filter", true, false,
+						"hooks.Table_change_filter", true, false,
 						OUTPUT_PARAM_TYPE_QUALIFIED_NAME, &found);
 
 		if (found)

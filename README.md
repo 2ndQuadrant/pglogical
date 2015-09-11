@@ -132,14 +132,18 @@ snapshot is only valid as long as the connection that issued the
 
 The client now sends:
 
-    START_REPLICATION SLOT "the_slot_name" LOGICAL ('client_encoding', 'UTF8', 'Max_proto_major_version', '1', ...moreparams...)
+    START_REPLICATION SLOT "the_slot_name" LOGICAL (
+	'Expected_encoding', 'UTF8',
+	'Max_proto_major_version', '1',
+	'Min_proto_major_version', '1',
+	...moreparams...
+    );
 
 to start replication.
 
 The parameters are very important for ensuring that the plugin accepts
 the replication request and streams changes in the expected form. `pg_logical`
 parameters are discussed in the separate `pg_logical` protocol documentation.
-
 
 ### Consume the change stream
 

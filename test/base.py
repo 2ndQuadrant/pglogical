@@ -35,9 +35,15 @@ class PGLogicalOutputTest(unittest.TestCase):
 
     def get_changes(self, kwargs = {}):
         cur = self.conn.cursor()
-        params = [i for k, v in kwargs.items() for i in [k,v]]
+        params_dict = {
+                'Expected_encoding': 'UTF8',
+                'Min_proto_version': '1',
+                'Max_proto_version': '1'
+                }
+        params_dict.update(kwargs)
+        params = [i for k, v in params_dict.items() for i in [k,v]]
         try:
-            cur.execute("SELECT * FROM pg_logical_slot_get_binary_changes(%s, NULL, NULL, 'client_encoding', 'UTF8' " + (", %s" * len(params)) + ")",
+            cur.execute("SELECT * FROM pg_logical_slot_get_binary_changes(%s, NULL, NULL" + (", %s" * len(params)) + ")",
                     [SLOT_NAME] + params);
         finally:
             self.conn.commit()

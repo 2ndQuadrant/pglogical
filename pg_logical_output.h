@@ -34,10 +34,12 @@ typedef struct
 
 	/* client info */
 	uint32	client_pg_version;
-	uint32	client_pg_catversion;
-	uint32	client_proto_version;
+	uint32	client_max_proto_version;
 	uint32	client_min_proto_version;
-	const char *client_encoding;
+	const char *client_expected_encoding;
+	uint32  client_binary_basetypes_major_version;
+	bool	client_want_binary_basetypes;
+	bool	client_want_sendrecv_basetypes;
 
 	/* hooks */
 	const char *node_id;				/* hooks need to identify this node somehow */
