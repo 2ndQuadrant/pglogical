@@ -41,7 +41,7 @@ class PGLogicalOutputTest(unittest.TestCase):
                 'Max_proto_version': '1'
                 }
         params_dict.update(kwargs)
-        params = [i for k, v in params_dict.items() for i in [k,v]]
+        params = [i for k, v in params_dict.items() for i in [k,v] if v is not None]
         try:
             cur.execute("SELECT * FROM pg_logical_slot_get_binary_changes(%s, NULL, NULL" + (", %s" * len(params)) + ")",
                     [SLOT_NAME] + params);
