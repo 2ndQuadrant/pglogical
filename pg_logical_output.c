@@ -201,6 +201,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 						false, OUTPUT_PARAM_TYPE_UINT32, &found);
 		data->client_pg_catversion = found ? DatumGetUInt32(val) : 0;
 
+		/*
+		 * Check to see if the client asked for changeset forwarding
+		 *
+		 * Note that we cannot support this on 9.4. We'll tell the client
+		 * in the startup reply message.
+		 */
+		val = get_param(ctx->output_plugin_options, "Forward_changesets", true,
+						false, OUTPUT_PARAM_TYPE_BOOL, &found);
+
+		data->forward_changesets = found ? DatumGetBool(val) : false;
+
 		/* check if we want to use binary data representation */
 		val = get_param(ctx->output_plugin_options, "want_binary", true,
 						false, OUTPUT_PARAM_TYPE_BOOL, &found);
