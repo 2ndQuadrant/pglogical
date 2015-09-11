@@ -33,10 +33,23 @@
 
 #include "pg_logical_node.h"
 
-#define CATALOG_SCHEMA "pg_logical"
+#define CATALOG_SCHEMA "pglogical"
 #define CATALOG_LOCAL_NODE "local_node"
-#define CATALOG_NODES "node"
+#define CATALOG_NODES "nodes"
 #define CATALOG_CONNECTIONS "connections"
+
+#define Anum_nodes_id		1
+#define Anum_nodes_name		2
+#define Anum_nodes_role		3
+#define Anum_nodes_status	4
+#define Anum_nodes_dsn		5
+
+#define Anum_connections_id			1
+#define Anum_connections_origin_id	2
+#define Anum_connections_target_id	3
+#define Anum_connections_replication_sets	4
+
+#define Anum_connections_local_node	1
 
 
 void create_node(PGLogicalNode *node);
@@ -69,7 +82,7 @@ get_node(int nodeid)
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				1,
+				Anum_nodes_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -77,19 +90,22 @@ get_node(int nodeid)
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		return NULL;
+		elog(ERROR, "node %d not found", nodeid);
 
 	desc = RelationGetDescr(rel);
 
 	/* Create and fill the node struct. */
-	node = palloc0(sizeof(PGLogicalNode));
+	node = (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
 	node->id = nodeid;
-	node->name = pstrdup(TextDatumGetCString(fastgetattr(tuple, 1, desc,
-														 &isnull)));
-	node->role = DatumGetChar(fastgetattr(tuple, 3, desc, &isnull));
-	node->status = DatumGetChar(fastgetattr(tuple, 4, desc, &isnull));
-	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, 5, desc,
-														&isnull)));
+	node->name = pstrdup(TextDatumGetCString(fastgetattr(tuple,
+														 Anum_nodes_name,
+														 desc, &isnull)));
+	node->role = DatumGetChar(fastgetattr(tuple, Anum_nodes_role, desc,
+										  &isnull));
+	node->status = DatumGetChar(fastgetattr(tuple, Anum_nodes_status, desc,
+											&isnull));
+	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_nodes_dsn,
+														desc, &isnull)));
 	node->valid = true;
 
 	systable_endscan(scan);
@@ -125,7 +141,7 @@ get_local_node(void)
 
 	desc = RelationGetDescr(rel);
 
-	nodeid = DatumGetInt32(fastgetattr(tuple, 1, desc, &isnull));
+	nodeid = DatumGetInt32(fastgetattr(tuple, Anum_nodes_id, desc, &isnull));
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -151,7 +167,7 @@ set_node_status(int nodeid, char status)
 
 	/* Find the node tuple */
 	ScanKeyInit(&key[0],
-				1,
+				Anum_nodes_name,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -165,7 +181,6 @@ set_node_status(int nodeid, char status)
 		Datum	   *values;
 		bool	   *nulls;
 		TupleDesc	tupDesc;
-		AttrNumber	attnum = get_attnum(rel->rd_id, "node_status");
 
 		tupDesc = RelationGetDescr(rel);
 
@@ -174,7 +189,7 @@ set_node_status(int nodeid, char status)
 
 		heap_deform_tuple(tuple, tupDesc, values, nulls);
 
-		values[attnum - 1] = CharGetDatum(status);
+		values[Anum_nodes_status - 1] = CharGetDatum(status);
 
 		newtuple = heap_form_tuple(RelationGetDescr(rel),
 								   values, nulls);
@@ -244,11 +259,18 @@ get_node_connections(int32 nodeid, bool is_origin)
 					ndesc;
 	ScanKeyData		key[1];
 	bool			isnull;
+	int				searchcolumn,
+					othercolumn;
 
 	node = get_node(nodeid);
 
 	if (node == NULL)
 		return NULL;
+
+	searchcolumn = is_origin ? Anum_connections_origin_id :
+		Anum_connections_target_id;
+	othercolumn = is_origin ? Anum_connections_target_id :
+		Anum_connections_origin_id;
 
 	rv = makeRangeVar(CATALOG_SCHEMA, CATALOG_CONNECTIONS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -256,7 +278,7 @@ get_node_connections(int32 nodeid, bool is_origin)
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				is_origin ? 2 : 3,
+				searchcolumn,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -276,11 +298,12 @@ get_node_connections(int32 nodeid, bool is_origin)
 		int				other_node_id;
 		Datum			replication_sets;
 
-		other_node_id = DatumGetInt32(fastgetattr(tuple, 2, desc, &isnull));
+		other_node_id = DatumGetInt32(fastgetattr(tuple, othercolumn,
+												  desc, &isnull));
 
 		/* Search for node record. */
 		ScanKeyInit(&nkey[0],
-					1,
+					Anum_nodes_id,
 					BTEqualStrategyNumber, F_INT4EQ,
 					Int32GetDatum(other_node_id));
 
@@ -290,20 +313,26 @@ get_node_connections(int32 nodeid, bool is_origin)
 		if (!HeapTupleIsValid(ntuple))
 			return NULL;
 
-		conn = palloc0(sizeof(PGLogicalConnection));
+		conn = (PGLogicalConnection *) palloc(sizeof(PGLogicalConnection));
 
 		/* Get the connection id. */
-		conn->id = Int32GetDatum(heap_getattr(tuple, 1, desc, &isnull));
+		conn->id = Int32GetDatum(heap_getattr(tuple, Anum_connections_id,
+											  desc, &isnull));
 
 		/* Create and fill the node struct. */
-		cnode = palloc0(sizeof(PGLogicalNode));
+		cnode = (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
 		cnode->id = other_node_id;
-		cnode->name = pstrdup(TextDatumGetCString(fastgetattr(tuple, 2, ndesc,
+		cnode->name = pstrdup(TextDatumGetCString(fastgetattr(ntuple,
+															  Anum_nodes_name,
+															  ndesc,
 															  &isnull)));
-		cnode->role = DatumGetChar(fastgetattr(tuple, 3, ndesc, &isnull));
-		cnode->status = DatumGetChar(fastgetattr(tuple, 4, ndesc, &isnull));
-		cnode->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, 5, ndesc,
-															 &isnull)));
+		cnode->role = DatumGetChar(fastgetattr(ntuple, Anum_nodes_role, ndesc,
+											   &isnull));
+		cnode->status = DatumGetChar(fastgetattr(ntuple, Anum_nodes_status,
+												 ndesc, &isnull));
+		cnode->dsn = pstrdup(TextDatumGetCString(fastgetattr(ntuple,
+															 Anum_nodes_dsn,
+															 ndesc, &isnull)));
 		cnode->valid = true;
 
 		if (is_origin)
@@ -318,12 +347,15 @@ get_node_connections(int32 nodeid, bool is_origin)
 		}
 
 		/* Get replication sets */
-		replication_sets = heap_getattr(tuple, 4, desc, &isnull);
+		replication_sets = heap_getattr(tuple,
+										Anum_connections_replication_sets,
+										desc, &isnull);
 
 		conn->replication_sets =
 			textarray_to_identifierlist(DatumGetArrayTypeP(replication_sets));
 
-		lappend(res, conn);
+		/* Put the connection object to the list. */
+		res = lappend(res, conn);
 
 		systable_endscan(nscan);
 	}
@@ -372,7 +404,7 @@ get_node_connection_by_id(int connid)
 
 	/* Search for connection record. */
 	ScanKeyInit(&key[0],
-				1,
+				Anum_connections_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(connid));
 
@@ -380,20 +412,23 @@ get_node_connection_by_id(int connid)
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		return NULL;
+		elog(ERROR, "connection %d not found", connid);
 
-	conn = palloc0(sizeof(PGLogicalConnection));
+	conn = (PGLogicalConnection *) palloc(sizeof(PGLogicalConnection));
 
 	conn->id = connid;
 
 	/* Get node */
-	originid = DatumGetInt32(heap_getattr(tuple, 2, desc, &isnull));
+	originid = DatumGetInt32(heap_getattr(tuple, Anum_connections_origin_id,
+										  desc, &isnull));
 	conn->origin = get_node(originid);
-	targetid = DatumGetInt32(heap_getattr(tuple, 3, desc, &isnull));
+	targetid = DatumGetInt32(heap_getattr(tuple, Anum_connections_target_id,
+										  desc, &isnull));
 	conn->target = get_node(targetid);
 
 	/* Get replication sets */
-	replication_sets = heap_getattr(tuple, 4, desc, &isnull);
+	replication_sets = heap_getattr(tuple, Anum_connections_replication_sets,
+									desc, &isnull);
 
 	conn->replication_sets =
 		textarray_to_identifierlist(DatumGetArrayTypeP(replication_sets));

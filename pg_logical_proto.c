@@ -356,6 +356,7 @@ pg_logical_read_rel(StringInfo in)
 	len = pq_getmsgbyte(in);
 	schemaname = (char *) pq_getmsgbytes(in, len);
 
+	len = pq_getmsgbyte(in);
 	relname = (char *) pq_getmsgbytes(in, len);
 
 	/* Get attribute description */

@@ -16,8 +16,9 @@
 #include "libpq-fe.h"
 #include "pgstat.h"
 
-#include "access/htup_details.h"
+#include "access/hash.h"
 #include "access/heapam.h"
+#include "access/htup_details.h"
 #include "access/xact.h"
 #include "access/xlogdefs.h"
 
@@ -29,22 +30,24 @@
 
 #include "mb/pg_wchar.h"
 
+#include "postmaster/bgworker.h"
+
 #include "replication/origin.h"
 
 #include "storage/ipc.h"
+#include "storage/proc.h"
 
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
-#include "pg_logical_relcache.h"
 #include "pg_logical_proto.h"
+#include "pg_logical_relcache.h"
 #include "pg_logical_conflict.h"
 #include "pg_logical_node.h"
 
 
 volatile sig_atomic_t got_SIGTERM = false;
 static bool			in_remote_transaction = false;
-static bool			in_local_transaction = false;
 static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
 static RepOriginId	remote_origin_id = InvalidRepOriginId;
 
@@ -64,14 +67,56 @@ typedef struct PGLogicalApply
 	const char **replication_sets;
 } PGLogicalApply;
 
+/*
+ * Ensure string is not longer than maxlen.
+ *
+ * The way we do this is we if the string is longer we return prefix from that
+ * string and hash of the string which will together be exatly maxlen.
+ *
+ * Maxlen can't be less than 11 because hash produces uint32 which in text form
+ * can have up to 10 characters.
+ */
+static char *
+shorten_hash(const char *str, int maxlen)
+{
+	char   *ret;
+	int		len = strlen(str);
+
+	Assert(maxlen > 10);
+
+	if (len <= maxlen)
+		return pstrdup(str);
+
+	ret = (char *) palloc(maxlen + 1);
+	snprintf(ret, maxlen, "%*s%u", maxlen - 10, /* uint32 max length is 10 */
+			 str, DatumGetUInt32(hash_any((unsigned char *) str, len)));
+	ret[maxlen] = '\0';
+}
+
+/*
+ * Generate slot name (used also for origin identifier)
+ *
+ * TODO: make the slot name more unique for different PG instances to avoid
+ * unintentional connections between different clusters.
+ */
+static void
+gen_slot_name(Name slot_name, Oid dboid, PGLogicalNode *origin_node,
+		  PGLogicalNode *target_node)
+{
+	snprintf(NameStr(*slot_name), NAMEDATALEN,
+			 "pgl_%u_%s_%s", dboid,
+			 shorten_hash(origin_node->name, 20),
+			 shorten_hash(target_node->name, 20));
+	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
+}
+
 static void
 pg_logical_ensure_transaction(void)
 {
-	if (in_local_transaction)
+	if (IsTransactionState())
 		return;
 
 	StartTransactionCommand();
-	in_local_transaction = true;
 }
 
 
@@ -99,7 +144,7 @@ handle_commit(StringInfo s)
 
 	pg_logical_read_commit(s, &commit_lsn, &end_lsn, &committime);
 
-	if (in_local_transaction)
+	if (IsTransactionState())
 		CommitTransactionCommand();
 
 	/*
@@ -119,6 +164,8 @@ handle_commit(StringInfo s)
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
 	}
+
+	in_remote_transaction = false;
 }
 
 /*
@@ -133,7 +180,7 @@ handle_origin(StringInfo s)
 	 * ORIGIN message can only come inside remote transaction and before
 	 * any actual writes.
 	 */
-	if (!in_remote_transaction || in_local_transaction)
+	if (!in_remote_transaction || IsTransactionState())
 		elog(ERROR, "ORIGIN message sent out of order");
 
 	origin = pg_logical_read_origin(s, &remote_origin_lsn);
@@ -228,8 +275,8 @@ handle_insert(StringInfo s)
 										  remotetuple, CONFLICT_INSERT,
 										  &applytuple, &resolution);
 
-		report_conflict(CONFLICT_INSERT, rel->rel, localslot->tts_tuple,
-						remotetuple, applytuple, resolution);
+//		report_conflict(CONFLICT_INSERT, rel->rel, localslot->tts_tuple,
+//						remotetuple, applytuple, resolution);
 
 		if (apply)
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
@@ -241,6 +288,12 @@ handle_insert(StringInfo s)
 	}
 
 	ExecCloseIndices(estate->es_result_relation_info);
+
+	pg_logical_relation_close(rel, RowExclusiveLock);
+	ExecResetTupleTable(estate->es_tupleTable, true);
+	FreeExecutorState(estate);
+
+	CommandCounterIncrement();
 }
 
 static void
@@ -332,6 +385,8 @@ static void
 replication_handler(StringInfo s)
 {
 	char action = pq_getmsgbyte(s);
+
+	elog(WARNING, "ACTION %c", action);
 	switch (action)
 	{
 		/* BEGIN */
@@ -370,14 +425,43 @@ replication_handler(StringInfo s)
 static void
 apply_work(PGconn *streamConn)
 {
+	int			fd;
 	char	   *copybuf = NULL;
+
+	fd = PQsocket(streamConn);
 
 	/* mark as idle, before starting to loop */
 	pgstat_report_activity(STATE_IDLE, NULL);
 
 	while (!got_SIGTERM)
 	{
+		int			rc;
 		int			r;
+
+		/*
+		 * Background workers mustn't call usleep() or any direct equivalent:
+		 * instead, they may wait on their process latch, which sleeps as
+		 * necessary, but is awakened if postmaster dies.  That way the
+		 * background process goes away immediately in an emergency.
+		 */
+		rc = WaitLatchOrSocket(&MyProc->procLatch,
+							   WL_SOCKET_READABLE | WL_LATCH_SET |
+							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+							   fd, 1000L);
+
+		ResetLatch(&MyProc->procLatch);
+
+		/* emergency bailout if postmaster has died */
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+
+		if (PQstatus(streamConn) == CONNECTION_BAD)
+		{
+			elog(ERROR, "connection to other side has died");
+		}
+
+		if (rc & WL_SOCKET_READABLE)
+			PQconsumeInput(streamConn);
 
 		for (;;)
 		{
@@ -424,11 +508,11 @@ apply_work(PGconn *streamConn)
 
 				if (c == 'w')
 				{
-//					XLogRecPtr	start_lsn;
-//					XLogRecPtr	end_lsn;
+					XLogRecPtr	start_lsn;
+					XLogRecPtr	end_lsn;
 
-//					start_lsn = pq_getmsgint64(&s);
-//					end_lsn = pq_getmsgint64(&s);
+					start_lsn = pq_getmsgint64(&s);
+					end_lsn = pq_getmsgint64(&s);
 					pq_getmsgint64(&s); /* sendTime */
 
 					replication_handler(&s);
@@ -448,8 +532,8 @@ void
 pg_logical_apply_main(Datum main_arg)
 {
 	int			connid = DatumGetUInt32(main_arg);
-	PGLogicalConnection *conn = get_node_connection_by_id(connid);
-	PGLogicalNode	    *origin_node = conn->origin;
+	PGLogicalConnection *conn;
+	PGLogicalNode	    *origin_node;
 	PGconn	   *streamConn;
 	PGresult   *res;
 	char	   *sqlstate;
@@ -457,12 +541,20 @@ pg_logical_apply_main(Datum main_arg)
 	StringInfoData command;
 	RepOriginId originid;
 	XLogRecPtr	origin_startpos;
+	NameData	slot_name;
 
+	/* TODO */
+	BackgroundWorkerInitializeConnection("postgres", NULL);
+
+	StartTransactionCommand();
+	conn = get_node_connection_by_id(connid);
+	origin_node = conn->origin;
 
 	elog(DEBUG1, "conneting to node %d (%s), dsn %s",
 		 origin_node->id, origin_node->name, origin_node->dsn);
 
-	appendStringInfo(&conninfo_repl, "%s fallback_application_name='%s_apply'",
+	initStringInfo(&conninfo_repl);
+	appendStringInfo(&conninfo_repl, "%s replication=database fallback_application_name='%s_apply'",
 					 origin_node->dsn, origin_node->name);
 
 	streamConn = PQconnectdb(conninfo_repl.data);
@@ -475,23 +567,22 @@ pg_logical_apply_main(Datum main_arg)
 				 errdetail("Connection string is '%s'", conninfo_repl.data)));
 	}
 
-	/*
-	 * Setup the origin and get the starting position for the replication.
-	 * TODO: prefix the origin name with plugin name
-	 */
-	originid = replorigin_by_name((char *)origin_node->name, false);
+	/* Setup the origin and get the starting position for the replication. */
+	gen_slot_name(&slot_name, MyDatabaseId, conn->origin, conn->target);
+
+	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
 	origin_startpos = replorigin_session_get_progress(false);
 
+	/* Start the replication. */
 	initStringInfo(&command);
-
 	appendStringInfo(&command, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (",
-					 "replica",
+					 NameStr(slot_name),
 					 (uint32) (origin_startpos >> 32),
 					 (uint32) origin_startpos);
 
 	appendStringInfo(&command, "client_encoding '%s'", GetDatabaseEncodingName());
-	appendStringInfo(&command, "replication_sets '%s'", conn->replication_sets);
+	appendStringInfo(&command, ", replication_sets '%s'", conn->replication_sets);
 
 	appendStringInfoChar(&command, ')');
 
@@ -501,6 +592,8 @@ pg_logical_apply_main(Datum main_arg)
 		elog(FATAL, "could not send replication command \"%s\": %s\n, sqlstate: %s",
 			 command.data, PQresultErrorMessage(res), sqlstate);
 	PQclear(res);
+
+	CommitTransactionCommand();
 
 	apply_work(streamConn);
 

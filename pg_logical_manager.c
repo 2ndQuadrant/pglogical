@@ -18,6 +18,7 @@
 
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/xact.h"
 
 #include "catalog/pg_database.h"
 
@@ -31,7 +32,9 @@
 #include "pg_logical_relcache.h"
 #include "pg_logical_node.h"
 
-#define EXTENSION_NAME "pg_logical"
+PG_MODULE_MAGIC;
+
+#define EXTENSION_NAME "pglogical"
 
 
 /*
@@ -49,21 +52,63 @@ register_apply_workers(PGLogicalNode *local_node)
 	{
 		PGLogicalConnection *conn = (PGLogicalConnection *) lfirst(lc);
 		BackgroundWorker	bgw;
+		BackgroundWorkerHandle *bgw_handle;
 
-		bgw.bgw_flags =	BGWORKER_BACKEND_DATABASE_CONNECTION;
+		bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
+			BGWORKER_BACKEND_DATABASE_CONNECTION;
 		bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
 		bgw.bgw_main = NULL;
 		snprintf(bgw.bgw_library_name, BGW_MAXLEN,
-				 "pg_logical");
+				 EXTENSION_NAME);
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 				 "pg_logical_apply_main");
 		bgw.bgw_restart_time = 1;
 		bgw.bgw_notify_pid = 0;
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
-				 "bdr supervisor");
+				 "pglogical apply");
 		bgw.bgw_main_arg = UInt32GetDatum(conn->id);
 
-		RegisterBackgroundWorker(&bgw);
+		if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+					 errmsg("Registering worker failed, check prior log messages for details")));
+		}
+	}
+}
+
+/*
+ * Register the manager bgworker for the given DB. The manager worker will then
+ * start the apply workers.
+ *
+ * Called in postmaster context from _PG_init, and under backend from node join
+ * funcions.
+ */
+static void
+pg_logical_manager_register(Oid dboid)
+{
+	BackgroundWorker bgw;
+	BackgroundWorkerHandle *bgw_handle;
+
+	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
+		BGWORKER_BACKEND_DATABASE_CONNECTION;
+	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
+	bgw.bgw_main = NULL;
+	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
+			 EXTENSION_NAME);
+	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
+			 "pg_logical_manager_main");
+	bgw.bgw_restart_time = 1;
+	bgw.bgw_notify_pid = 0;
+	snprintf(bgw.bgw_name, BGW_MAXLEN,
+			 "pglogical manager");
+	bgw.bgw_main_arg = ObjectIdGetDatum(dboid);
+
+	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+				 errmsg("Registering worker failed, check prior log messages for details")));
 	}
 }
 
@@ -79,6 +124,8 @@ pg_logical_manager_main(Datum main_arg)
 
 	BackgroundWorkerInitializeConnectionByOid(dbid, InvalidOid);
 
+	StartTransactionCommand();
+
 	/* If the extension is not installed in this DB, exit. */
 	extoid = get_extension_oid(EXTENSION_NAME, true);
 	if (!OidIsValid(extoid))
@@ -92,48 +139,23 @@ pg_logical_manager_main(Datum main_arg)
 		proc_exit(0);
 
 	register_apply_workers(node);
+
+	CommitTransactionCommand();
 }
 
 /*
- * Register the manager bgworker for the given DB. The manager worker will then
- * start the apply workers.
- *
- * Called in postmaster context from _PG_init, and under backend from node join
- * funcions.
- */
-static void
-pg_logical_manager_register(Oid dboid)
-{
-	BackgroundWorker bgw;
-
-	bgw.bgw_flags =	BGWORKER_BACKEND_DATABASE_CONNECTION;
-	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
-	bgw.bgw_main = NULL;
-	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
-			 "pg_logical");
-	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
-			 "pg_logical_manager_main");
-	bgw.bgw_restart_time = 1;
-	bgw.bgw_notify_pid = 0;
-	snprintf(bgw.bgw_name, BGW_MAXLEN,
-			 "bdr supervisor");
-	bgw.bgw_main_arg = ObjectIdGetDatum(dboid);
-
-	RegisterBackgroundWorker(&bgw);
-}
-
-/*
- * Entry point for this module.
+ * Static bgworker used for initialization.
  */
 void
-_PG_init(void)
+pg_logical_manager_init(Datum main_arg)
 {
 	Relation	rel;
 	HeapScanDesc scan;
 	HeapTuple	tup;
 
-	if (IsBinaryUpgrade)
-		return;
+	BackgroundWorkerInitializeConnection(NULL, NULL);
+
+	StartTransactionCommand();
 
 	/* Run manager worker for every connectable database. */
 	rel = heap_open(DatabaseRelationId, AccessShareLock);
@@ -144,9 +166,45 @@ _PG_init(void)
 		Form_pg_database pgdatabase = (Form_pg_database) GETSTRUCT(tup);
 
 		if (pgdatabase->datallowconn)
+		{
+			elog(DEBUG1, "registering pglogical manager process for database %s",
+				 NameStr(pgdatabase->datname));
 			pg_logical_manager_register(HeapTupleGetOid(tup));
+		}
 	}
 
 	heap_endscan(scan);
 	heap_close(rel, AccessShareLock);
+
+	CommitTransactionCommand();
+
+	proc_exit(0);
+}
+
+/*
+ * Entry point for this module.
+ */
+void
+_PG_init(void)
+{
+	BackgroundWorker bgw;
+
+	if (IsBinaryUpgrade)
+		return;
+
+	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
+		BGWORKER_BACKEND_DATABASE_CONNECTION;
+	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
+	bgw.bgw_main = NULL;
+	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
+			 EXTENSION_NAME);
+	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
+			 "pg_logical_manager_init");
+	bgw.bgw_restart_time = 1;
+	bgw.bgw_notify_pid = 0;
+	snprintf(bgw.bgw_name, BGW_MAXLEN,
+			 "pglogical init");
+	bgw.bgw_main_arg = (Datum) 0;
+
+	RegisterBackgroundWorker(&bgw);
 }
