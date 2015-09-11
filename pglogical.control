@@ -1,0 +1,6 @@
+# pg_logical extension
+comment = 'PostgreSQL Logical Replication'
+default_version = '1.0'
+module_pathname = '$libdir/pglogical'
+relocatable = false
+schema = pglogical
