@@ -34,12 +34,16 @@
 
 #include "replication/origin.h"
 
+#include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/shm_toc.h"
+#include "storage/spin.h"
 
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
+#include "pglogical.h"
 #include "pg_logical_proto.h"
 #include "pg_logical_relcache.h"
 #include "pg_logical_conflict.h"
@@ -50,6 +54,9 @@ volatile sig_atomic_t got_SIGTERM = false;
 static bool			in_remote_transaction = false;
 static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
 static RepOriginId	remote_origin_id = InvalidRepOriginId;
+
+static PGLogicalApplyWorker *MyApplyWorker;
+static PGLogicalDBState	   *MyDBState;
 
 typedef enum PGLogicalConflictType
 {
@@ -531,23 +538,60 @@ apply_work(PGconn *streamConn)
 void
 pg_logical_apply_main(Datum main_arg)
 {
-	int			connid = DatumGetUInt32(main_arg);
-	PGLogicalConnection *conn;
-	PGLogicalNode	    *origin_node;
-	PGconn	   *streamConn;
-	PGresult   *res;
-	char	   *sqlstate;
-	StringInfoData conninfo_repl;
-	StringInfoData command;
-	RepOriginId originid;
-	XLogRecPtr	origin_startpos;
-	NameData	slot_name;
+	PGconn		   *streamConn;
+	PGresult	   *res;
+	char		   *sqlstate;
+	StringInfoData	conninfo_repl;
+	StringInfoData	command;
+	RepOriginId		originid;
+	XLogRecPtr		origin_startpos;
+	NameData		slot_name;
+	dsm_segment	   *seg;
+	shm_toc		   *toc;
+	int				applyworkernr;
+	PGLogicalDBState	   *state;
+	PGLogicalApplyWorker   *apply;
+	PGLogicalConnection	   *conn;
+	PGLogicalNode		   *origin_node;
+
+	/* Establish signal handlers. */
+//	pqsignal(SIGTERM, die);
+	BackgroundWorkerUnblockSignals();
+
+	/* Attach to dsm segment. */
+	Assert(CurrentResourceOwner == NULL);
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
+
+	seg = dsm_attach(DatumGetUInt32(main_arg));
+	if (seg == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("unable to map dynamic shared memory segment")));
+	toc = shm_toc_attach(PGLOGICAL_MASTER_TOC_MAGIC, dsm_segment_address(seg));
+	if (toc == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			   errmsg("bad magic number in dynamic shared memory segment")));
+
+	state = shm_toc_lookup(toc, PGLOGICAL_MASTER_TOC_STATE);
+	apply = shm_toc_lookup(toc, PGLOGICAL_MASTER_TOC_APPLY);
+	SpinLockAcquire(&state->mutex);
+	if (state->apply_attached < state->apply_total)
+		applyworkernr = state->apply_attached++;
+	SpinLockRelease(&state->mutex);
+	if (applyworkernr < 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("too many apply workers already attached")));
+
+	MyDBState = state;
+	MyApplyWorker = &apply[applyworkernr];
 
 	/* TODO */
 	BackgroundWorkerInitializeConnection("postgres", NULL);
 
 	StartTransactionCommand();
-	conn = get_node_connection_by_id(connid);
+	conn = get_node_connection_by_id(MyApplyWorker->connid);
 	origin_node = conn->origin;
 
 	elog(DEBUG1, "conneting to node %d (%s), dsn %s",
