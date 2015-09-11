@@ -10,6 +10,7 @@ class BasicTest(PGLogicalOutputTest):
     def setUp(self):
         PGLogicalOutputTest.setUp(self)
         cur = self.conn.cursor()
+        cur.execute("DROP TABLE IF EXISTS test_changes;")
         cur.execute("CREATE TABLE test_changes (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
         self.conn.commit()
 

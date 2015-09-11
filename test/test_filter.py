@@ -9,6 +9,8 @@ class FilterTest(PGLogicalOutputTest):
 
     def set_up(self):
         cur = self.conn.cursor()
+        cur.execute("DROP TABLE IF EXISTS test_changes, test_changes_filter;")
+        cur.execute("DROP FUNCTION IF EXISTS test_filter(text, oid, \"char\")");
         cur.execute("CREATE TABLE test_changes (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
         cur.execute("CREATE TABLE test_changes_filter (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
         cur.execute("CREATE FUNCTION test_filter(nodeid text, relid oid, action \"char\") returns bool AS $$BEGIN RETURN relid::regclass::text LIKE '%_filter%'; END$$ STABLE LANGUAGE plpgsql;")
@@ -18,8 +20,7 @@ class FilterTest(PGLogicalOutputTest):
 
     def tear_down(self):
         cur = self.conn.cursor()
-        cur.execute("DROP TABLE test_changes;")
-        cur.execute("DROP TABLE test_changes_filter;")
+        cur.execute("DROP TABLE test_changes, test_changes_filter;")
         cur.execute("DROP FUNCTION test_filter(text, oid, \"char\")");
         self.conn.commit()
 
