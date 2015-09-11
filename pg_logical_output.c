@@ -12,6 +12,7 @@
  */
 #include "postgres.h"
 
+#include "pg_logical_compat.h"
 #include "pg_logical_output.h"
 #include "pg_logical_proto.h"
 
@@ -29,7 +30,9 @@
 
 #include "replication/output_plugin.h"
 #include "replication/logical.h"
+#ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
+#endif
 
 #include "utils/builtins.h"
 #include "utils/int8.h"
@@ -64,8 +67,11 @@ static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
 static void pg_decode_change(LogicalDecodingContext *ctx,
 				 ReorderBufferTXN *txn, Relation rel,
 				 ReorderBufferChange *change);
+
+#ifdef HAVE_REPLICATION_ORIGINS
 static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
+#endif
 
 /* hooks */
 static Oid get_table_filter_function_id(List *funcname, bool validate);
@@ -96,7 +102,9 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->begin_cb = pg_decode_begin_txn;
 	cb->change_cb = pg_decode_change;
 	cb->commit_cb = pg_decode_commit_txn;
+#ifdef HAVE_REPLICATION_ORIGINS
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
+#endif
 	cb->shutdown_cb = NULL;
 }
 
@@ -249,10 +257,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 void
 pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
-	OutputPluginPrepareWrite(ctx, txn->origin_id == InvalidRepOriginId);
+	bool send_replication_origin = false;
+
+#ifdef HAVE_REPLICATION_ORIGINS
+	send_replication_origin = txn->origin_id != InvalidRepOriginId;
+
+#endif
+	OutputPluginPrepareWrite(ctx, !send_replication_origin);
 	pg_logical_write_begin(ctx->out, txn);
 
-	if (txn->origin_id != InvalidRepOriginId)
+#ifdef HAVE_REPLICATION_ORIGINS
+	if (send_replication_origin)
 	{
 		char *origin;
 
@@ -272,6 +287,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 		if (replorigin_by_oid(txn->origin_id, true, &origin))
 			pg_logical_write_origin(ctx->out, origin, txn->origin_lsn);
 	}
+#endif
 
 	OutputPluginWrite(ctx, true);
 }
@@ -350,6 +366,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 }
 
 
+#ifdef HAVE_REPLICATION_ORIGINS
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
  */
@@ -365,6 +382,7 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 	return false;
 
 }
+#endif
 
 /*
  * Decide if the invidual change should be filtered out.
