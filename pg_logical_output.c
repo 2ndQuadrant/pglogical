@@ -359,7 +359,7 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 
-	if (data->forward_changesets && origin_id != InvalidRepOriginId)
+	if (!data->forward_changesets && origin_id != InvalidRepOriginId)
 		return true;
 
 	return false;
