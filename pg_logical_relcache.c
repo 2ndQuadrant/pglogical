@@ -51,7 +51,7 @@ pg_logical_free_entry(PGLogicalRelation *entry)
 
 
 PGLogicalRelation *
-pg_logical_relation_open(uint32 relid, LOCKMODE lockmode)
+pg_logical_relation_open(uint32 remote_relid, LOCKMODE lockmode)
 {
 	PGLogicalRelation *entry;
 	bool		found;
@@ -62,14 +62,15 @@ pg_logical_relation_open(uint32 relid, LOCKMODE lockmode)
 	/*
 	 * HASH_ENTER returns the existing entry if present or creates a new one.
 	 */
-	entry = hash_search(PGLogicalRelationHash, (void *) &relid,
+	entry = hash_search(PGLogicalRelationHash, (void *) &remote_relid,
 						HASH_ENTER, &found);
 
 	if (!found || !entry->used)
-		elog(ERROR, "cache lookup failed for remote relation %u", relid);
+		elog(ERROR, "cache lookup failed for remote relation %u",
+			 remote_relid);
 
 	/* Need to update the local cache? */
-	if (!OidIsValid(entry->relid))
+	if (!OidIsValid(entry->reloid))
 	{
 		RangeVar   *rv = makeNode(RangeVar);
 		int			i;
@@ -83,17 +84,17 @@ pg_logical_relation_open(uint32 relid, LOCKMODE lockmode)
 		for (i = 0; i < entry->natts; i++)
 			entry->attmap[i] = tupdesc_get_att_by_name(desc, entry->attnames[i]);
 
-		entry->relid = RelationGetRelid(entry->rel);
+		entry->reloid = RelationGetRelid(entry->rel);
 	}
 	else
-		entry->rel = heap_open(entry->relid, lockmode);
+		entry->rel = heap_open(entry->reloid, lockmode);
 
 	return entry;
 }
 
 void
-pg_logical_relation_cache_update(uint32 relid, char *schemaname, char *relname,
-								 int natts, char **attnames)
+pg_logical_relation_cache_update(uint32 remote_relid, char *schemaname,
+								 char *relname, int natts, char **attnames)
 {
 	MemoryContext		oldcontext;
 	PGLogicalRelation  *entry;
@@ -106,7 +107,7 @@ pg_logical_relation_cache_update(uint32 relid, char *schemaname, char *relname,
 	/*
 	 * HASH_ENTER returns the existing entry if present or creates a new one.
 	 */
-	entry = hash_search(PGLogicalRelationHash, (void *) &relid,
+	entry = hash_search(PGLogicalRelationHash, (void *) &remote_relid,
 						HASH_ENTER, &found);
 
 	if (found)
@@ -125,6 +126,7 @@ pg_logical_relation_cache_update(uint32 relid, char *schemaname, char *relname,
 
 	/* XXX Should we validate the relation against local schema here? */
 
+	entry->reloid = InvalidOid;
 	entry->used = true;
 }
 
@@ -136,7 +138,7 @@ pg_logical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 }
 
 static void
-pg_logical_invalidate_relation(uint32 relid)
+pg_logical_invalidate_relation(uint32 remote_relid)
 {
 	HASH_SEQ_STATUS status;
 	PGLogicalRelation *entry;
@@ -154,21 +156,21 @@ pg_logical_invalidate_relation(uint32 relid)
 	 * If relid is InvalidOid, signalling a complete reset, we have to remove
 	 * all entries, otherwise just invalidate the specific relation's entry.
 	 */
-	if (relid == InvalidOid)
+	if (remote_relid == InvalidOid)
 	{
 		hash_seq_init(&status, PGLogicalRelationHash);
 
 		while ((entry = (PGLogicalRelation *) hash_seq_search(&status)) != NULL)
 		{
-			entry->relid = InvalidOid;
+			entry->reloid = InvalidOid;
 		}
 	}
 	else
 	{
-		if ((entry = hash_search(PGLogicalRelationHash, &relid,
+		if ((entry = hash_search(PGLogicalRelationHash, &remote_relid,
 								 HASH_FIND, NULL)) != NULL)
 		{
-			entry->relid = InvalidOid;
+			entry->reloid = InvalidOid;
 		}
 	}
 }

@@ -16,7 +16,7 @@
 typedef struct PGLogicalRelation
 {
 	/* Info coming from the remote side */
-	uint32		relid;
+	uint32		remote_relid;
 	const char *nspname;
 	const char *relname;
 	int			natts;
@@ -31,11 +31,11 @@ typedef struct PGLogicalRelation
 	int		   *attmap;
 } PGLogicalRelation;
 
-extern void pg_logical_relation_cache_update(uint32 relid,
+extern void pg_logical_relation_cache_update(uint32 remote_relid,
 											 char *schemaname, char *relname,
 											 int natts, char **attnames);
 
-extern PGLogicalRelation *pg_logical_relation_open(uint32 relid,
+extern PGLogicalRelation *pg_logical_relation_open(uint32 remote_relid,
 												   LOCKMODE lockmode);
 extern void pg_logical_relation_close(PGLogicalRelation * rel,
 									  LOCKMODE lockmode);
