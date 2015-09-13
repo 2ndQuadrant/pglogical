@@ -13,23 +13,52 @@
 #ifndef PG_LOGICAL_CONGLICT_H
 #define PG_LOGICAL_CONGLICT_H
 
+#include "nodes/execnodes.h"
+
+#include "pg_logical_proto.h"
+
 typedef enum PGLogicalConflictResolution
 {
-	LogicalCR_KeepRemote,
-	LogicalCR_KeepLocal
+	PGLogicalResolution_ApplyRemote,
+	PGLogicalResolution_KeepLocal,
+	PGLogicalResolution_Skip,
 } PGLogicalConflictResolution;
 
+typedef enum
+{
+	PGLOGICAL_RESOLVE_ERROR,
+	PGLOGICAL_RESOLVE_APPLY_REMOTE,
+	PGLOGICAL_RESOLVE_KEEP_LOCAL,
+	PGLOGICAL_RESOLVE_LAST_UPDATE_WINS,
+	PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS
+} PGLogicalResolveOption;
 
-extern bool pg_logical_tuple_find(Relation rel, Relation idxrel,
-								  PGLogicalTupleData *tuple,
-								  TupleTableSlot *oldslot);
+extern int pglogical_conflict_resolver;
 
-extern Oid pg_logical_tuple_conflict(EState *estate, PGLogicalTupleData *tuple,
-									 bool insert, TupleTableSlot *oldslot);
+typedef enum PGLogicalConflictType
+{
+	CONFLICT_INSERT_INSERT,
+	CONFLICT_UPDATE_UPDATE,
+	CONFLICT_UPDATE_DELETE,
+	CONFLICT_DELETE_DELETE
+} PGLogicalConflictType;
+
+extern bool pglogical_tuple_find_replidx(EState *estate,
+										 PGLogicalTupleData *tuple,
+										 TupleTableSlot *oldslot);
+
+extern Oid pglogical_tuple_find_conflict(EState *estate,
+										 PGLogicalTupleData *tuple,
+										 TupleTableSlot *oldslot);
 
 extern bool try_resolve_conflict(Relation rel, HeapTuple localtuple,
-								 HeapTuple remotetuple, bool insert,
-								 HeapTuple *resulttuple,
+								 HeapTuple remotetuple, HeapTuple *resulttuple,
 								 PGLogicalConflictResolution *resolution);
+
+
+extern void pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
+						  HeapTuple localtuple, HeapTuple remotetuple,
+						  HeapTuple applytuple,
+						  PGLogicalConflictResolution resolution);
 
 #endif /* PG_LOGICAL_CONGLICT_H */

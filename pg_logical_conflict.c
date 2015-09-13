@@ -30,6 +30,7 @@
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 
+#include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
@@ -39,6 +40,7 @@
 #include "pg_logical_proto.h"
 #include "pg_logical_conflict.h"
 
+int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_LAST_UPDATE_WINS;
 
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
@@ -194,28 +196,58 @@ retry:
 }
 
 /*
- * Find the tuple in a table.
- *
- * This uses the replication identity index for search.
+ * Open REPLICA IDENTITY index.
  */
-bool
-pg_logical_tuple_find(Relation rel, Relation idxrel, PGLogicalTupleData *tuple,
-					  TupleTableSlot *oldslot)
+static Relation
+replindex_open(Relation rel, LOCKMODE lockmode)
 {
-	ScanKeyData	index_key;
+	Oid			idxoid;
 
-	build_index_scan_key(&index_key, rel, idxrel, tuple);
+	if (rel->rd_indexvalid == 0)
+		RelationGetIndexList(rel);
 
-	/* Try to find the row. */
-	return find_index_tuple(&index_key, rel, idxrel, LockTupleExclusive, oldslot);
+	idxoid = rel->rd_replidindex;
+	if (!OidIsValid(idxoid))
+	{
+		elog(ERROR, "could not find primary key for table with oid %u",
+			 RelationGetRelid(rel));
+	}
+
+	/* Now open the primary key index */
+	return index_open(idxoid, lockmode);
 }
 
 /*
- * Detect if remote INSERT or UPDATE conflicts with existing unique constraint.
+ * Find tuple using REPLICA IDENTITY index.
+ */
+bool
+pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
+							 TupleTableSlot *oldslot)
+{
+	ResultRelInfo  *relinfo = estate->es_result_relation_info;
+	Relation		idxrel = replindex_open(relinfo->ri_RelationDesc,
+											RowExclusiveLock);
+	ScanKeyData		index_key;
+	bool			found;
+
+	build_index_scan_key(&index_key, relinfo->ri_RelationDesc, idxrel, tuple);
+
+	/* Try to find the row. */
+	found = find_index_tuple(&index_key, relinfo->ri_RelationDesc, idxrel,
+							 LockTupleExclusive, oldslot);
+
+	/* Don't release lock until commit. */
+	index_close(idxrel, NoLock);
+
+	return found;
+}
+
+/*
+ * Find the tuple in a table using any index.
  */
 Oid
-pg_logical_tuple_conflict(EState *estate, PGLogicalTupleData *tuple,
-						  bool insert, TupleTableSlot *oldslot)
+pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
+							  TupleTableSlot *oldslot)
 {
 	Oid		conflict_idx = InvalidOid;
 	ScanKeyData	index_key;
@@ -242,16 +274,11 @@ pg_logical_tuple_conflict(EState *estate, PGLogicalTupleData *tuple,
 		if (!ii->ii_Unique || ii->ii_Expressions != NIL)
 			continue;
 
-		/* REPLICA IDENTITY index conflict is only interesting for INSERTs. */
 		idxrel = relinfo->ri_IndexRelationDescs[i];
-		if (!insert && relinfo->ri_RelationDesc->rd_replidindex == RelationGetRelid(idxrel))
-			continue;
 
 		if (build_index_scan_key(&index_key, relinfo->ri_RelationDesc,
 							 idxrel, tuple))
 			continue;
-
-		Assert(ii->ii_Expressions == NIL);
 
 		/* Try to find conflicting row. */
 		found = find_index_tuple(&index_key, relinfo->ri_RelationDesc,
@@ -267,12 +294,10 @@ pg_logical_tuple_conflict(EState *estate, PGLogicalTupleData *tuple,
 			/* TODO: Report tuple identity in log */
 			ereport(ERROR,
 				(errcode(ERRCODE_UNIQUE_VIOLATION),
-				errmsg("multiple unique constraints violated by remote %s",
-					   insert ? "INSERT" : "UPDATE"),
-				errdetail("Cannot apply transaction because remotely %s "
+				errmsg("multiple unique constraints violated by remote tuple"),
+				errdetail("Cannot apply transaction because remotely tuple "
 					  "conflicts with a local tuple on more than one UNIQUE "
-					  "constraint and/or PRIMARY KEY",
-					  insert ? "INSERT" : "UPDATE"),
+					  "constraint and/or PRIMARY KEY"),
 				errhint("Resolve the conflict by removing or changing the conflicting "
 					"local tuple")));
 		}
@@ -316,13 +341,13 @@ conflict_resolve_by_timestamp(RepOriginId local_node_id,
 	if (cmp > 0)
 	{
 		/* The remote row wins, update the local one. */
-		*resolution = LogicalCR_KeepRemote;
+		*resolution = PGLogicalResolution_ApplyRemote;
 		return true;
 	}
 	else if (cmp < 0)
 	{
 		/* The local row wins, retain it */
-		*resolution = LogicalCR_KeepLocal;
+		*resolution = PGLogicalResolution_KeepLocal;
 		return false;
 	}
 	else
@@ -334,7 +359,7 @@ conflict_resolve_by_timestamp(RepOriginId local_node_id,
 		 * XXX: TODO, for now we just always apply remote change.
 		 */
 
-		*resolution = LogicalCR_KeepRemote;
+		*resolution = PGLogicalResolution_ApplyRemote;
 		return true;
 	}
 }
@@ -347,26 +372,113 @@ conflict_resolve_by_timestamp(RepOriginId local_node_id,
  */
 bool
 try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
-					 bool insert, HeapTuple *resulttuple,
+					 HeapTuple *resulttuple,
 					 PGLogicalConflictResolution *resolution)
 {
 	TimestampTz		local_ts;
 	RepOriginId		local_id;
 	TransactionId	xmin = HeapTupleHeaderGetXmin(localtuple->t_data);
+	bool			apply;
 
 	TransactionIdGetCommitTsData(xmin, &local_ts, &local_id);
 
 	/* If tuple was written twice in same transaction, apply row */
 	if (replorigin_sesssion_origin == local_id)
 	{
-		*resolution = LogicalCR_KeepRemote;
+		*resolution = PGLogicalResolution_ApplyRemote;
+		*resulttuple = remotetuple;
 		return true;
 	}
 
-	/* Decide by commit timestamp. */
-	return conflict_resolve_by_timestamp(local_id,
-										 replorigin_sesssion_origin,
-										 local_ts,
-										 replorigin_sesssion_origin_timestamp,
-										 true, resolution);
+	switch (pglogical_conflict_resolver)
+	{
+		case PGLOGICAL_RESOLVE_ERROR:
+			/* TODO: proper error message */
+			elog(ERROR, "cannot apply conflicting row");
+		case PGLOGICAL_RESOLVE_APPLY_REMOTE:
+			apply = true;
+		case PGLOGICAL_RESOLVE_KEEP_LOCAL:
+			apply = false;
+		case PGLOGICAL_RESOLVE_LAST_UPDATE_WINS:
+			apply = conflict_resolve_by_timestamp(local_id,
+												  replorigin_sesssion_origin,
+												  local_ts,
+												  replorigin_sesssion_origin_timestamp,
+												  true, resolution);
+		case PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS:
+			apply = conflict_resolve_by_timestamp(local_id,
+												  replorigin_sesssion_origin,
+												  local_ts,
+												  replorigin_sesssion_origin_timestamp,
+												  false, resolution);
+	}
+
+	if (apply)
+		*resulttuple = remotetuple;
+
+	return apply;
+}
+
+static char *
+conflict_type_to_string(PGLogicalConflictType conflict_type)
+{
+	switch (conflict_type)
+	{
+		case CONFLICT_INSERT_INSERT:
+			return "insert_insert";
+		case CONFLICT_UPDATE_UPDATE:
+			return "update_update";
+		case CONFLICT_UPDATE_DELETE:
+			return "update_delete";
+		case CONFLICT_DELETE_DELETE:
+			return "delete_delete";
+	}
+}
+
+static char *
+conflict_resolution_to_string(PGLogicalConflictResolution resolution)
+{
+	switch (resolution)
+	{
+		case PGLogicalResolution_ApplyRemote:
+			return "apply_remote";
+		case PGLogicalResolution_KeepLocal:
+			return "keep_local";
+	}
+}
+
+/*
+ * Log the conflict to server log.
+ */
+void
+pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
+						  HeapTuple localtuple, HeapTuple remotetuple,
+						  HeapTuple applytuple,
+						  PGLogicalConflictResolution resolution)
+{
+	switch (conflict_type)
+	{
+		case CONFLICT_INSERT_INSERT:
+		case CONFLICT_UPDATE_UPDATE:
+			ereport(LOG,
+					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
+					 errmsg("CONFLICT: remote %s on relation %s originating at node %s at %s. Resolution: %s.",
+							CONFLICT_INSERT_INSERT ? "INSERT" : "UPDATE",
+							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
+													   RelationGetRelationName(rel)),
+							"node", "ts",
+							conflict_resolution_to_string(resolution))));
+			break;
+		case CONFLICT_UPDATE_DELETE:
+		case CONFLICT_DELETE_DELETE:
+			ereport(LOG,
+					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
+					 errmsg("CONFLICT: remote %s on relation %s originating at node %s at %s. Resolution: %s.",
+							CONFLICT_UPDATE_DELETE ? "UPDATE" : "DELETE",
+							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
+													   RelationGetRelationName(rel)),
+							"node", "ts",
+							conflict_resolution_to_string(resolution))));
+			break;
+	}
 }

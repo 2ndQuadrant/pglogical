@@ -58,22 +58,6 @@ static RepOriginId	remote_origin_id = InvalidRepOriginId;
 static PGLogicalApplyWorker *MyApplyWorker;
 static PGLogicalDBState	   *MyDBState;
 
-typedef enum PGLogicalConflictType
-{
-	CONFLICT_INSERT,
-	CONFLICT_UPDATE,
-	CONFLICT_DELETE
-} PGLogicalConflictType;
-
-typedef struct PGLogicalApply
-{
-	const char *node_name;
-	const char *slot_name;
-	const char *origin_name;
-	const char *origin_dsn;
-	const char **replication_sets;
-} PGLogicalApply;
-
 /*
  * Ensure string is not longer than maxlen.
  *
@@ -104,7 +88,7 @@ shorten_hash(const char *str, int maxlen)
  * Generate slot name (used also for origin identifier)
  *
  * TODO: make the slot name more unique for different PG instances to avoid
- * unintentional connections between different clusters.
+ * unintentional connections between different clusters? (maybe use sysid)
  */
 static void
 gen_slot_name(Name slot_name, Oid dboid, PGLogicalNode *origin_node,
@@ -112,8 +96,8 @@ gen_slot_name(Name slot_name, Oid dboid, PGLogicalNode *origin_node,
 {
 	snprintf(NameStr(*slot_name), NAMEDATALEN,
 			 "pgl_%u_%s_%s", dboid,
-			 shorten_hash(origin_node->name, 20),
-			 shorten_hash(target_node->name, 20));
+			 shorten_hash(origin_node->name, 16),
+			 shorten_hash(target_node->name, 16));
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 }
 
@@ -206,28 +190,6 @@ handle_relation(StringInfo s)
 	(void) pg_logical_read_rel(s);
 }
 
-/*
- * Open REPLICA IDENTITY index.
- */
-static Relation
-replindex_open(Relation rel, LOCKMODE lockmode)
-{
-	Oid			idxoid;
-
-	if (rel->rd_indexvalid == 0)
-		RelationGetIndexList(rel);
-
-	idxoid = rel->rd_replidindex;
-	if (!OidIsValid(idxoid))
-	{
-		elog(ERROR, "could not find primary key for table with oid %u",
-			 RelationGetRelid(rel));
-	}
-
-	/* Now open the primary key index */
-	return index_open(idxoid, lockmode);
-}
-
 
 static EState *
 create_estate_for_relation(Relation rel)
@@ -250,13 +212,51 @@ create_estate_for_relation(Relation rel)
 }
 
 static void
+UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
+{
+	/* HOT update does not require index inserts */
+	if (HeapTupleIsHeapOnly(slot->tts_tuple))
+		return;
+
+	if (estate->es_result_relation_info->ri_NumIndices > 0)
+	{
+		List	   *recheckIndexes = NIL;
+		recheckIndexes = ExecInsertIndexTuples(slot,
+											   &slot->tts_tuple->t_self,
+											   estate, false, NULL, NIL);
+
+		if (recheckIndexes != NIL)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("pglogical doesn't support index rechecks")));
+
+		/* FIXME: recheck the indexes */
+		list_free(recheckIndexes);
+	}
+}
+
+static void
+UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot)
+{
+	/* HOT update does not require index inserts */
+	if (HeapTupleIsHeapOnly(slot->tts_tuple))
+		return;
+
+	ExecOpenIndices(estate->es_result_relation_info, false);
+	UserTableUpdateOpenIndexes(estate, slot);
+	ExecCloseIndices(estate->es_result_relation_info);
+}
+
+
+static void
 handle_insert(StringInfo s)
 {
 	PGLogicalTupleData	newtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
 	Oid					conflicts;
-	TupleTableSlot	   *localslot;
+	TupleTableSlot	   *localslot,
+					   *applyslot;
 	HeapTuple			remotetuple;
 	HeapTuple			applytuple;
 	PGLogicalConflictResolution resolution;
@@ -265,37 +265,49 @@ handle_insert(StringInfo s)
 
 	rel = pg_logical_read_insert(s, RowExclusiveLock, &newtup);
 
+	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
 	localslot = ExecInitExtraTupleSlot(estate);
+	applyslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
+
 	ExecOpenIndices(estate->es_result_relation_info, false);
 
-	conflicts = pg_logical_tuple_conflict(estate, &newtup, CONFLICT_INSERT,
-										  localslot);
+	conflicts = pglogical_tuple_find_conflict(estate, &newtup, localslot);
 
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup.values, newtup.nulls);
 
 	if (OidIsValid(conflicts))
 	{
+		/* Tuple already exists, try resolving conflict. */
 		bool apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
-										  remotetuple, CONFLICT_INSERT,
-										  &applytuple, &resolution);
+										  remotetuple, &applytuple,
+										  &resolution);
 
-//		report_conflict(CONFLICT_INSERT, rel->rel, localslot->tts_tuple,
-//						remotetuple, applytuple, resolution);
+		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
+								  localslot->tts_tuple, remotetuple,
+								  applytuple, resolution);
 
 		if (apply)
+		{
+			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
 							   applytuple);
+			UserTableUpdateOpenIndexes(estate, applyslot);
+		}
 	}
 	else
 	{
+		/* No conflict, insert the tuple. */
+		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
 		simple_heap_insert(rel->rel, remotetuple);
+		UserTableUpdateOpenIndexes(estate, applyslot);
 	}
 
+	/* Cleanup */
 	ExecCloseIndices(estate->es_result_relation_info);
-
 	pg_logical_relation_close(rel, RowExclusiveLock);
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
@@ -309,78 +321,91 @@ handle_update(StringInfo s)
 	PGLogicalTupleData	newtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
-	Relation			idxrel;
 	bool				found;
-	TupleTableSlot	   *localslot;
+	TupleTableSlot	   *localslot,
+					   *applyslot;
 	HeapTuple			remotetuple;
 
 	pg_logical_ensure_transaction();
 
 	rel = pg_logical_read_insert(s, RowExclusiveLock, &newtup);
 
+	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
 	localslot = ExecInitExtraTupleSlot(estate);
+	applyslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
 
-	idxrel = replindex_open(rel->rel, RowExclusiveLock);
-
-	found = pg_logical_tuple_find(rel->rel, idxrel, &newtup, localslot);
+	found = pglogical_tuple_find_replidx(estate, &newtup, localslot);
 
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup.values, newtup.nulls);
 
-	/* TODO: handle conflicts */
 	if (found)
 	{
+		/*
+		 * Tuple found.
+		 *
+		 * TODO: handle conflicts.
+		 */
+		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
 		simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
 						   remotetuple);
+		UserTableUpdateOpenIndexes(estate, applyslot);
 	}
 	else
 	{
-		/*
-		 * The tuple to be updated could not be found.
-		 *
-		 */
+		/* The tuple to be updated could not be found. */
+		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel->rel, NULL,
+								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
+
+	/* Cleanup. */
+	pg_logical_relation_close(rel, RowExclusiveLock);
+	ExecResetTupleTable(estate->es_tupleTable, true);
+	FreeExecutorState(estate);
+
+	CommandCounterIncrement();
 }
 
 static void
 handle_delete(StringInfo s)
 {
-	PGLogicalTupleData	oldtup;
+	PGLogicalTupleData	newtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
-	Relation			idxrel;
 	TupleTableSlot	   *localslot;
 
 	pg_logical_ensure_transaction();
 
-	rel = pg_logical_read_delete(s, RowExclusiveLock, &oldtup);
+	rel = pg_logical_read_delete(s, RowExclusiveLock, &newtup);
 
+	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
 	localslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 
-	idxrel = replindex_open(rel->rel, RowExclusiveLock);
-
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (pg_logical_tuple_find(rel->rel, idxrel, &oldtup, localslot))
+	if (pglogical_tuple_find_replidx(estate, &newtup, localslot))
 	{
+		/* Tuple found, delete it. */
 		simple_heap_delete(rel->rel, &localslot->tts_tuple->t_self);
 	}
 	else
 	{
-		/*
-		 * The tuple to be deleted could not be found.
-		 */
+		/* The tuple to be deleted could not be found. */
+		HeapTuple remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
+												newtup.values, newtup.nulls);
+		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel->rel, NULL,
+								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
 
 	PopActiveSnapshot();
 
-	index_close(idxrel, NoLock);
+	/* Cleanup. */
 	pg_logical_relation_close(rel, NoLock);
-
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
