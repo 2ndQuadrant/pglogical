@@ -273,7 +273,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 
 		/* Hooks */
 		val = get_param(ctx->output_plugin_options,
-						"hooks.Table_change_filter", true, false,
+						"Hooks.Table_change_filter", true, false,
 						OUTPUT_PARAM_TYPE_QUALIFIED_NAME, &found);
 
 		if (found)
