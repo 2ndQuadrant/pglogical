@@ -23,6 +23,19 @@ typedef struct PGLogicalNode
 	bool		valid;
 } PGLogicalNode;
 
+#define NODE_STATUS_INIT				'i'
+#define NODE_STATUS_SYNC_SCHEMA			's'
+#define NODE_STATUS_SYNC_DATA			'd'
+#define NODE_STATUS_SYNC_CONSTRAINTS	'o'
+#define NODE_STATUS_SLOTS				'l'
+#define NODE_STATUS_CATCHUP				'c'
+#define NODE_STATUS_CONNECT_BACK		'b'
+#define NODE_STATUS_READY				'r'
+
+#define NODE_ROLE_PUBLISHER		'p'
+#define NODE_ROLE_SUBSCRIBER	's'
+#define NODE_ROLE_FOWARDER		'f'
+
 typedef struct PGLogicalConnection
 {
 	int				id;

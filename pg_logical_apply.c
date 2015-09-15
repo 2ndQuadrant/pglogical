@@ -22,6 +22,8 @@
 #include "access/xact.h"
 #include "access/xlogdefs.h"
 
+#include "commands/dbcommands.h"
+
 #include "executor/executor.h"
 
 #include "lib/stringinfo.h"
@@ -43,11 +45,11 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
-#include "pglogical.h"
 #include "pg_logical_proto.h"
 #include "pg_logical_relcache.h"
 #include "pg_logical_conflict.h"
 #include "pg_logical_node.h"
+#include "pglogical.h"
 
 
 volatile sig_atomic_t got_SIGTERM = false;
@@ -58,58 +60,15 @@ static RepOriginId	remote_origin_id = InvalidRepOriginId;
 static PGLogicalApplyWorker *MyApplyWorker;
 static PGLogicalDBState	   *MyDBState;
 
-/*
- * Ensure string is not longer than maxlen.
- *
- * The way we do this is we if the string is longer we return prefix from that
- * string and hash of the string which will together be exatly maxlen.
- *
- * Maxlen can't be less than 11 because hash produces uint32 which in text form
- * can have up to 10 characters.
- */
-static char *
-shorten_hash(const char *str, int maxlen)
-{
-	char   *ret;
-	int		len = strlen(str);
-
-	Assert(maxlen > 10);
-
-	if (len <= maxlen)
-		return pstrdup(str);
-
-	ret = (char *) palloc(maxlen + 1);
-	snprintf(ret, maxlen, "%*s%u", maxlen - 10, /* uint32 max length is 10 */
-			 str, DatumGetUInt32(hash_any((unsigned char *) str, len)));
-	ret[maxlen] = '\0';
-}
-
-/*
- * Generate slot name (used also for origin identifier)
- *
- * TODO: make the slot name more unique for different PG instances to avoid
- * unintentional connections between different clusters? (maybe use sysid)
- */
-static void
-gen_slot_name(Name slot_name, Oid dboid, PGLogicalNode *origin_node,
-		  PGLogicalNode *target_node)
-{
-	snprintf(NameStr(*slot_name), NAMEDATALEN,
-			 "pgl_%u_%s_%s", dboid,
-			 shorten_hash(origin_node->name, 16),
-			 shorten_hash(target_node->name, 16));
-	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
-}
 
 static void
-pg_logical_ensure_transaction(void)
+ensure_transaction(void)
 {
 	if (IsTransactionState())
 		return;
 
 	StartTransactionCommand();
 }
-
 
 static void
 handle_begin(StringInfo s)
@@ -261,7 +220,7 @@ handle_insert(StringInfo s)
 	HeapTuple			applytuple;
 	PGLogicalConflictResolution resolution;
 
-	pg_logical_ensure_transaction();
+	ensure_transaction();
 
 	rel = pg_logical_read_insert(s, RowExclusiveLock, &newtup);
 
@@ -326,7 +285,7 @@ handle_update(StringInfo s)
 					   *applyslot;
 	HeapTuple			remotetuple;
 
-	pg_logical_ensure_transaction();
+	ensure_transaction();
 
 	rel = pg_logical_read_insert(s, RowExclusiveLock, &newtup);
 
@@ -377,7 +336,7 @@ handle_delete(StringInfo s)
 	EState			   *estate;
 	TupleTableSlot	   *localslot;
 
-	pg_logical_ensure_transaction();
+	ensure_transaction();
 
 	rel = pg_logical_read_delete(s, RowExclusiveLock, &newtup);
 
@@ -637,7 +596,8 @@ pg_logical_apply_main(Datum main_arg)
 	}
 
 	/* Setup the origin and get the starting position for the replication. */
-	gen_slot_name(&slot_name, MyDatabaseId, conn->origin, conn->target);
+	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
+				  conn->origin, conn->target);
 
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);

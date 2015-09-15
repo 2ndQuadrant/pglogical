@@ -7,7 +7,8 @@ PGFILEDESC = "pglogical - logical replication"
 DATA = pglogical--1.0.sql
 
 OBJS = pg_logical_apply.o pg_logical_conflict.o pg_logical_manager.o \
-	   pg_logical_node.o pg_logical_proto.o pg_logical_relcache.o pglogical.o
+	   pg_logical_node.o pg_logical_proto.o pg_logical_relcache.o \
+	   pglogical.o pglogical_rpc.o pglogical_init_replica.o
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)

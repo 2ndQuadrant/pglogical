@@ -39,5 +39,10 @@ typedef struct PGLogicalDBState
 	int		apply_attached;
 } PGLogicalDBState;
 
+
+extern void gen_slot_name(Name slot_name, char *dbname,
+						  PGLogicalNode *origin_node,
+						  PGLogicalNode *target_node);
+
 #endif /* PGLOGICAL_H */
 

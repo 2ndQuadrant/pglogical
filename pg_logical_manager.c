@@ -35,10 +35,12 @@
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 
-#include "pglogical.h"
 #include "pg_logical_proto.h"
 #include "pg_logical_relcache.h"
 #include "pg_logical_node.h"
+#include "pglogical_init_replica.h"
+#include "pglogical.h"
+
 
 static volatile sig_atomic_t got_SIGTERM = false;
 
@@ -172,15 +174,29 @@ pg_logical_manager_main(Datum main_arg)
 		proc_exit(0);
 
 	conns = get_node_publishers(node->id);
-	MemoryContextSwitchTo(saved_ctx);
 
+	/* No connections (this should probably be error). */
+	if (conns->length == 0)
+		proc_exit(0);
+
+	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
+	/* If this is newly created node, initialize it. */
+	if (node->status != NODE_STATUS_READY)
+	{
+		PGLogicalConnection *c = linitial(conns);
+		pglogical_init_replica(c);
+	}
 
+	/* Setup shared state between the manager and apply processes. */
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
 	seg = setup_dynamic_shared_memory(conns);
+
+	/* Launch the apply workers. */
 	register_apply_workers(seg, conns->length);
 
+	/* Main wait loop. */
 	while (!got_SIGTERM)
     {
        int rc = WaitLatch(&MyProc->procLatch,

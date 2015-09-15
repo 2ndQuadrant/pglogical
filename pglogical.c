@@ -14,6 +14,7 @@
 
 #include "miscadmin.h"
 
+#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
@@ -26,8 +27,9 @@
 
 #include "utils/guc.h"
 
-#include "pglogical.h"
+#include "pg_logical_node.h"
 #include "pg_logical_conflict.h"
+#include "pglogical.h"
 
 PG_MODULE_MAGIC;
 
@@ -39,6 +41,47 @@ static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{"first_update_wins", PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS, false},
 	{NULL, 0, false}
 };
+
+/*
+ * Ensure string is not longer than maxlen.
+ *
+ * The way we do this is we if the string is longer we return prefix from that
+ * string and hash of the string which will together be exatly maxlen.
+ *
+ * Maxlen can't be less than 11 because hash produces uint32 which in text form
+ * can have up to 10 characters.
+ */
+static char *
+shorten_hash(const char *str, int maxlen)
+{
+	char   *ret;
+	int		len = strlen(str);
+
+	Assert(maxlen > 10);
+
+	if (len <= maxlen)
+		return pstrdup(str);
+
+	ret = (char *) palloc(maxlen + 1);
+	snprintf(ret, maxlen, "%*s%u", maxlen - 10, /* uint32 max length is 10 */
+			 str, DatumGetUInt32(hash_any((unsigned char *) str, len)));
+	ret[maxlen] = '\0';
+}
+
+/*
+ * Generate slot name (used also for origin identifier)
+ */
+void
+gen_slot_name(Name slot_name, char *dbname, PGLogicalNode *origin_node,
+			  PGLogicalNode *target_node)
+{
+	snprintf(NameStr(*slot_name), NAMEDATALEN,
+			 "pgl_%s_%s_%s",
+			 shorten_hash(dbname, 16),
+			 shorten_hash(origin_node->name, 16),
+			 shorten_hash(target_node->name, 16));
+	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
+}
 
 /*
  * Register the manager bgworker for the given DB. The manager worker will then
@@ -61,7 +104,7 @@ pg_logical_manager_register(Oid dboid)
 			 EXTENSION_NAME);
 	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 			 "pg_logical_manager_main");
-	bgw.bgw_restart_time = 0;
+	bgw.bgw_restart_time = 1;
 	bgw.bgw_notify_pid = 0;
 	snprintf(bgw.bgw_name, BGW_MAXLEN,
 			 "pglogical manager");

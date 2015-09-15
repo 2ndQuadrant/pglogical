@@ -161,13 +161,20 @@ set_node_status(int nodeid, char status)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
+	bool			tx_started = false;
+
+	if (!IsTransactionState())
+	{
+		tx_started = true;
+		StartTransactionCommand();
+	}
 
 	rv = makeRangeVar(CATALOG_SCHEMA, CATALOG_NODES, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Find the node tuple */
 	ScanKeyInit(&key[0],
-				Anum_nodes_name,
+				Anum_nodes_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -206,6 +213,9 @@ set_node_status(int nodeid, char status)
 
 	/* Release the lock */
 	heap_close(rel, RowExclusiveLock);
+
+	if (tx_started)
+		CommitTransactionCommand();
 }
 
 /*
