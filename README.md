@@ -145,9 +145,37 @@ The parameters are very important for ensuring that the plugin accepts
 the replication request and streams changes in the expected form. `pg_logical`
 parameters are discussed in the separate `pg_logical` protocol documentation.
 
+### Process the startup message
+
+`pg_logical`'s output plugin will send a `CopyData` message containing its
+startup message as the first protocol message. This message contains a
+set of key/value entries describing the capabilities of the upstream output
+plugin, its version and the Pg version, the tuple format options selected,
+etc.
+
+The downstream client may choose to cleanly close the connection and disconnect
+at this point if it doesn't like the reply. It might then inform the user
+or reconnect with different parameters based on what it learned from the
+first connection's startup message.
+
 ### Consume the change stream
 
+`pg_logical`'s output plugin now sends a continuous series of `CopyData`
+protocol messages, each of which encapsulates a `pg_logical` protocol message
+as documented in the separate protocol docs.
 
+These messages provide information about transaction boundaries, changed
+rows, etc.
+
+The stream continues until the client disconnects, the upstream server is
+restarted, the upstream walsender is terminated by admin action, there's
+a network issue, or the connection is otherwise broken.
+
+The client should send periodic feedback messages to the server to acknowledge
+that it's replayed to a given point and let the server release the resources
+it's holding in case that change stream has to be replayed again. See
+["Hot standby feedback message" in the replication protocol docs](http://www.postgresql.org/docs/current/static/protocol-replication.html)
+for details.
 
 ### Disconnect gracefully
 
