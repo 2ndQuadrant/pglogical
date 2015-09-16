@@ -36,9 +36,10 @@ class PGLogicalOutputTest(unittest.TestCase):
     def get_changes(self, kwargs = {}):
         cur = self.conn.cursor()
         params_dict = {
-                'Expected_encoding': 'UTF8',
-                'Min_proto_version': '1',
-                'Max_proto_version': '1'
+                'expected_encoding': 'UTF8',
+                'min_proto_version': '1',
+                'max_proto_version': '1',
+                'startup_params_format': '1'
                 }
         params_dict.update(kwargs)
         params = [i for k, v in params_dict.items() for i in [k,v] if v is not None]

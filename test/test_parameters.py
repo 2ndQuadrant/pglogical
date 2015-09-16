@@ -14,41 +14,47 @@ class ParametersTest(PGLogicalOutputTest):
 
     def test_protoversion(self):
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Max_proto_version': None}))
+            list(self.get_changes({'startup_params_format': 'borkbork'}))
 
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Min_proto_version': None}))
+            list(self.get_changes({'startup_params_format': '2'}))
 
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Min_proto_version': '2'}))
+            list(self.get_changes({'startup_params_format': None}))
 
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Max_proto_version': '0'}))
+            list(self.get_changes({'max_proto_version': None}))
 
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Max_proto_version': 'borkbork'}))
+            list(self.get_changes({'min_proto_version': None}))
 
-    def test_ignored_unknown_params(self):
-        list(self.get_changes({'unknown_some_param': 'ignored'}))
-        list(self.get_changes({'unknown.some_param': 'ignored'}))
-
-    def test_required_unknown_params(self):
-        # TODO Failure expected for now, needs fix
-        # Should throw on this required parameter
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Unknown_required_parameter': 'error'}))
+            list(self.get_changes({'min_proto_version': '2'}))
 
-        # TODO Should ERROR
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Unknown.some_param': 'error'}))
+            list(self.get_changes({'max_proto_version': '0'}))
+
+        with self.assertRaises(psycopg2.DatabaseError):
+            list(self.get_changes({'max_proto_version': 'borkbork'}))
+
+    def test_unknown_params(self):
+        # Should all get ignored
+        list(self.get_changes({'unknown_required_parameter': 'unknown'}))
+        list(self.get_changes({'unknown.some_param': 'unknown'}))
+        list(self.get_changes({'Unknown.some_param': 'unknown'}))
+        list(self.get_changes({'Unknown.Some_param': 'unknown'}))
 
     def test_encoding_missing(self):
-        with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Expected_encoding': None}))
+        # Should be ignored, server should send reply params
+        list(self.get_changes({'expected_encoding': None}))
 
     def test_encoding_bogus(self):
         with self.assertRaises(psycopg2.DatabaseError):
-            list(self.get_changes({'Expected_encoding': 'gobblegobble'}))
+            list(self.get_changes({'expected_encoding': 'gobblegobble'}))
+
+    def test_encoding_differs(self):
+        with self.assertRaises(psycopg2.DatabaseError):
+            list(self.get_changes({'expected_encoding': 'LATIN-1'}))
 
 
 if __name__ == '__main__':

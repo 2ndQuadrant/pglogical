@@ -48,14 +48,6 @@ PG_MODULE_MAGIC;
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
-typedef enum PGLogicalOutputParamType
-{
-	OUTPUT_PARAM_TYPE_BOOL,
-	OUTPUT_PARAM_TYPE_UINT32,
-	OUTPUT_PARAM_TYPE_STRING,
-	OUTPUT_PARAM_TYPE_QUALIFIED_NAME
-} PGLogicalOutputParamType;
-
 /* These must be available to pg_dlsym() */
 static void pg_decode_startup(LogicalDecodingContext * ctx,
 							  OutputPluginOptions *opt, bool is_init);
@@ -80,17 +72,10 @@ static inline bool pg_decode_change_filter(PGLogicalOutputData *data,
 						Relation rel,
 						enum ReorderBufferChangeType change);
 
-/* param parsing */
-static Datum get_param(List *options, const char *name, bool missing_ok,
-					   bool null_ok, PGLogicalOutputParamType type,
-					   bool *found);
-static bool parse_param_bool(DefElem *elem);
-static uint32 parse_param_uint32(DefElem *elem);
 static bool server_float4_byval(void);
 static bool server_float8_byval(void);
 static bool server_integer_datetimes(void);
 static bool server_bigendian(void);
-
 
 /* specify output plugin callbacks */
 void
@@ -109,48 +94,59 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 }
 
 static bool
-check_binary_compatibility(List *options, PGLogicalOutputData *data)
+check_binary_compatibility(PGLogicalOutputData *data)
 {
-	bool	found;
-	Datum	val;
-
 	if (data->client_binary_basetypes_major_version != PG_VERSION_NUM / 100)
 		return false;
 
-	val = get_param(options, "binary.Bigendian", false, false,
-					OUTPUT_PARAM_TYPE_BOOL, &found);
-	if (DatumGetBool(val) != server_bigendian())
+	if (data->client_binary_bigendian_set
+			&& data->client_binary_bigendian != server_bigendian())
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian mis-match");
 		return false;
+	}
 
-	val = get_param(options, "binary.Sizeof_datum", false, false,
-					OUTPUT_PARAM_TYPE_UINT32, &found);
-	if (DatumGetUInt32(val) != sizeof(Datum))
+	if (data->client_binary_sizeofdatum_set
+			&& data->client_binary_sizeofdatum != sizeof(Datum))
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(Datum) mismatch");
 		return false;
+	}
 
-	val = get_param(options, "binary.Sizeof_int", false, false,
-					OUTPUT_PARAM_TYPE_UINT32, &found);
-	if (DatumGetUInt32(val) != sizeof(int))
+	if (data->client_binary_sizeofint_set
+			&& data->client_binary_sizeofint != sizeof(int))
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(int) mismatch");
 		return false;
+	}
 
-	val = get_param(options, "binary.Sizeof_long", false, false,
-					OUTPUT_PARAM_TYPE_UINT32, &found);
-	if (DatumGetUInt32(val) != sizeof(long))
+	if (data->client_binary_sizeoflong_set
+			&& data->client_binary_sizeoflong != sizeof(long))
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(long) mismatch");
 		return false;
+	}
 
-	val = get_param(options, "binary.Float4_byval", false, false,
-					OUTPUT_PARAM_TYPE_BOOL, &found);
-	if (DatumGetBool(val) != server_float4_byval())
+	if (data->client_binary_float4byval_set
+			&& data->client_binary_float4byval != server_float4_byval())
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian float4byval mismatch");
 		return false;
+	}
 
-	val = get_param(options, "binary.Float8_byval", false, false,
-					OUTPUT_PARAM_TYPE_BOOL, &found);
-	if (DatumGetBool(val) != server_float8_byval())
+	if (data->client_binary_float8byval_set
+			&& data->client_binary_float8byval != server_float8_byval())
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian float8byval mismatch");
 		return false;
+	}
 
-	val = get_param(options, "binary.Integer_datetimes", false, false,
-					OUTPUT_PARAM_TYPE_BOOL, &found);
-	if (DatumGetBool(val) != server_integer_datetimes())
+	if (data->client_binary_intdatetimes_set
+			&& data->client_binary_intdatetimes != server_integer_datetimes())
+	{
+		elog(DEBUG1, "Binary mode rejected: Server and client endian integer datetimes mismatch");
 		return false;
+	}
 
 	return true;
 }
@@ -187,82 +183,45 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	 */
 	if (!is_init)
 	{
-		bool	found;
-		Datum	val;
 		bool	requirenodeid = false;
-
-		/* Check protocol version before anything else */
-		val = get_param(ctx->output_plugin_options, "Max_proto_version", false, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_max_proto_version = DatumGetUInt32(val);
-
-		if (data->client_max_proto_version < 1)
-		    ereport(ERROR,
-			    (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			     errmsg("client sent Max_proto_version=%d but we only support protocol 1",
-				 data->client_max_proto_version)));
-
-		val = get_param(ctx->output_plugin_options, "Min_proto_version", false, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_min_proto_version = DatumGetUInt32(val);
-
-		if (data->client_min_proto_version > 1)
-		    ereport(ERROR,
-			    (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			     errmsg("client sent Min_proto_version=%d but we only support protocol 1",
-				 data->client_min_proto_version)));
+		int		params_format;
 
 		/* Now parse the rest of the params and ERROR if we see any we don't recognise */
+		params_format = process_parameters(ctx->output_plugin_options, data);
 
+		/* TODO: delay until after sending startup reply */
+		if (params_format != 1)
+			ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("client sent startup parameters in format %d but we only support format 1",
+					params_format)));
 
-		/* check for encoding match */
-		val = get_param(ctx->output_plugin_options, "Expected_encoding", false,
-						false, OUTPUT_PARAM_TYPE_STRING, &found);
-		data->client_expected_encoding = DatumGetCString(val);
-		if (strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
-			elog(ERROR, "only \"%s\" encoding is supported by this server",
-				 GetDatabaseEncodingName());
+		/* TODO: Should delay our ERROR until sending startup reply */
+		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
+			ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
+					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
 
-		/*
-		 * Check PostgreSQL version, this can be omitted to support clients
-		 * other than PostgreSQL.
-		 *
-		 * Must not be used for binary format compatibility tests, this is
-		 * informational only.
-		 */
-		val = get_param(ctx->output_plugin_options, "pg_version", true, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_pg_version = found ? DatumGetUInt32(val) : 0;
+		/* TODO: Should delay our ERROR until sending startup reply */
+		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
+			ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
+				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
-		/*
-		 * Check to see if the client asked for changeset forwarding
-		 *
-		 * Note that we cannot support this on 9.4. We'll tell the client
-		 * in the startup reply message.
-		 */
-		val = get_param(ctx->output_plugin_options, "Forward_changesets", true,
-						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-
-		data->forward_changesets = found ? DatumGetBool(val) : false;
-
-		/* check if we want to use binary data representation */
-		val = get_param(ctx->output_plugin_options, "binary.want_binary_basetypes", true,
-						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-		data->client_want_binary_basetypes = found ? DatumGetBool(val) : false;
-
-		/* check if we want to use sendrecv data representation */
-		val = get_param(ctx->output_plugin_options, "binary.want_sendrecv_basetypes", true,
-						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-		data->client_want_sendrecv_basetypes = found ? DatumGetBool(val) : false;
-
-		val = get_param(ctx->output_plugin_options, "binary.Basetypes_major_version", true, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_binary_basetypes_major_version = found ? DatumGetUInt32(val) : 0;
+		/* check for encoding match if specific encoding demanded by client */
+		if (strlen(data->client_expected_encoding) != 0
+				&& strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
+		{
+			elog(ERROR, "only \"%s\" encoding is supported by this server, client requested %s",
+				 GetDatabaseEncodingName(), data->client_expected_encoding);
+		}
 
 		if (data->client_want_binary_basetypes)
 		{
 			data->allow_binary_protocol =
-				check_binary_compatibility(ctx->output_plugin_options, data);
+				check_binary_compatibility(data);
 		}
 
 		if (data->client_want_sendrecv_basetypes &&
@@ -272,17 +231,10 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		}
 
 		/* Hooks */
-		val = get_param(ctx->output_plugin_options,
-						"Hooks.Table_change_filter", true, false,
-						OUTPUT_PARAM_TYPE_QUALIFIED_NAME, &found);
-
-		if (found)
+		if (data->table_change_filter != NULL)
 		{
-			List   *funcname = (List *) PointerGetDatum(val);
-
-			data->table_change_filter = funcname;
 			/* Validate the function but don't store the Oid */
-			(void) get_table_filter_function_id(funcname, true);
+			(void) get_table_filter_function_id(data->table_change_filter, true);
 
 			/* We need to properly invalidate the hooks */
 			CacheRegisterSyscacheCallback(PROCOID, hook_cache_callback, PointerGetDatum(data));
@@ -291,12 +243,10 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			requirenodeid = true;
 		}
 
-		/* Node id */
-		val = get_param(ctx->output_plugin_options, "node_id", !requirenodeid,
-						false, OUTPUT_PARAM_TYPE_STRING, &found);
-
-		if (found)
-			data->node_id = DatumGetCString(val);
+		if (requirenodeid && data->node_id == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("node_id param must be specified if hook Hooks.Table_change_filter is specified")));
 	}
 }
 
@@ -569,99 +519,6 @@ get_table_filter_function_id(List *funcname, bool validate)
 	return funcid;
 }
 
-/*
- * Param parsing
- *
- * This is not exactly fast but since it's only called on replication start
- * we'll leave it for now.
- */
-static Datum
-get_param(List *options, const char *name, bool missing_ok, bool null_ok,
-		  PGLogicalOutputParamType type, bool *found)
-{
-	ListCell	   *option;
-
-	*found = false;
-
-	foreach(option, options)
-	{
-		DefElem    *elem = lfirst(option);
-
-		Assert(elem->arg == NULL || IsA(elem->arg, String));
-
-		/* Search until matching parameter found */
-		if (pg_strcasecmp(name, elem->defname))
-			continue;
-
-		/* Check for NULL value */
-		if (elem->arg == NULL || strVal(elem->arg) == NULL)
-		{
-			if (null_ok)
-				return (Datum) 0;
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("parameter \"%s\" cannot be NULL", name)));
-		}
-
-		*found = true;
-
-		switch (type)
-		{
-			case OUTPUT_PARAM_TYPE_UINT32:
-				return UInt32GetDatum(parse_param_uint32(elem));
-			case OUTPUT_PARAM_TYPE_BOOL:
-				return BoolGetDatum(parse_param_bool(elem));
-			case OUTPUT_PARAM_TYPE_STRING:
-				return PointerGetDatum(pstrdup(strVal(elem->arg)));
-			case OUTPUT_PARAM_TYPE_QUALIFIED_NAME:
-				return PointerGetDatum(textToQualifiedNameList(cstring_to_text(pstrdup(strVal(elem->arg)))));
-			default:
-				elog(ERROR, "unknown parameter type %d", type);
-		}
-	}
-
-	if (!missing_ok)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("missing required parameter \"%s\"", name)));
-
-	return (Datum) 0;
-}
-
-static bool
-parse_param_bool(DefElem *elem)
-{
-	bool		res;
-
-	if (!parse_bool(strVal(elem->arg), &res))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not parse boolean value \"%s\" for parameter \"%s\": %m",
-						strVal(elem->arg), elem->defname)));
-
-	return res;
-}
-
-static uint32
-parse_param_uint32(DefElem *elem)
-{
-	int64		res;
-
-	if (!scanint8(strVal(elem->arg), true, &res))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not parse integer value \"%s\" for parameter \"%s\": %m",
-						strVal(elem->arg), elem->defname)));
-
-	if (res > PG_UINT32_MAX || res < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("value \"%s\" out of range for parameter \"%s\": %m",
-						strVal(elem->arg), elem->defname)));
-
-	return (uint32) res;
-}
 
 
 static bool

@@ -18,22 +18,6 @@ fmgr calls are used for operators and all sorts of things, so it's not like
 they're especially slow. The SPI isn't needed, we can DirectFunctionCall
 the filter procs.
 
-## Case for support-optional vs support-required parameters
-
-Upward compatibility. We need the downstream client to have a way to tell the
-upstream server "this is important, and if you don't know what I'm talking
-about you need to be honest about it, don't just nod and smile and pretend you
-understand me then ignore me." We also need the same in the other direction,
-so we can add new messages, options, etc that might break BC with old clients
-cleanly and without fearing data corruption.
-
-Remember how old clients would mangle data when `bytea_output` was changed to
-`hex`? That's why we have this.
-
-It's done by a simple rule of upper-case vs lower-case first letter because
-that seems good enough. There are few other choices when working with
-a key/value parameter structure.
-
 ## The startup reply message
 
 The protocol design choices available to `pg_logical` are constrained by being
@@ -55,4 +39,27 @@ disconnect and try again with different parameters.
 That's what the startup message is for. It reports the plugin's capabilities
 and tells the client which requested options were honoured. This gives the
 client a chance to decide if it's happy with the output plugin's decision
-or if it wants to reconnect and try again with different options.
+or if it wants to reconnect and try again with different options. Iterative
+negotiation, effectively.
+
+## Unrecognised parameters MUST be ignored by client and server
+
+To ensure upward and downward compatibility, the output plugin must ignore
+parameters set by the client if it doesn't recognise them, and the client
+must ignore parameters it doesn't recognise in the server's startup reply
+message.
+
+This ensures that older clients can talk to newer servers and vice versa.
+
+For this to work, the server must never enable new functionality such as
+protocol message types, row formats, etc without the client explicitly
+specifying via a startup parameter that it understands the new functionality.
+Everything must be negotiated.
+
+Similarly, a newer client talking to an older server may ask the server to
+enable functionality, but it can't assume the server will actually honour that
+request. It must check the server's startup reply message to see if the server
+confirmed that it enabled the requested functionality. It might choose to
+disconnect and report an error to the user if the server didn't do what it
+asked. This can be important, e.g. when a security-significant hook is
+specified.

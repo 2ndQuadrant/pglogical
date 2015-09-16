@@ -32,7 +32,13 @@ typedef struct
 	bool	allow_sendrecv_protocol;
 	bool	forward_changesets;
 
-	/* client info */
+	/*
+	 * client info
+	 *
+	 * TODO: Lots of this should move to a separate
+	 * shorter-lived struct used only during parameter
+	 * reading.
+	 */
 	uint32	client_pg_version;
 	uint32	client_max_proto_version;
 	uint32	client_min_proto_version;
@@ -40,6 +46,20 @@ typedef struct
 	uint32  client_binary_basetypes_major_version;
 	bool	client_want_binary_basetypes;
 	bool	client_want_sendrecv_basetypes;
+	bool	client_binary_bigendian_set;
+	bool	client_binary_bigendian;
+	bool	client_binary_sizeofdatum_set;
+	bool	client_binary_sizeofdatum;
+	bool	client_binary_sizeofint_set;
+	bool	client_binary_sizeofint;
+	bool	client_binary_sizeoflong_set;
+	bool	client_binary_sizeoflong;
+	bool	client_binary_float4byval_set;
+	bool	client_binary_float4byval;
+	bool	client_binary_float8byval_set;
+	bool	client_binary_float8byval;
+	bool	client_binary_intdatetimes_set;
+	bool	client_binary_intdatetimes;
 
 	/* hooks */
 	const char *node_id;				/* hooks need to identify this node somehow */
@@ -55,5 +75,7 @@ typedef struct PGLogicalTupleData
 	bool	changed[MaxTupleAttributeNumber];
 } PGLogicalTupleData;
 
+extern int
+process_parameters(List *options, PGLogicalOutputData *data);
 
 #endif /* PG_LOGICAL_OUTPUT_H */

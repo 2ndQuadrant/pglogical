@@ -35,7 +35,7 @@ class FilterTest(PGLogicalOutputTest):
         cur.execute("INSERT INTO test_changes_filter(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'bazbar'))
         self.conn.commit()
 
-        messages = self.get_changes({'Hooks.Table_change_filter': 'public.test_filter', 'node_id': 'foo'})
+        messages = self.get_changes({'hooks.table_change_filter': 'public.test_filter', 'node_id': 'foo'})
 
         # two inserts into test_changes, the test_changes_filter insert is filtered out
         m = messages.next()
@@ -61,9 +61,9 @@ class FilterTest(PGLogicalOutputTest):
 
     def test_validation(self):
         with self.assertRaises(Exception):
-            self.get_changes({'Hooks.Table_change_filter': 'public.test_filter'}).next()
+            self.get_changes({'hooks.table_change_filter': 'public.test_filter'}).next()
         with self.assertRaises(Exception):
-            self.get_changes({'Hooks.Table_change_filter': 'public.foobar'}).next()
+            self.get_changes({'hooks.table_change_filter': 'public.foobar'}).next()
 
 
 if __name__ == '__main__':
