@@ -61,4 +61,7 @@ extern void pglogical_report_conflict(PGLogicalConflictType conflict_type, Relat
 						  HeapTuple applytuple,
 						  PGLogicalConflictResolution resolution);
 
+extern bool pglogical_conflict_resolver_check_hook(int *newval, void **extra,
+									   GucSource source);
+
 #endif /* PG_LOGICAL_CONGLICT_H */

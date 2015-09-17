@@ -40,7 +40,7 @@
 #include "pg_logical_proto.h"
 #include "pg_logical_conflict.h"
 
-int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_LAST_UPDATE_WINS;
+int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_ERROR;
 
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
@@ -482,3 +482,20 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 			break;
 	}
 }
+
+/* Checks validity of pglogical_conflict_resolver GUC */
+bool
+pglogical_conflict_resolver_check_hook(int *newval, void **extra,
+									   GucSource source)
+{
+	if (!track_commit_timestamp &&
+		((*newval) == PGLOGICAL_RESOLVE_LAST_UPDATE_WINS ||
+		(*newval) == PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS))
+	{
+		GUC_check_errdetail("track_commit_timestamp is off");
+		return false;
+	}
+
+	return true;
+}
+

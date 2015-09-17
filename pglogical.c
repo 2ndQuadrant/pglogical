@@ -156,8 +156,6 @@ pglogical_init(Datum main_arg)
 	proc_exit(0);
 }
 
-
-
 /*
  * Entry point for this module.
  */
@@ -170,10 +168,11 @@ _PG_init(void)
 							 gettext_noop("Sets method used for conflict resolution for resolvable conflicts."),
 							 NULL,
 							 &pglogical_conflict_resolver,
-							 PGLOGICAL_RESOLVE_LAST_UPDATE_WINS,
+							 PGLOGICAL_RESOLVE_ERROR,
 							 PGLogicalConflictResolvers,
 							 PGC_SUSET, 0,
-							 NULL, NULL, NULL);
+							 pglogical_conflict_resolver_check_hook,
+							 NULL, NULL);
 
 	if (IsBinaryUpgrade)
 		return;
