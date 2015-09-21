@@ -14,6 +14,8 @@
 
 #include "pg_logical_output.h"
 
+#include "catalog/namespace.h"
+
 #include "utils/builtins.h"
 #include "utils/int8.h"
 #include "utils/inval.h"
@@ -38,6 +40,8 @@ static Datum get_param(List *options, const char *name, bool missing_ok,
 					   bool *found);
 static bool parse_param_bool(DefElem *elem);
 static uint32 parse_param_uint32(DefElem *elem);
+
+static HookFuncName* qname_to_hookfunc(List *qname);
 
 int
 process_parameters(List *options, PGLogicalOutputData *data)
@@ -150,7 +154,14 @@ process_parameters(List *options, PGLogicalOutputData *data)
 						"hooks.table_change_filter", true, false,
 						OUTPUT_PARAM_TYPE_QUALIFIED_NAME, &found);
 
-		data->table_change_filter = found ? (List *) PointerGetDatum(val) : NULL;
+		if (found)
+		{
+			List *qname = (List*) PointerGetDatum(val);
+			data->table_change_filter = qname_to_hookfunc(qname);
+			list_free_deep(qname);
+		}
+		else
+			data->table_change_filter = NULL;
 
 		/* Node id */
 		val = get_param(options, "node_id", true,
@@ -255,4 +266,40 @@ parse_param_uint32(DefElem *elem)
 						strVal(elem->arg), elem->defname)));
 
 	return (uint32) res;
+}
+
+/*
+ * Turn a qualified name into a HookFuncName, ensuring padding
+ * is zeroed and that the function is fully schema-qualified.
+ *
+ * Doesn't ensure the function exists.
+ */
+static HookFuncName*
+qname_to_hookfunc(List *qname)
+{
+	char		   *schemaname,
+				   *funcname;
+	HookFuncName   *hookfunc;
+
+	if (qname == NULL)
+		return NULL;
+
+	DeconstructQualifiedName(qname, &schemaname, &funcname);
+
+	if (schemaname == NULL)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("Hook function names must be fully schema qualified"),
+				 errdetail("hooks.table_change_filter was not schema-qualified")));
+	}
+
+	Assert(strlen(schemaname) != 0);
+
+	hookfunc = palloc0(sizeof(HookFuncName));
+
+	strcpy(hookfunc->schema, schemaname);
+	strcpy(hookfunc->function, funcname);
+
+	return hookfunc;
 }

@@ -16,6 +16,7 @@
 #include "pg_logical_output.h"
 #include "pg_logical_proto.h"
 
+#include "access/hash.h"
 #include "access/sysattr.h"
 
 #include "catalog/pg_class.h"
@@ -35,6 +36,7 @@
 #endif
 
 #include "utils/builtins.h"
+#include "utils/catcache.h"
 #include "utils/int8.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -66,7 +68,7 @@ static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 #endif
 
 /* hooks */
-static Oid get_table_filter_function_id(List *funcname, bool validate);
+static Oid get_table_filter_function_id(HookFuncName *funcname, bool validate);
 static void hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue);
 static inline bool pg_decode_change_filter(PGLogicalOutputData *data,
 						Relation rel,
@@ -76,6 +78,19 @@ static bool server_float4_byval(void);
 static bool server_float8_byval(void);
 static bool server_integer_datetimes(void);
 static bool server_bigendian(void);
+
+typedef struct HookCacheEntry {
+	HookFuncName	name;	/* schema-qualified name of hook function. Hash key. */
+	Oid				funcoid; /* oid in pg_proc of function */
+} HookCacheEntry;
+
+/*
+ * Per issue #2, we need a hash table that invalidation callbacks can
+ * access because they survive past the logical decoding context and
+ * therefore past our local PGLogicalOutputData's lifetime.
+ */
+static HTAB *HookCache = NULL;
+
 
 /* specify output plugin callbacks */
 void
@@ -91,6 +106,33 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
 #endif
 	cb->shutdown_cb = NULL;
+}
+
+static void
+init_hook_cache(void)
+{
+	HASHCTL	ctl;
+
+	if (HookCache != NULL)
+		return;
+
+	/* Make sure we've initialized CacheMemoryContext. */
+	if (CacheMemoryContext == NULL)
+		CreateCacheMemoryContext();
+
+	MemSet(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(HookFuncName);
+	ctl.entrysize = sizeof(HookCacheEntry);
+	/* safe to allocate to CacheMemoryContext since it's never reset */
+	ctl.hcxt = CacheMemoryContext;
+
+	HookCache = hash_create("pg_logical hook cache", 32, &ctl,
+							 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	Assert(HookCache != NULL);
+
+	/* Watch for invalidation events. */
+	CacheRegisterSyscacheCallback(PROCOID, hook_cache_callback, (Datum)0);
 }
 
 static bool
@@ -156,9 +198,8 @@ static void
 pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				  bool is_init)
 {
-	PGLogicalOutputData  *data;
+	PGLogicalOutputData  *data = palloc0(sizeof(PGLogicalOutputData));
 
-	data = palloc0(sizeof(PGLogicalOutputData));
 	data->context = AllocSetContextCreate(TopMemoryContext,
 										  "pg_logical conversion context",
 										  ALLOCSET_DEFAULT_MINSIZE,
@@ -175,6 +216,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	 * output of individual fields.
 	 */
 	opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
+
+	init_hook_cache();
 
 	/*
 	 * This is replication start and not slot initialization.
@@ -233,11 +276,15 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		/* Hooks */
 		if (data->table_change_filter != NULL)
 		{
-			/* Validate the function but don't store the Oid */
+			/*
+			 * Validate the function but don't store the FmgrInfo
+			 *
+			 * The function might not be valid once we
+			 * catalog-timetravel to the point we start replaying the
+			 * slot at, and the relcache is going to get invalidated
+			 * anyway. So we need to look it up on first use.
+			 */
 			(void) get_table_filter_function_id(data->table_change_filter, true);
-
-			/* We need to properly invalidate the hooks */
-			CacheRegisterSyscacheCallback(PROCOID, hook_cache_callback, PointerGetDatum(data));
 
 			/* Node id is required parameter if there is hook which needs it */
 			requirenodeid = true;
@@ -384,7 +431,7 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 #endif
 
 /*
- * Decide if the invidual change should be filtered out.
+ * Decide if the individual change should be filtered out.
  */
 static inline bool
 pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
@@ -395,8 +442,14 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 	{
 		Datum	res;
 		char	change_type;
+		HookCacheEntry *hook;
 
-		if (!OidIsValid(data->table_change_filter_oid))
+		/* Find cached function info */
+		hook = (HookCacheEntry*) hash_search(HookCache,
+											 (void *) data->table_change_filter,
+											 HASH_FIND, NULL);
+
+		if (hook == NULL)
 		{
 			Oid		funcoid =
 				get_table_filter_function_id(data->table_change_filter, false);
@@ -404,16 +457,24 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 			/*
 			 * Not found, this can be historical snapshot and we can't do
 			 * validation one way or the other so we act as if the hook
-			 * was not provided.
+			 * was not provided. We know the hook exists in up-to-date
+			 * snapshots since we found it during init, it just doesn't
+			 * exist in this timetraveled snapshot yet. We'll keep
+			 * looking until we find it.
 			 */
 			if (!OidIsValid(funcoid))
 				return false;
 
 			/* Update the cache and continue */
-			data->table_change_filter_oid = funcoid;
-			data->table_change_filter_hash =
-				GetSysCacheHashValue1(PROCOID, funcoid);
+			hook = (HookCacheEntry*) hash_search(HookCache,
+												 (void *) data->table_change_filter,
+											     HASH_ENTER, NULL);
+
+			hook->funcoid = funcoid;
 		}
+
+		Assert(hook != NULL);
+		Assert(OidIsValid(hook->funcoid));
 
 		switch (change)
 		{
@@ -431,7 +492,7 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 				change_type = '0';	/* silence compiler */
 		}
 
-		res = OidFunctionCall3(data->table_change_filter_oid,
+		res = OidFunctionCall3(hook->funcoid,
 							   CStringGetTextDatum(data->node_id),
 							   ObjectIdGetDatum(RelationGetRelid(rel)),
 							   CharGetDatum(change_type));
@@ -444,20 +505,31 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 }
 
 /*
- * Hook oid cache invalidation.
+ * Hook oid cache invalidation, for when a hook function
+ * gets replaced.
+ *
+ * Currently we flush everything, even if the hashvalue is
+ * nonzero so only one entry is being invalidated. Hook
+ * function lookups are cheap enough and pg_proc isn't
+ * going to be constantly churning.
  */
 static void
 hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
 {
-	PGLogicalOutputData *data;
+	HASH_SEQ_STATUS status;
+	HookCacheEntry *hentry;
 
 	Assert(cacheid == PROCOID);
 
-	data = (PGLogicalOutputData *) DatumGetPointer(arg);
+	hash_seq_init(&status, HookCache);
 
-	if (hashvalue == data->table_change_filter_hash &&
-		OidIsValid(data->table_change_filter_oid))
-		data->table_change_filter_oid = InvalidOid;
+	while ((hentry = (HookCacheEntry*) hash_seq_search(&status)) != NULL)
+	{
+		if (hash_search(HookCache,
+						(void *) &hentry->name,
+						HASH_REMOVE, NULL) == NULL)
+			elog(ERROR, "pglogical HookCacheEntry hash table corrupted");
+	}
 }
 
 /*
@@ -470,17 +542,25 @@ hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
  * TODO check ACL
  */
 static Oid
-get_table_filter_function_id(List *funcname, bool validate)
+get_table_filter_function_id(HookFuncName *funcname, bool validate)
 {
 	Oid			funcid;
 	Oid			funcargtypes[3];
+	List		*key;
 
 	funcargtypes[0] = TEXTOID;	/* identifier of this node */
 	funcargtypes[1] = OIDOID;	/* relation */
 	funcargtypes[2] = CHAROID;	/* change type */
 
+	/*
+	 * We require that filter function names be schema-qualified
+	 * so this is always a 2-list. No catalog name is permitted.
+	 */
+	key = list_make2(makeString(funcname->schema),
+					 makeString(funcname->function));
+
 	/* find the the function */
-	funcid = LookupFuncName(funcname, 3, funcargtypes, !validate);
+	funcid = LookupFuncName(key, 3, funcargtypes, !validate);
 
 	if (!OidIsValid(funcid))
 	{
@@ -488,7 +568,7 @@ get_table_filter_function_id(List *funcname, bool validate)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
 					 errmsg("function %s not found",
-							NameListToString(funcname))));
+							NameListToString(key))));
 		else
 			return InvalidOid;
 	}
@@ -500,7 +580,7 @@ get_table_filter_function_id(List *funcname, bool validate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("function %s must return type \"boolean\"",
-							NameListToString(funcname))));
+							NameListToString(key))));
 		else
 			return InvalidOid;
 	}
@@ -511,10 +591,12 @@ get_table_filter_function_id(List *funcname, bool validate)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("function %s must not be VOLATILE",
-							NameListToString(funcname))));
+							NameListToString(key))));
 		else
 			return InvalidOid;
 	}
+
+	list_free(key);
 
 	return funcid;
 }

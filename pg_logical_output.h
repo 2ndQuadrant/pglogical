@@ -23,6 +23,20 @@
 #define PG_LOGICAL_PROTO_VERSION_NUM 1
 #define PG_LOGICAL_PROTO_MIN_VERSION_NUM 1
 
+/*
+ * The name of a hook function. This is used instead of the usual List*
+ * because can serve as a hash key.
+ *
+ * Must be zeroed on allocation if used as a hash key since padding is
+ * *not* ignored on compare.
+ */
+typedef struct HookFuncName
+{
+	/* funcname is more likely to be unique, so goes first */
+	char    function[NAMEDATALEN];
+	char    schema[NAMEDATALEN];
+} HookFuncName;
+
 typedef struct
 {
 	MemoryContext context;
@@ -62,10 +76,8 @@ typedef struct
 	bool	client_binary_intdatetimes;
 
 	/* hooks */
-	const char *node_id;				/* hooks need to identify this node somehow */
-	List   *table_change_filter;		/* name of the hook function */
-	Oid		table_change_filter_oid;	/* cached oid of the hook function */
-	uint32	table_change_filter_hash;	/* hash of the oid from the syscache */
+	HookFuncName	*table_change_filter;	/* Table filter hook function, if any */
+	const char	*node_id;		/* hooks need to identify this node somehow */
 } PGLogicalOutputData;
 
 typedef struct PGLogicalTupleData
