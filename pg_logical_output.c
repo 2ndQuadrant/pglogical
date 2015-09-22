@@ -115,6 +115,7 @@ static void
 init_hook_cache(void)
 {
 	HASHCTL	ctl;
+	int hash_flags = HASH_ELEM | HASH_CONTEXT;
 
 	if (HookCache != NULL)
 		return;
@@ -129,8 +130,13 @@ init_hook_cache(void)
 	/* safe to allocate to CacheMemoryContext since it's never reset */
 	ctl.hcxt = CacheMemoryContext;
 
-	HookCache = hash_create("pg_logical hook cache", 32, &ctl,
-							 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+#if PG_VERSION_NUM/100 == 904
+	ctl.hash = tag_hash;
+	hash_flags |= HASH_FUNCTION;
+#else
+	hash_flags |= HASH_BLOBS;
+#endif
+	HookCache = hash_create("pg_logical hook cache", 32, &ctl, hash_flags);
 
 	Assert(HookCache != NULL);
 

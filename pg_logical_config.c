@@ -13,6 +13,7 @@
 #include "postgres.h"
 
 #include "pg_logical_output.h"
+#include "pg_logical_compat.h"
 
 #include "catalog/namespace.h"
 
