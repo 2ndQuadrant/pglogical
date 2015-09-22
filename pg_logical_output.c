@@ -82,6 +82,7 @@ static bool server_bigendian(void);
 typedef struct HookCacheEntry {
 	HookFuncName	name;	/* schema-qualified name of hook function. Hash key. */
 	Oid				funcoid; /* oid in pg_proc of function */
+	FmgrInfo		flinfo;  /* fmgrinfo for direct calls to the function */
 } HookCacheEntry;
 
 /*
@@ -90,6 +91,8 @@ typedef struct HookCacheEntry {
  * therefore past our local PGLogicalOutputData's lifetime.
  */
 static HTAB *HookCache = NULL;
+
+static MemoryContext HookCacheMemoryContext;
 
 
 /* specify output plugin callbacks */
@@ -130,6 +133,16 @@ init_hook_cache(void)
 							 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 
 	Assert(HookCache != NULL);
+
+	/*
+	 * The hook cache allocation set contains the FmgrInfo entries. It does
+	 * *not* contain the hash its self, which must survive cache invalidations.
+	 */
+	HookCacheMemoryContext = AllocSetContextCreate(CacheMemoryContext,
+												   "pglogical output hook cache",
+												   ALLOCSET_DEFAULT_MINSIZE,
+												   ALLOCSET_DEFAULT_INITSIZE,
+												   ALLOCSET_DEFAULT_MAXSIZE);
 
 	/* Watch for invalidation events. */
 	CacheRegisterSyscacheCallback(PROCOID, hook_cache_callback, (Datum)0);
@@ -471,6 +484,20 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 											     HASH_ENTER, NULL);
 
 			hook->funcoid = funcoid;
+
+			/*
+			 * Prepare a FmgrInfo to cache so we can call the function
+			 * more efficiently, avoiding the need to OidFunctionCall3
+			 * each time.
+			 *
+			 * Must be allocated in the cache context so that it doesn't
+			 * get purged before the cache entry containing the struct
+			 * its self.
+			 *
+			 * We create a sub-context under CacheMemoryContext so that
+			 * we can flush that context when we get a cache invalidation.
+			 */
+			fmgr_info_cxt(funcoid, &hook->flinfo, HookCacheMemoryContext);
 		}
 
 		Assert(hook != NULL);
@@ -492,10 +519,10 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 				change_type = '0';	/* silence compiler */
 		}
 
-		res = OidFunctionCall3(hook->funcoid,
-							   CStringGetTextDatum(data->node_id),
-							   ObjectIdGetDatum(RelationGetRelid(rel)),
-							   CharGetDatum(change_type));
+		res = FunctionCall3(&hook->flinfo,
+							CStringGetTextDatum(data->node_id),
+							ObjectIdGetDatum(RelationGetRelid(rel)),
+							CharGetDatum(change_type));
 
 		return DatumGetBool(res);
 	}
@@ -523,6 +550,10 @@ hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
 
 	hash_seq_init(&status, HookCache);
 
+	/*
+	 * Remove every entry from the hash. This won't free heap-allocated memory
+	 * in the cache entries, such as the FmgrInfo entries.
+	 */
 	while ((hentry = (HookCacheEntry*) hash_seq_search(&status)) != NULL)
 	{
 		if (hash_search(HookCache,
@@ -530,6 +561,16 @@ hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
 						HASH_REMOVE, NULL) == NULL)
 			elog(ERROR, "pglogical HookCacheEntry hash table corrupted");
 	}
+
+	/*
+	 * The cache hash is now flushed and we no longer have references to
+	 * the FmgrInfo entries. We can flush the memory context that contains
+	 * them.
+	 *
+	 * There's no function to free a FmgrInfo's individual parts so we have
+	 * to reset the context.
+	 */
+	MemoryContextReset(HookCacheMemoryContext);
 }
 
 /*
