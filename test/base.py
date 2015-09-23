@@ -29,7 +29,10 @@ class PGLogicalOutputTest(unittest.TestCase):
 
         self.conn.rollback()
         cur = self.conn.cursor()
-        cur.execute("SELECT * FROM pg_drop_replication_slot(%s)", (SLOT_NAME,))
+        try:
+            cur.execute("SELECT * FROM pg_drop_replication_slot(%s)", (SLOT_NAME,))
+        except psycopg2.ProgrammingError, ex:
+            print "Warning: attempted to DROP slot %s failed with %s" % (SLOT_NAME, ex)
         cur.close()
         self.conn.commit()
 
