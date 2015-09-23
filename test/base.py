@@ -12,6 +12,10 @@ class PGLogicalOutputTest(unittest.TestCase):
     def setUp(self):
         self.conn = psycopg2.connect("dbname=postgres host=localhost")
         cur = self.conn.cursor()
+        cur.execute("SELECT 1 FROM pg_replication_slots WHERE slot_name = %s", (SLOT_NAME,))
+        if cur.rowcount == 1:
+            cur.execute("SELECT * FROM pg_drop_replication_slot(%s)", (SLOT_NAME,))
+            print "Cleaned up abandoned slot from prior aborted test run"
         cur.execute("SELECT * FROM pg_create_logical_replication_slot(%s, 'pg_logical_output')", (SLOT_NAME,))
         cur.close()
         self.conn.commit()
