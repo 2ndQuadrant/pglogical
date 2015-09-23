@@ -45,6 +45,7 @@ typedef struct
 	bool	allow_binary_protocol;
 	bool	allow_sendrecv_protocol;
 	bool	forward_changesets;
+	bool	forward_changeset_origins;
 
 	/*
 	 * client info
@@ -58,22 +59,23 @@ typedef struct
 	uint32	client_min_proto_version;
 	const char *client_expected_encoding;
 	uint32  client_binary_basetypes_major_version;
+	bool	client_want_binary_basetypes_set;
 	bool	client_want_binary_basetypes;
+	bool	client_want_sendrecv_basetypes_set;
 	bool	client_want_sendrecv_basetypes;
 	bool	client_binary_bigendian_set;
 	bool	client_binary_bigendian;
-	bool	client_binary_sizeofdatum_set;
-	bool	client_binary_sizeofdatum;
-	bool	client_binary_sizeofint_set;
-	bool	client_binary_sizeofint;
-	bool	client_binary_sizeoflong_set;
-	bool	client_binary_sizeoflong;
+	uint32	client_binary_sizeofdatum;
+	uint32	client_binary_sizeofint;
+	uint32	client_binary_sizeoflong;
 	bool	client_binary_float4byval_set;
 	bool	client_binary_float4byval;
 	bool	client_binary_float8byval_set;
 	bool	client_binary_float8byval;
 	bool	client_binary_intdatetimes_set;
 	bool	client_binary_intdatetimes;
+	bool	client_forward_changesets_set;
+	bool	client_forward_changesets;
 
 	/* hooks */
 	HookFuncName	*table_change_filter;	/* Table filter hook function, if any */

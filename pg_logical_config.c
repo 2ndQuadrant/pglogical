@@ -153,6 +153,7 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_BINARY_BIGENDIAN:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_bigendian_set = true;
 				data->client_binary_bigendian = DatumGetBool(val);
 				break;
 
@@ -173,16 +174,19 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_BINARY_FLOAT4BYVAL:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_float4byval_set = true;
 				data->client_binary_float4byval = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_FLOAT8BYVAL:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_float4byval_set = true;
 				data->client_binary_float4byval = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_INTEGER_DATETIMES:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_intdatetimes_set = true;
 				data->client_binary_intdatetimes = DatumGetBool(val);
 				break;
 
@@ -204,18 +208,21 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				 * in the startup reply message.
 				 */
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
-				data->forward_changesets = DatumGetBool(val);
+				data->client_forward_changesets_set = true;
+				data->client_forward_changesets = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_WANT_BINARY_BASETYPES:
 				/* check if we want to use binary data representation */
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_want_binary_basetypes_set = true;
 				data->client_want_binary_basetypes = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_WANT_SENDRECV_BASETYPES:
 				/* check if we want to use sendrecv data representation */
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_want_sendrecv_basetypes_set = true;
 				data->client_want_sendrecv_basetypes = DatumGetBool(val);
 				break;
 

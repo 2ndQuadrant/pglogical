@@ -161,49 +161,49 @@ check_binary_compatibility(PGLogicalOutputData *data)
 		return false;
 
 	if (data->client_binary_bigendian_set
-			&& data->client_binary_bigendian != server_bigendian())
+		&& data->client_binary_bigendian != server_bigendian())
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian mis-match");
 		return false;
 	}
 
-	if (data->client_binary_sizeofdatum_set
-			&& data->client_binary_sizeofdatum != sizeof(Datum))
+	if (data->client_binary_sizeofdatum != 0
+		&& data->client_binary_sizeofdatum != sizeof(Datum))
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(Datum) mismatch");
 		return false;
 	}
 
-	if (data->client_binary_sizeofint_set
-			&& data->client_binary_sizeofint != sizeof(int))
+	if (data->client_binary_sizeofint != 0
+		&& data->client_binary_sizeofint != sizeof(int))
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(int) mismatch");
 		return false;
 	}
 
-	if (data->client_binary_sizeoflong_set
-			&& data->client_binary_sizeoflong != sizeof(long))
+	if (data->client_binary_sizeoflong != 0
+		&& data->client_binary_sizeoflong != sizeof(long))
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(long) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_float4byval_set
-			&& data->client_binary_float4byval != server_float4_byval())
+		&& data->client_binary_float4byval != server_float4_byval())
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian float4byval mismatch");
 		return false;
 	}
 
 	if (data->client_binary_float8byval_set
-			&& data->client_binary_float8byval != server_float8_byval())
+		&& data->client_binary_float8byval != server_float8_byval())
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian float8byval mismatch");
 		return false;
 	}
 
 	if (data->client_binary_intdatetimes_set
-			&& data->client_binary_intdatetimes != server_integer_datetimes())
+		&& data->client_binary_intdatetimes != server_integer_datetimes())
 	{
 		elog(DEBUG1, "Binary mode rejected: Server and client endian integer datetimes mismatch");
 		return false;
