@@ -36,6 +36,9 @@ typedef enum PGLogicalOutputParamType
 } PGLogicalOutputParamType;
 
 /* param parsing */
+static Datum get_param_value(DefElem *elem, bool null_ok,
+		PGLogicalOutputParamType type);
+
 static Datum get_param(List *options, const char *name, bool missing_ok,
 					   bool null_ok, PGLogicalOutputParamType type,
 					   bool *found);
@@ -44,6 +47,214 @@ static uint32 parse_param_uint32(DefElem *elem);
 
 static HookFuncName* qname_to_hookfunc(List *qname);
 
+static void
+process_parameters_v1(List *options, PGLogicalOutputData *data);
+
+enum {
+	PARAM_UNRECOGNISED,
+	PARAM_MAX_PROTOCOL_VERSION,
+	PARAM_MIN_PROTOCOL_VERSION,
+	PARAM_EXPECTED_ENCODING,
+	PARAM_BINARY_BIGENDIAN,
+	PARAM_BINARY_SIZEOF_DATUM,
+	PARAM_BINARY_SIZEOF_INT,
+	PARAM_BINARY_SIZEOF_LONG,
+	PARAM_BINARY_FLOAT4BYVAL,
+	PARAM_BINARY_FLOAT8BYVAL,
+	PARAM_BINARY_INTEGER_DATETIMES,
+	PARAM_BINARY_WANT_BINARY_BASETYPES,
+	PARAM_BINARY_WANT_SENDRECV_BASETYPES,
+	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
+	PARAM_PG_VERSION,
+	PARAM_FORWARD_CHANGESETS,
+	PARAM_HOOKS_TABLE_CHANGE_FILTER,
+	PARAM_NODE_ID
+} OutputPluginParamKey;
+
+typedef struct {
+	const char * const paramname;
+	int paramkey;
+} OutputPluginParam;
+
+/* Oh, if only C had switch on strings */
+static OutputPluginParam param_lookup[] = {
+	{"max_proto_version", PARAM_MAX_PROTOCOL_VERSION},
+	{"min_proto_version", PARAM_MIN_PROTOCOL_VERSION},
+	{"expected_encoding", PARAM_EXPECTED_ENCODING},
+	{"binary.bigendian", PARAM_BINARY_BIGENDIAN},
+	{"binary.sizeof_datum", PARAM_BINARY_SIZEOF_DATUM},
+	{"binary.sizeof_int", PARAM_BINARY_SIZEOF_INT},
+	{"binary.sizeof_long", PARAM_BINARY_SIZEOF_LONG},
+	{"binary.float4_byval", PARAM_BINARY_FLOAT4BYVAL},
+	{"binary.float8_byval", PARAM_BINARY_FLOAT8BYVAL},
+	{"binary.integer_datetimes", PARAM_BINARY_INTEGER_DATETIMES},
+	{"binary.want_binary_basetypes", PARAM_BINARY_WANT_BINARY_BASETYPES},
+	{"binary.want_sendrecv_basetypes", PARAM_BINARY_WANT_SENDRECV_BASETYPES},
+	{"binary.basetypes_major_version", PARAM_BINARY_BASETYPES_MAJOR_VERSION},
+	{"pg_version", PARAM_PG_VERSION},
+	{"forward_changesets", PARAM_FORWARD_CHANGESETS},
+	{"hooks.table_change_filter", PARAM_HOOKS_TABLE_CHANGE_FILTER},
+	{"node_id", PARAM_NODE_ID},
+	{NULL, PARAM_UNRECOGNISED}
+};
+
+/*
+ * Look up a param name to find the enum value for the
+ * param, or PARAM_UNRECOGNISED if not found.
+ */
+static int
+get_param_key(const char * const param_name)
+{
+	OutputPluginParam *param = &param_lookup[0];
+
+	do {
+		if (strcmp(param->paramname, param_name) == 0)
+			return param->paramkey;
+		param++;
+	} while (param->paramname != NULL);
+
+	return PARAM_UNRECOGNISED;
+}
+
+
+void
+process_parameters_v1(List *options, PGLogicalOutputData *data)
+{
+	Datum		val;
+	bool    	found;
+	ListCell	*lc;
+
+	/*
+	 * max_proto_version and min_proto_version are specified
+	 * as required, and must be parsed before anything else.
+	 *
+	 * TODO: We should still parse them as optional and
+	 * delay the ERROR until after the startup reply.
+	 */
+	val = get_param(options, "max_proto_version", false, false,
+					OUTPUT_PARAM_TYPE_UINT32, &found);
+	data->client_max_proto_version = DatumGetUInt32(val);
+
+	val = get_param(options, "min_proto_version", false, false,
+					OUTPUT_PARAM_TYPE_UINT32, &found);
+	data->client_min_proto_version = DatumGetUInt32(val);
+
+	/* Examine all the other params in the v1 message. */
+	foreach(lc, options)
+	{
+		DefElem    *elem = lfirst(lc);
+
+		Assert(elem->arg == NULL || IsA(elem->arg, String));
+
+		/* Check each param, whether or not we recognise it */
+		switch(get_param_key(elem->defname))
+		{
+			val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
+
+			case PARAM_BINARY_BIGENDIAN:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_bigendian = DatumGetBool(val);
+				break;
+
+			case PARAM_BINARY_SIZEOF_DATUM:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
+				data->client_binary_sizeofdatum = DatumGetUInt32(val);
+				break;
+
+			case PARAM_BINARY_SIZEOF_INT:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
+				data->client_binary_sizeofint = DatumGetUInt32(val);
+				break;
+
+			case PARAM_BINARY_SIZEOF_LONG:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
+				data->client_binary_sizeoflong = DatumGetUInt32(val);
+				break;
+
+			case PARAM_BINARY_FLOAT4BYVAL:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_float4byval = DatumGetBool(val);
+				break;
+
+			case PARAM_BINARY_FLOAT8BYVAL:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_float4byval = DatumGetBool(val);
+				break;
+
+			case PARAM_BINARY_INTEGER_DATETIMES:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_binary_intdatetimes = DatumGetBool(val);
+				break;
+
+			case PARAM_EXPECTED_ENCODING:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
+				data->client_expected_encoding = DatumGetCString(val);
+				break;
+
+			case PARAM_PG_VERSION:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
+				data->client_pg_version = DatumGetUInt32(val);
+				break;
+
+			case PARAM_FORWARD_CHANGESETS:
+				/*
+				 * Check to see if the client asked for changeset forwarding
+				 *
+				 * Note that we cannot support this on 9.4. We'll tell the client
+				 * in the startup reply message.
+				 */
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->forward_changesets = DatumGetBool(val);
+				break;
+
+			case PARAM_BINARY_WANT_BINARY_BASETYPES:
+				/* check if we want to use binary data representation */
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_want_binary_basetypes = DatumGetBool(val);
+				break;
+
+			case PARAM_BINARY_WANT_SENDRECV_BASETYPES:
+				/* check if we want to use sendrecv data representation */
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_want_sendrecv_basetypes = DatumGetBool(val);
+				break;
+
+			case PARAM_BINARY_BASETYPES_MAJOR_VERSION:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
+				data->client_binary_basetypes_major_version = DatumGetUInt32(val);
+				break;
+
+			case PARAM_HOOKS_TABLE_CHANGE_FILTER:
+				{
+					List *qname;
+					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_QUALIFIED_NAME);
+					qname = (List*) PointerGetDatum(val);
+					data->table_change_filter = qname_to_hookfunc(qname);
+					list_free_deep(qname);
+				}
+				break;
+
+			case PARAM_NODE_ID:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
+				data->node_id = DatumGetCString(val);
+				break;
+
+			case PARAM_UNRECOGNISED:
+				ereport(DEBUG1,
+						(errmsg("Unrecognised pg_logical parameter %s ignored", elem->defname)));
+				break;
+		}
+	}
+}
+
+/*
+ * Read parameters sent by client at startup and store recognised
+ * ones in the parameters PGLogicalOutputData.
+ *
+ * The PGLogicalOutputData must have all client-surprised parameter fields
+ * zeroed, such as by memset or palloc0, since values not supplied
+ * by the client are not set.
+ */
 int
 process_parameters(List *options, PGLogicalOutputData *data)
 {
@@ -58,121 +269,39 @@ process_parameters(List *options, PGLogicalOutputData *data)
 
 	if (params_format == 1)
 	{
-		val = get_param(options, "max_proto_version", false, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_max_proto_version = DatumGetUInt32(val);
-
-		val = get_param(options, "min_proto_version", false, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_min_proto_version = DatumGetUInt32(val);
-
-
-		/* now process regular parameters */
-		val = get_param(options, "binary.bigendian", true, false,
-				OUTPUT_PARAM_TYPE_BOOL,
-				&data->client_binary_bigendian_set);
-		if (data->client_binary_bigendian_set)
-			data->client_binary_bigendian = DatumGetBool(val);
-
-		val = get_param(options, "binary.sizeof_datum", true, false,
-				OUTPUT_PARAM_TYPE_UINT32,
-				&data->client_binary_sizeofdatum_set);
-		if (data->client_binary_sizeofdatum_set)
-			data->client_binary_sizeofdatum = DatumGetUInt32(val);
-
-		val = get_param(options, "binary.sizeof_int", true, false,
-				OUTPUT_PARAM_TYPE_UINT32,
-				&data->client_binary_sizeofint_set);
-		if (data->client_binary_sizeofint_set)
-			data->client_binary_sizeofint = DatumGetUInt32(val);
-
-		val = get_param(options, "binary.sizeof_long", true, false,
-				OUTPUT_PARAM_TYPE_UINT32,
-				&data->client_binary_sizeoflong_set);
-		if (data->client_binary_sizeoflong_set)
-			data->client_binary_sizeoflong = DatumGetUInt32(val);
-
-		val = get_param(options, "binary.float4_byval", true, false,
-				OUTPUT_PARAM_TYPE_BOOL,
-				&data->client_binary_float4byval_set);
-		if (data->client_binary_float4byval_set)
-			data->client_binary_float4byval = DatumGetBool(val);
-
-		val = get_param(options, "binary.float8_byval", true, false,
-				OUTPUT_PARAM_TYPE_BOOL,
-				&data->client_binary_float8byval_set);
-		if (data->client_binary_float8byval_set)
-			data->client_binary_float8byval = DatumGetBool(val);
-
-		val = get_param(options, "binary.integer_datetimes", true, false,
-				OUTPUT_PARAM_TYPE_BOOL,
-				&data->client_binary_intdatetimes_set);
-		if (data->client_binary_intdatetimes_set)
-			data->client_binary_intdatetimes = DatumGetBool(val);
-
-		val = get_param(options, "expected_encoding", true,
-				false, OUTPUT_PARAM_TYPE_STRING, &found);
-		data->client_expected_encoding = found ? DatumGetCString(val) : "";
-
-		/*
-		 * Check PostgreSQL version, this can be omitted to support clients
-		 * other than PostgreSQL.
-		 *
-		 * Must not be used for binary format compatibility tests, this is
-		 * informational only.
-		 */
-		val = get_param(options, "pg_version", true, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_pg_version = found ? DatumGetUInt32(val) : 0;
-
-		/*
-		 * Check to see if the client asked for changeset forwarding
-		 *
-		 * Note that we cannot support this on 9.4. We'll tell the client
-		 * in the startup reply message.
-		 */
-		val = get_param(options, "forward_changesets", true,
-						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-
-		data->forward_changesets = found ? DatumGetBool(val) : false;
-
-		/* check if we want to use binary data representation */
-		val = get_param(options, "binary.want_binary_basetypes", true,
-						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-		data->client_want_binary_basetypes = found ? DatumGetBool(val) : false;
-
-		/* check if we want to use sendrecv data representation */
-		val = get_param(options, "binary.want_sendrecv_basetypes", true,
-						false, OUTPUT_PARAM_TYPE_BOOL, &found);
-		data->client_want_sendrecv_basetypes = found ? DatumGetBool(val) : false;
-
-		val = get_param(options, "binary.basetypes_major_version", true, false,
-						OUTPUT_PARAM_TYPE_UINT32, &found);
-		data->client_binary_basetypes_major_version = found ? DatumGetUInt32(val) : 0;
-
-		/* Hooks */
-		val = get_param(options,
-						"hooks.table_change_filter", true, false,
-						OUTPUT_PARAM_TYPE_QUALIFIED_NAME, &found);
-
-		if (found)
-		{
-			List *qname = (List*) PointerGetDatum(val);
-			data->table_change_filter = qname_to_hookfunc(qname);
-			list_free_deep(qname);
-		}
-		else
-			data->table_change_filter = NULL;
-
-		/* Node id */
-		val = get_param(options, "node_id", true,
-						false, OUTPUT_PARAM_TYPE_STRING, &found);
-
-		if (found)
-			data->node_id = found ? DatumGetCString(val) : NULL;
+		process_parameters_v1(options, data);
 	}
 
 	return params_format;
+}
+
+static Datum
+get_param_value(DefElem *elem, bool null_ok, PGLogicalOutputParamType type)
+{
+	/* Check for NULL value */
+	if (elem->arg == NULL || strVal(elem->arg) == NULL)
+	{
+		if (null_ok)
+			return (Datum) 0;
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("parameter \"%s\" cannot be NULL", elem->defname)));
+	}
+
+	switch (type)
+	{
+		case OUTPUT_PARAM_TYPE_UINT32:
+			return UInt32GetDatum(parse_param_uint32(elem));
+		case OUTPUT_PARAM_TYPE_BOOL:
+			return BoolGetDatum(parse_param_bool(elem));
+		case OUTPUT_PARAM_TYPE_STRING:
+			return PointerGetDatum(pstrdup(strVal(elem->arg)));
+		case OUTPUT_PARAM_TYPE_QUALIFIED_NAME:
+			return PointerGetDatum(textToQualifiedNameList(cstring_to_text(pstrdup(strVal(elem->arg)))));
+		default:
+			elog(ERROR, "unknown parameter type %d", type);
+	}
 }
 
 /*
@@ -199,32 +328,9 @@ get_param(List *options, const char *name, bool missing_ok, bool null_ok,
 		if (pg_strcasecmp(name, elem->defname))
 			continue;
 
-		/* Check for NULL value */
-		if (elem->arg == NULL || strVal(elem->arg) == NULL)
-		{
-			if (null_ok)
-				return (Datum) 0;
-			else
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("parameter \"%s\" cannot be NULL", name)));
-		}
-
 		*found = true;
 
-		switch (type)
-		{
-			case OUTPUT_PARAM_TYPE_UINT32:
-				return UInt32GetDatum(parse_param_uint32(elem));
-			case OUTPUT_PARAM_TYPE_BOOL:
-				return BoolGetDatum(parse_param_bool(elem));
-			case OUTPUT_PARAM_TYPE_STRING:
-				return PointerGetDatum(pstrdup(strVal(elem->arg)));
-			case OUTPUT_PARAM_TYPE_QUALIFIED_NAME:
-				return PointerGetDatum(textToQualifiedNameList(cstring_to_text(pstrdup(strVal(elem->arg)))));
-			default:
-				elog(ERROR, "unknown parameter type %d", type);
-		}
+		return get_param_value(elem, null_ok, type);
 	}
 
 	if (!missing_ok)

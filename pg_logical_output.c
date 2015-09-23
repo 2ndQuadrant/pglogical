@@ -273,7 +273,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/* check for encoding match if specific encoding demanded by client */
-		if (strlen(data->client_expected_encoding) != 0
+		if (data->client_expected_encoding != NULL
+				&& strlen(data->client_expected_encoding) != 0
 				&& strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
 		{
 			elog(ERROR, "only \"%s\" encoding is supported by this server, client requested %s",
