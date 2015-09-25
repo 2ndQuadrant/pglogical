@@ -2,10 +2,26 @@ from StringIO import StringIO
 import struct
 import datetime
 
+def readcstr(f):
+    buf = bytearray()
+    while True:
+        b = f.read(1)
+        if b is None:
+            if len(buf) == 0:
+                return None
+            else:
+                raise ValueError("non-terminated string at EOF")
+        elif b is '\0':
+            return str(buf)
+        else:
+            buf.append(b)
+
 class ReplicationMessage(object):
     def __new__(cls, msg):
         msgtype = msg[2][0]
-        if msgtype == "B":
+        if msgtype == "S":
+            cls = StartupMessage
+        elif msgtype == "B":
             cls = BeginMessage
         elif msgtype == "C":
             cls = CommitMessage
@@ -62,6 +78,27 @@ class ChangeMessage(ReplicationMessage):
 
 class TransactionMessage(ReplicationMessage):
     pass
+
+class StartupMessage(ReplicationMessage):
+    @property
+    def message(self):
+        res = {"type": "S"}
+
+        msg = StringIO(self.msg)
+        msg.read(1) # 'S'
+        res['startup_msg_version'] = int(msg.read(1))
+        # Now split the null-terminated k/v strings
+        # and store as a dict, since we don't care about order.
+        params = {}
+        while True:
+            k = readcstr(msg)
+            v = readcstr(msg)
+            if (v is None):
+                raise ValueError("Value for key %s missing, read key as last entry" % k)
+            params[k] = v
+        res['params'] = params
+
+
 
 class BeginMessage(TransactionMessage):
     @property

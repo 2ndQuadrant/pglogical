@@ -37,7 +37,7 @@ typedef struct HookFuncName
 	char    schema[NAMEDATALEN];
 } HookFuncName;
 
-typedef struct
+typedef struct PGLogicalOutputData
 {
 	MemoryContext context;
 
@@ -88,8 +88,5 @@ typedef struct PGLogicalTupleData
 	bool	nulls[MaxTupleAttributeNumber];
 	bool	changed[MaxTupleAttributeNumber];
 } PGLogicalTupleData;
-
-extern int
-process_parameters(List *options, PGLogicalOutputData *data);
 
 #endif /* PG_LOGICAL_OUTPUT_H */

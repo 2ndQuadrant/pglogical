@@ -13,6 +13,7 @@
 #include "postgres.h"
 
 #include "pg_logical_compat.h"
+#include "pg_logical_config.h"
 #include "pg_logical_output.h"
 #include "pg_logical_proto.h"
 
@@ -67,17 +68,15 @@ static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id);
 #endif
 
+static void send_startup_message(LogicalDecodingContext *ctx,
+		PGLogicalOutputData *data, bool last_message);
+
 /* hooks */
 static Oid get_table_filter_function_id(HookFuncName *funcname, bool validate);
 static void hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue);
 static inline bool pg_decode_change_filter(PGLogicalOutputData *data,
 						Relation rel,
 						enum ReorderBufferChangeType change);
-
-static bool server_float4_byval(void);
-static bool server_float8_byval(void);
-static bool server_integer_datetimes(void);
-static bool server_bigendian(void);
 
 typedef struct HookCacheEntry {
 	HookFuncName	name;	/* schema-qualified name of hook function. Hash key. */
@@ -94,6 +93,7 @@ static HTAB *HookCache = NULL;
 
 static MemoryContext HookCacheMemoryContext;
 
+static bool startup_message_sent = false;
 
 /* specify output plugin callbacks */
 void
@@ -248,6 +248,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		bool	requirenodeid = false;
 		int		params_format;
 
+		startup_message_sent = false;
+
 		/* Now parse the rest of the params and ERROR if we see any we don't recognise */
 		params_format = process_parameters(ctx->output_plugin_options, data);
 
@@ -360,6 +362,12 @@ void
 pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
 	bool send_replication_origin = false;
+
+	if (!startup_message_sent)
+		send_startup_message(
+				ctx,
+				(PGLogicalOutputData*)ctx->output_plugin_private,
+				false /* can't be last message */);
 
 #ifdef HAVE_REPLICATION_ORIGINS
 	send_replication_origin = txn->origin_id != InvalidRepOriginId;
@@ -685,44 +693,22 @@ get_table_filter_function_id(HookFuncName *funcname, bool validate)
 	return funcid;
 }
 
-
-
-static bool
-server_float4_byval(void)
+static void
+send_startup_message(LogicalDecodingContext *ctx,
+		PGLogicalOutputData *data, bool last_message)
 {
-#ifdef USE_FLOAT4_BYVAL
-	return true;
-#else
-	return false;
-#endif
-}
+	char *msg;
+	int len;
 
-static bool
-server_float8_byval(void)
-{
-#ifdef USE_FLOAT8_BYVAL
-	return true;
-#else
-	return false;
-#endif
-}
+	Assert(!startup_message_sent);
 
-static bool
-server_integer_datetimes(void)
-{
-#ifdef USE_INTEGER_DATETIMES
-	return true;
-#else
-	return false;
-#endif
-}
+	prepare_startup_message(data, &msg, &len);
 
-static bool
-server_bigendian(void)
-{
-#ifdef WORDS_BIGENDIAN
-	return true;
-#else
-	return false;
-#endif
+	OutputPluginPrepareWrite(ctx, last_message);
+	write_startup_message(ctx->out, msg, len);
+	OutputPluginWrite(ctx, last_message);
+
+	pfree(msg);
+
+	startup_message_sent = true;
 }

@@ -33,6 +33,10 @@ class BasicTest(PGLogicalOutputTest):
 
         messages = self.get_changes()
 
+        # Startup msg
+        m = messages.next()
+        self.assertEqual(m.mesage_type, 'S')
+
         # CREATE TABLE produced empty TX
         m = messages.next()
         self.assertEqual(m.mesage_type, 'B')

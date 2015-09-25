@@ -37,6 +37,9 @@ class FilterTest(PGLogicalOutputTest):
 
         messages = self.get_changes({'hooks.table_change_filter': 'public.test_filter', 'node_id': 'foo'})
 
+        m = messages.next()
+        self.assertEqual(m.mesage_type, 'S')
+
         # two inserts into test_changes, the test_changes_filter insert is filtered out
         m = messages.next()
         self.assertEqual(m.mesage_type, 'B')

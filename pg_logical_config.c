@@ -12,10 +12,14 @@
  */
 #include "postgres.h"
 
-#include "pg_logical_output.h"
+#include "pg_logical_config.h"
 #include "pg_logical_compat.h"
+#include "pg_logical_output.h"
 
+#include "catalog/catversion.h"
 #include "catalog/namespace.h"
+
+#include "mb/pg_wchar.h"
 
 #include "utils/builtins.h"
 #include "utils/int8.h"
@@ -416,4 +420,97 @@ qname_to_hookfunc(List *qname)
 	strcpy(hookfunc->function, funcname);
 
 	return hookfunc;
+}
+
+static void
+append_startup_msg_key(StringInfo si, const char *key)
+{
+	appendStringInfoString(si, key);
+	appendStringInfoChar(si, '\0');
+}
+
+static void
+append_startup_msg_s(StringInfo si, const char *key, const char *val)
+{
+	append_startup_msg_key(si, key);
+	appendStringInfoString(si, val);
+	appendStringInfoChar(si, '\0');
+}
+
+static void
+append_startup_msg_i(StringInfo si, const char *key, int val)
+{
+	append_startup_msg_key(si, key);
+	appendStringInfo(si, "%d", val);
+	appendStringInfoChar(si, '\0');
+}
+
+static void
+append_startup_msg_b(StringInfo si, const char *key, bool val)
+{
+	append_startup_msg_s(si, key, val ? "true" : "false");
+}
+
+/*
+ * This builds the protocol startup message, which is always the first
+ * message on the wire after the client sends START_REPLICATION.
+ *
+ * It confirms to the client that we could apply requested options, and
+ * tells the client our capabilities.
+ *
+ * The message is a series of null-terminated strings, alternating keys
+ * and values.
+ *
+ * See the protocol docs for details.
+ *
+ * The return value is a null-terminated char* palloc'd in the current
+ * memory context and the length of that string that is valid. The
+ * caller should pfree the result after use.
+ */
+void
+prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
+{
+	StringInfoData si;
+
+	initStringInfo(&si);
+
+	append_startup_msg_s(&si, "max_proto_version", "1");
+	append_startup_msg_s(&si, "min_proto_version", "1");
+
+	/* We don't support understand column types yet */
+	append_startup_msg_s(&si, "coltypes", "false");
+
+	/* Info about our Pg host */
+	append_startup_msg_i(&si, "pg_version_num", PG_VERSION_NUM);
+	append_startup_msg_s(&si, "pg_version", PG_VERSION);
+	append_startup_msg_i(&si, "pg_catversion", CATALOG_VERSION_NO);
+
+	append_startup_msg_s(&si, "encoding", GetDatabaseEncodingName());
+
+	append_startup_msg_b(&si, "forward_changesets",
+			data->forward_changesets);
+	append_startup_msg_b(&si, "forward_changeset_origins",
+			data->forward_changeset_origins);
+
+	/* binary options enabled */
+	append_startup_msg_b(&si, "binary.binary_basetypes",
+			data->allow_binary_protocol);
+	append_startup_msg_b(&si, "binary.sendrecv_basetypes",
+			data->allow_sendrecv_protocol);
+
+	/* Binary format characteristics of server */
+	append_startup_msg_i(&si, "binary.sizeof_int", sizeof(int));
+	append_startup_msg_i(&si, "binary.sizeof_long", sizeof(long));
+	append_startup_msg_i(&si, "binary.sizeof_long", sizeof(Datum));
+	append_startup_msg_i(&si, "binary.maxalign", MAXIMUM_ALIGNOF);
+	append_startup_msg_b(&si, "binary.bigendian", server_bigendian());
+	append_startup_msg_b(&si, "binary.float4_byval", server_float4_byval());
+	append_startup_msg_b(&si, "binary.float8_byval", server_float8_byval());
+	append_startup_msg_b(&si, "binary.integer_datetimes", server_integer_datetimes());
+	/* We don't know how to send in anything except our host's format */
+	append_startup_msg_i(&si, "binary.sendrecv_pg_version",
+			PG_VERSION_NUM/100);
+
+	*msg = si.data;
+	*len = si.len;
 }

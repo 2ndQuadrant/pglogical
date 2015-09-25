@@ -285,6 +285,18 @@ pg_logical_write_delete(StringInfo out, PGLogicalOutputData *data,
 }
 
 /*
+ * Most of the brains for startup message creation lives in
+ * pg_logical_config.c, so this presently just sends the set of key/value pairs.
+ */
+void
+write_startup_message(StringInfo out, const char *msg, int len)
+{
+	pq_sendbyte(out, 'S');	/* message type field */
+	pq_sendbyte(out, 1); 	/* startup message version */
+	pq_sendbytes(out, msg, len);	/* null-terminated key/value pairs */
+}
+
+/*
  * Write a tuple to the outputstream, in the most efficient format possible.
  */
 static void
