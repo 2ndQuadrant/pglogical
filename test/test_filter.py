@@ -1,6 +1,7 @@
 import random
 import string
 import unittest
+import pprint
 from base import PGLogicalOutputTest
 
 class FilterTest(PGLogicalOutputTest):
@@ -13,7 +14,17 @@ class FilterTest(PGLogicalOutputTest):
         cur.execute("DROP FUNCTION IF EXISTS test_filter(text, oid, \"char\")");
         cur.execute("CREATE TABLE test_changes (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
         cur.execute("CREATE TABLE test_changes_filter (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
-        cur.execute("CREATE FUNCTION test_filter(nodeid text, relid oid, action \"char\") returns bool AS $$BEGIN RETURN relid::regclass::text LIKE '%_filter%'; END$$ STABLE LANGUAGE plpgsql;")
+        cur.execute("""
+            CREATE FUNCTION test_filter(nodeid text, relid oid, action \"char\")
+            returns bool stable language plpgsql AS $$
+            BEGIN
+                IF nodeid <> 'foo' THEN
+                    RAISE EXCEPTION 'Expected nodeid foo, got %',nodeid;
+                END IF;
+                RETURN relid::regclass::text LIKE '%_filter%';
+            END
+            $$;
+            """)
         self.conn.commit()
         # empty the slot
         self.get_changes().next()
@@ -35,10 +46,13 @@ class FilterTest(PGLogicalOutputTest):
         cur.execute("INSERT INTO test_changes_filter(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'bazbar'))
         self.conn.commit()
 
-        messages = self.get_changes({'hooks.table_change_filter': 'public.test_filter', 'node_id': 'foo'})
+        messages = self.get_changes({'hooks.table_change_filter': 'public.test_filter', 'hooks.table_change_filter_arg': 'foo'})
 
         m = messages.next()
         self.assertEqual(m.mesage_type, 'S')
+
+        self.assertIn('hooks.table_change_filter_enabled', m.message['params'])
+        self.assertEquals(m.message['params']['hooks.table_change_filter_enabled'], 't')
 
         # two inserts into test_changes, the test_changes_filter insert is filtered out
         m = messages.next()

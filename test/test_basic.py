@@ -37,6 +37,39 @@ class BasicTest(PGLogicalOutputTest):
         m = messages.next()
         self.assertEqual(m.mesage_type, 'S')
 
+        self.assertEquals(m.message['startup_msg_version'], 1)
+
+        # Validate startup msg
+        params = m.message['params']
+
+        self.assertEquals(params['max_proto_version'], '1')
+        self.assertEquals(params['min_proto_version'], '1')
+
+        if int(params['pg_version_num'])/100 == 904:
+            self.assertEquals(params['forward_changeset_origins'], 'f')
+            self.assertEquals(params['forward_changesets'], 't')
+        else:
+            self.assertEquals(params['forward_changeset_origins'], 'f')
+            self.assertEquals(params['forward_changesets'], 'f')
+
+        anybool = ['t', 'f']
+        self.assertIn(params['binary.bigendian'], anybool)
+        self.assertIn(params['binary.binary_basetypes'], anybool)
+        self.assertIn(params['binary.sendrecv_basetypes'], anybool)
+        self.assertIn(params['binary.float4_byval'], anybool)
+        self.assertIn(params['binary.float8_byval'], anybool)
+        self.assertIn(params['binary.integer_datetimes'], anybool)
+        self.assertIn(params['binary.maxalign'], ['4', '8'])
+        self.assertIn(params['binary.sizeof_int'], ['4', '8'])
+        self.assertIn(params['binary.sizeof_long'], ['4', '8'])
+
+        self.assertIn("encoding", params)
+        self.assertEquals(params['coltypes'], 'f')
+
+        self.assertIn('pg_catversion', params)
+        self.assertIn('pg_version', params)
+        self.assertIn('pg_version_num', params)
+
         # CREATE TABLE produced empty TX
         m = messages.next()
         self.assertEqual(m.mesage_type, 'B')

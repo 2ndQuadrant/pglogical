@@ -78,8 +78,8 @@ typedef struct PGLogicalOutputData
 	bool	client_forward_changesets;
 
 	/* hooks */
-	HookFuncName	*table_change_filter;	/* Table filter hook function, if any */
-	const char	*node_id;		/* hooks need to identify this node somehow */
+	HookFuncName	*table_change_filter;		/* Table filter hook function, if any */
+	const char	*table_change_filter_arg;	/* Node identity, etc; hook arg */
 } PGLogicalOutputData;
 
 typedef struct PGLogicalTupleData

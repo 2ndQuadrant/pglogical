@@ -245,7 +245,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	 */
 	if (!is_init)
 	{
-		bool	requirenodeid = false;
 		int		params_format;
 
 		startup_message_sent = false;
@@ -343,15 +342,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			 * anyway. So we need to look it up on first use.
 			 */
 			(void) get_table_filter_function_id(data->table_change_filter, true);
-
-			/* Node id is required parameter if there is hook which needs it */
-			requirenodeid = true;
 		}
-
-		if (requirenodeid && data->node_id == NULL)
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("node_id param must be specified if hook Hooks.Table_change_filter is specified")));
 	}
 }
 
@@ -423,7 +414,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	data = ctx->output_plugin_private;
 
-	/* First checkk filter */
+	/* First check the table filter */
 	if (pg_decode_change_filter(data, relation, change->action))
 		return;
 
@@ -525,6 +516,9 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 			 * snapshots since we found it during init, it just doesn't
 			 * exist in this timetraveled snapshot yet. We'll keep
 			 * looking until we find it.
+			 *
+			 * We really only need to check once per tx decoded, but
+			 * there seems little point.
 			 */
 			if (!OidIsValid(funcoid))
 				return false;
@@ -571,7 +565,7 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 		}
 
 		res = FunctionCall3(&hook->flinfo,
-							CStringGetTextDatum(data->node_id),
+							CStringGetTextDatum(data->table_change_filter_arg),
 							ObjectIdGetDatum(RelationGetRelid(rel)),
 							CharGetDatum(change_type));
 

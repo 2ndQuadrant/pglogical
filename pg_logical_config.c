@@ -72,7 +72,7 @@ enum {
 	PARAM_PG_VERSION,
 	PARAM_FORWARD_CHANGESETS,
 	PARAM_HOOKS_TABLE_CHANGE_FILTER,
-	PARAM_NODE_ID
+	PARAM_HOOKS_TABLE_CHANGE_FILTER_ARG
 } OutputPluginParamKey;
 
 typedef struct {
@@ -98,7 +98,7 @@ static OutputPluginParam param_lookup[] = {
 	{"pg_version", PARAM_PG_VERSION},
 	{"forward_changesets", PARAM_FORWARD_CHANGESETS},
 	{"hooks.table_change_filter", PARAM_HOOKS_TABLE_CHANGE_FILTER},
-	{"node_id", PARAM_NODE_ID},
+	{"hooks.table_change_filter_arg", PARAM_HOOKS_TABLE_CHANGE_FILTER_ARG},
 	{NULL, PARAM_UNRECOGNISED}
 };
 
@@ -245,9 +245,9 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				}
 				break;
 
-			case PARAM_NODE_ID:
+			case PARAM_HOOKS_TABLE_CHANGE_FILTER_ARG:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
-				data->node_id = DatumGetCString(val);
+				data->table_change_filter_arg = DatumGetCString(val);
 				break;
 
 			case PARAM_UNRECOGNISED:
@@ -466,6 +466,10 @@ append_startup_msg_b(StringInfo si, const char *key, bool val)
  * The return value is a null-terminated char* palloc'd in the current
  * memory context and the length of that string that is valid. The
  * caller should pfree the result after use.
+ *
+ * This is a bit less efficient than direct pq_sendblah calls, but
+ * separates config handling from the protocol implementation, and
+ * it's not like startup msg performance matters much.
  */
 void
 prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
@@ -510,6 +514,17 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 	/* We don't know how to send in anything except our host's format */
 	append_startup_msg_i(&si, "binary.sendrecv_pg_version",
 			PG_VERSION_NUM/100);
+
+
+	/*
+	 * Confirm that we've enabled the requested hook function.
+	 */
+	append_startup_msg_b(&si, "hooks.table_change_filter_enabled",
+			data->table_change_filter != NULL);
+
+	/*
+	 * TODO: Should provide a hook to emit startup parameters.
+	 */
 
 	*msg = si.data;
 	*len = si.len;

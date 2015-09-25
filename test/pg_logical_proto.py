@@ -6,7 +6,7 @@ def readcstr(f):
     buf = bytearray()
     while True:
         b = f.read(1)
-        if b is None:
+        if b is None or len(b) == 0:
             if len(buf) == 0:
                 return None
             else:
@@ -86,19 +86,21 @@ class StartupMessage(ReplicationMessage):
 
         msg = StringIO(self.msg)
         msg.read(1) # 'S'
-        res['startup_msg_version'] = int(msg.read(1))
+        res['startup_msg_version'] = struct.unpack("b", msg.read(1))[0]
         # Now split the null-terminated k/v strings
         # and store as a dict, since we don't care about order.
         params = {}
         while True:
             k = readcstr(msg)
+            if k is None:
+                break;
             v = readcstr(msg)
             if (v is None):
                 raise ValueError("Value for key %s missing, read key as last entry" % k)
             params[k] = v
         res['params'] = params
 
-
+        return res
 
 class BeginMessage(TransactionMessage):
     @property
