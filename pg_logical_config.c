@@ -448,7 +448,7 @@ append_startup_msg_i(StringInfo si, const char *key, int val)
 static void
 append_startup_msg_b(StringInfo si, const char *key, bool val)
 {
-	append_startup_msg_s(si, key, val ? "true" : "false");
+	append_startup_msg_s(si, key, val ? "t" : "f");
 }
 
 /*
@@ -478,7 +478,7 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 	append_startup_msg_s(&si, "min_proto_version", "1");
 
 	/* We don't support understand column types yet */
-	append_startup_msg_s(&si, "coltypes", "false");
+	append_startup_msg_b(&si, "coltypes", false);
 
 	/* Info about our Pg host */
 	append_startup_msg_i(&si, "pg_version_num", PG_VERSION_NUM);
