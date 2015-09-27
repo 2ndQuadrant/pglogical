@@ -15,6 +15,8 @@
 
 #include "nodes/execnodes.h"
 
+#include "utils/guc.h"
+
 #include "pg_logical_proto.h"
 
 typedef enum PGLogicalConflictResolution

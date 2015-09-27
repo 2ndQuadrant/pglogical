@@ -378,7 +378,7 @@ try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
 	TimestampTz		local_ts;
 	RepOriginId		local_id;
 	TransactionId	xmin = HeapTupleHeaderGetXmin(localtuple->t_data);
-	bool			apply;
+	bool			apply = false;
 
 	TransactionIdGetCommitTsData(xmin, &local_ts, &local_id);
 
@@ -433,6 +433,9 @@ conflict_type_to_string(PGLogicalConflictType conflict_type)
 		case CONFLICT_DELETE_DELETE:
 			return "delete_delete";
 	}
+
+	/* Unreachable */
+	return NULL;
 }
 
 static char *
@@ -444,7 +447,12 @@ conflict_resolution_to_string(PGLogicalConflictResolution resolution)
 			return "apply_remote";
 		case PGLogicalResolution_KeepLocal:
 			return "keep_local";
+		case PGLogicalResolution_Skip:
+			return "skip";
 	}
+
+	/* Unreachable */
+	return NULL;
 }
 
 /*

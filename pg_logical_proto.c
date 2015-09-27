@@ -14,7 +14,6 @@
 
 #include "miscadmin.h"
 
-
 #include "access/htup_details.h"
 #include "access/heapam.h"
 
@@ -70,6 +69,7 @@ pg_logical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
 {
 	/* read flags */
 	uint8	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	/* read fields */
 	*remote_lsn = pq_getmsgint64(in);
@@ -87,6 +87,7 @@ pg_logical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
 {
 	/* read flags */
 	uint8	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	/* read fields */
 	*commit_lsn = pq_getmsgint64(in);
@@ -105,6 +106,7 @@ pg_logical_read_origin(StringInfo in, XLogRecPtr *origin_lsn)
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	/* fixed fields */
 	*origin_lsn = pq_getmsgint64(in);
@@ -131,6 +133,7 @@ pg_logical_read_insert(StringInfo in, LOCKMODE lockmode,
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -161,6 +164,7 @@ pg_logical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -209,6 +213,7 @@ pg_logical_read_delete(StringInfo in, LOCKMODE lockmode,
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -349,6 +354,7 @@ pg_logical_read_rel(StringInfo in)
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
+	Assert(flags = 0);
 
 	relid = pq_getmsgint(in, 4);
 
@@ -375,7 +381,6 @@ pg_logical_read_rel(StringInfo in)
 static void
 pg_logical_read_attrs(StringInfo in, char ***attrnames, int *nattrnames)
 {
-	TupleDesc	tupDesc;
 	int			i;
 	uint16		nattrs;
 	char	  **attrs;
@@ -398,6 +403,7 @@ pg_logical_read_attrs(StringInfo in, char ***attrnames, int *nattrnames)
 		if (blocktype != 'C')
 			elog(ERROR, "expected COLUMN, got %c", blocktype);
 		flags = pq_getmsgbyte(in);
+		Assert(flags = 0);
 
 		blocktype = pq_getmsgbyte(in);		/* column name block follows */
 		if (blocktype != 'N')

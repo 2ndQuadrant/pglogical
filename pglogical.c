@@ -33,6 +33,9 @@
 
 PG_MODULE_MAGIC;
 
+void _PG_init(void);
+void pglogical_init(Datum main_arg);
+
 static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{"error", PGLOGICAL_RESOLVE_ERROR, false},
 	{"apply_remote", PGLOGICAL_RESOLVE_APPLY_REMOTE, false},
@@ -66,6 +69,8 @@ shorten_hash(const char *str, int maxlen)
 	snprintf(ret, maxlen, "%*s%u", maxlen - 10, /* uint32 max length is 10 */
 			 str, DatumGetUInt32(hash_any((unsigned char *) str, len)));
 	ret[maxlen] = '\0';
+
+	return ret;
 }
 
 /*

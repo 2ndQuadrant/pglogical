@@ -194,18 +194,6 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 	}
 }
 
-static void
-UserTableUpdateIndexes(EState *estate, TupleTableSlot *slot)
-{
-	/* HOT update does not require index inserts */
-	if (HeapTupleIsHeapOnly(slot->tts_tuple))
-		return;
-
-	ExecOpenIndices(estate->es_result_relation_info, false);
-	UserTableUpdateOpenIndexes(estate, slot);
-	ExecCloseIndices(estate->es_result_relation_info);
-}
-
 
 static void
 handle_insert(StringInfo s)
@@ -532,7 +520,7 @@ pg_logical_apply_main(Datum main_arg)
 	NameData		slot_name;
 	dsm_segment	   *seg;
 	shm_toc		   *toc;
-	int				applyworkernr;
+	int				applyworkernr = -1;
 	PGLogicalDBState	   *state;
 	PGLogicalApplyWorker   *apply;
 	PGLogicalConnection	   *conn;
@@ -611,7 +599,6 @@ pg_logical_apply_main(Datum main_arg)
 					 (uint32) origin_startpos);
 
 	appendStringInfo(&command, "client_encoding '%s'", GetDatabaseEncodingName());
-	appendStringInfo(&command, ", replication_sets '%s'", conn->replication_sets);
 
 	appendStringInfoChar(&command, ')');
 
