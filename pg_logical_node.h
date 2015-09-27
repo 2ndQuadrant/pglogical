@@ -41,7 +41,8 @@ typedef struct PGLogicalConnection
 	int				id;
 	PGLogicalNode  *origin;
 	PGLogicalNode  *target;
-	char		   *replication_sets;
+	List		   *replication_sets;
+	bool			default_set;
 } PGLogicalConnection;
 
 extern void create_node(PGLogicalNode *node);
@@ -58,6 +59,8 @@ extern List *get_node_publishers(int nodeid);
 
 extern int get_node_connectionid(int originid, int targetid);
 extern PGLogicalConnection *get_node_connection_by_id(int connid);
+extern PGLogicalConnection *get_node_connection(int originid, int targetid,
+												bool missing_ok);
 extern void create_node_connection(int originid, int targetid);
 extern void drop_node_connection(int connid);
 

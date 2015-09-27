@@ -30,7 +30,7 @@ static void pg_logical_relcache_init(void);
 static int tupdesc_get_att_by_name(TupleDesc desc, const char *attname);
 
 static void
-pg_logical_free_entry(PGLogicalRelation *entry)
+relcache_free_entry(PGLogicalRelation *entry)
 {
 	if (entry->natts > 0)
 	{
@@ -51,7 +51,7 @@ pg_logical_free_entry(PGLogicalRelation *entry)
 
 
 PGLogicalRelation *
-pg_logical_relation_open(uint32 remote_relid, LOCKMODE lockmode)
+pg_logical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 {
 	PGLogicalRelation *entry;
 	bool		found;
@@ -59,15 +59,13 @@ pg_logical_relation_open(uint32 remote_relid, LOCKMODE lockmode)
 	if (PGLogicalRelationHash == NULL)
 		pg_logical_relcache_init();
 
-	/*
-	 * HASH_ENTER returns the existing entry if present or creates a new one.
-	 */
-	entry = hash_search(PGLogicalRelationHash, (void *) &remote_relid,
-						HASH_ENTER, &found);
+	/* Search for existing entry. */
+	entry = hash_search(PGLogicalRelationHash, (void *) &remoteid,
+						HASH_FIND, &found);
 
-	if (!found || !entry->used)
+	if (!found)
 		elog(ERROR, "cache lookup failed for remote relation %u",
-			 remote_relid);
+			 remoteid);
 
 	/* Need to update the local cache? */
 	if (!OidIsValid(entry->reloid))
@@ -93,7 +91,7 @@ pg_logical_relation_open(uint32 remote_relid, LOCKMODE lockmode)
 }
 
 void
-pg_logical_relation_cache_update(uint32 remote_relid, char *schemaname,
+pg_logical_relation_cache_update(uint32 remoteid, char *schemaname,
 								 char *relname, int natts, char **attnames)
 {
 	MemoryContext		oldcontext;
@@ -107,11 +105,11 @@ pg_logical_relation_cache_update(uint32 remote_relid, char *schemaname,
 	/*
 	 * HASH_ENTER returns the existing entry if present or creates a new one.
 	 */
-	entry = hash_search(PGLogicalRelationHash, (void *) &remote_relid,
+	entry = hash_search(PGLogicalRelationHash, (void *) &remoteid,
 						HASH_ENTER, &found);
 
 	if (found)
-		pg_logical_free_entry(entry);
+		relcache_free_entry(entry);
 
 	/* Make cached copy of the data */
 	oldcontext = MemoryContextSwitchTo(CacheMemoryContext);
@@ -127,7 +125,6 @@ pg_logical_relation_cache_update(uint32 remote_relid, char *schemaname,
 	/* XXX Should we validate the relation against local schema here? */
 
 	entry->reloid = InvalidOid;
-	entry->used = true;
 }
 
 void
@@ -138,47 +135,22 @@ pg_logical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 }
 
 static void
-pg_logical_invalidate_relation(uint32 remote_relid)
+pg_logical_relcache_invalidate_callback(Datum arg, Oid reloid)
 {
 	HASH_SEQ_STATUS status;
 	PGLogicalRelation *entry;
 
-	/*
-	 * We sometimes explicitly invalidate the entire bdr relcache -
-	 * independent of actual system caused invalidations. Without that this
-	 * situation could not happen as the normall inval callback only gets
-	 * registered after creating the hash.
-	 */
+	/* Just to be sure. */
 	if (PGLogicalRelationHash == NULL)
 		return;
 
-	/*
-	 * If relid is InvalidOid, signalling a complete reset, we have to remove
-	 * all entries, otherwise just invalidate the specific relation's entry.
-	 */
-	if (remote_relid == InvalidOid)
-	{
-		hash_seq_init(&status, PGLogicalRelationHash);
+	hash_seq_init(&status, PGLogicalRelationHash);
 
-		while ((entry = (PGLogicalRelation *) hash_seq_search(&status)) != NULL)
-		{
-			entry->reloid = InvalidOid;
-		}
-	}
-	else
+	while ((entry = (PGLogicalRelation *) hash_seq_search(&status)) != NULL)
 	{
-		if ((entry = hash_search(PGLogicalRelationHash, &remote_relid,
-								 HASH_FIND, NULL)) != NULL)
-		{
+		if (reloid == InvalidOid || entry->reloid == reloid)
 			entry->reloid = InvalidOid;
-		}
 	}
-}
-
-void
-pg_logical_invalidate_callback(Datum arg, Oid reloid)
-{
-	//pg_logical_invalidate_relation();
 }
 
 static void
@@ -194,15 +166,13 @@ pg_logical_relcache_init(void)
 	MemSet(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(uint32);
 	ctl.entrysize = sizeof(PGLogicalRelation);
-	ctl.hash = tag_hash;
 	ctl.hcxt = CacheMemoryContext;
 
-	PGLogicalRelationHash = hash_create("pg_logical relation cache", 128, &ctl,
-										HASH_ELEM | HASH_FUNCTION |
-										HASH_CONTEXT);
+	PGLogicalRelationHash = hash_create("pglogical relation cache", 128, &ctl,
+										HASH_ELEM | HASH_CONTEXT);
 
 	/* Watch for invalidation events. */
-	CacheRegisterRelcacheCallback(pg_logical_invalidate_callback,
+	CacheRegisterRelcacheCallback(pg_logical_relcache_invalidate_callback,
 								  (Datum) 0);
 }
 

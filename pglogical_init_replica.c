@@ -35,7 +35,9 @@
 #include "utils/pg_lsn.h"
 
 #include "pg_logical_node.h"
+#include "pglogical_repset.h"
 #include "pglogical_rpc.h"
+#include "pglogical_init_replica.h"
 #include "pglogical.h"
 
 /*
@@ -147,7 +149,7 @@ restore_structure(PGLogicalConnection *conn, const char *section)
 /*
  * Make standard postgres connection, ERROR on failure.
  */
-PGconn *
+static PGconn *
 pg_connect(const char *connstring, const char *connname)
 {
 	PGconn		   *conn;
@@ -173,7 +175,7 @@ pg_connect(const char *connstring, const char *connname)
 /*
  * Make replication connection, ERROR on failure.
  */
-PGconn *
+static PGconn *
 pg_connect_replica(const char *connstring, const char *connname)
 {
 	PGconn		   *conn;
@@ -324,20 +326,28 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 }
 
 static List *
-get_copy_tables(PGconn *origin_conn, const char *replication_sets)
+get_copy_tables(PGconn *origin_conn, List *replication_sets)
 {
 	PGresult   *res;
 	int			i;
 	List	   *tables = NIL;
+	ListCell   *lc;
 	StringInfoData	query;
 	StringInfoData	repsetarr;
 
 	initStringInfo(&repsetarr);
-	appendStringInfo(&repsetarr, "{%s}", replication_sets);
+	appendStringInfo(&repsetarr, "{");
+	foreach (lc, replication_sets)
+	{
+		PGLogicalRepSet *rs = lfirst(lc);
+
+		appendStringInfo(&repsetarr, "%s", rs->name);
+	}
+	appendStringInfo(&repsetarr, "}");
 
 	/* Build COPY TO query. */
 	initStringInfo(&query);
-	appendStringInfo(&query, "SELECT * FROM %s.get_replication_set_tables(%s)",
+	appendStringInfo(&query, "SELECT nspname, relname FROM %s.tables WHERE set_name = ANY(%s)",
 					 EXTENSION_NAME,
 					 PQescapeLiteral(origin_conn, repsetarr.data,
 									 repsetarr.len));
@@ -573,8 +583,6 @@ pglogical_init_replica(PGLogicalConnection *conn)
 	if (status == NODE_STATUS_CONNECT_BACK)
 	{
 		PGconn	   *origin_conn;
-		RepOriginId	originid;
-		char	   *snapshot;
 
 		switch (target->role)
 		{
