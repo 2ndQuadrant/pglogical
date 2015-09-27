@@ -1,12 +1,12 @@
 /* -------------------------------------------------------------------------
  *
- * pg_logical_relcache.c
+ * pglogical_relcache.c
  *     Caching relation specific information
  *
  * Copyright (C) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		pg_logical_relcache.c
+ *		pglogical_relcache.c
  *
  * -------------------------------------------------------------------------
  */
@@ -21,12 +21,12 @@
 #include "utils/inval.h"
 #include "utils/rel.h"
 
-#include "pg_logical_relcache.h"
+#include "pglogical_relcache.h"
 
 static HTAB *PGLogicalRelationHash = NULL;
 
 
-static void pg_logical_relcache_init(void);
+static void pglogical_relcache_init(void);
 static int tupdesc_get_att_by_name(TupleDesc desc, const char *attname);
 
 static void
@@ -51,13 +51,13 @@ relcache_free_entry(PGLogicalRelation *entry)
 
 
 PGLogicalRelation *
-pg_logical_relation_open(uint32 remoteid, LOCKMODE lockmode)
+pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 {
 	PGLogicalRelation *entry;
 	bool		found;
 
 	if (PGLogicalRelationHash == NULL)
-		pg_logical_relcache_init();
+		pglogical_relcache_init();
 
 	/* Search for existing entry. */
 	entry = hash_search(PGLogicalRelationHash, (void *) &remoteid,
@@ -91,7 +91,7 @@ pg_logical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 }
 
 void
-pg_logical_relation_cache_update(uint32 remoteid, char *schemaname,
+pglogical_relation_cache_update(uint32 remoteid, char *schemaname,
 								 char *relname, int natts, char **attnames)
 {
 	MemoryContext		oldcontext;
@@ -100,7 +100,7 @@ pg_logical_relation_cache_update(uint32 remoteid, char *schemaname,
 	int					i;
 
 	if (PGLogicalRelationHash == NULL)
-		pg_logical_relcache_init();
+		pglogical_relcache_init();
 
 	/*
 	 * HASH_ENTER returns the existing entry if present or creates a new one.
@@ -128,14 +128,14 @@ pg_logical_relation_cache_update(uint32 remoteid, char *schemaname,
 }
 
 void
-pg_logical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
+pglogical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 {
 	heap_close(rel->rel, lockmode);
 	rel->rel = NULL;
 }
 
 static void
-pg_logical_relcache_invalidate_callback(Datum arg, Oid reloid)
+pglogical_relcache_invalidate_callback(Datum arg, Oid reloid)
 {
 	HASH_SEQ_STATUS status;
 	PGLogicalRelation *entry;
@@ -154,7 +154,7 @@ pg_logical_relcache_invalidate_callback(Datum arg, Oid reloid)
 }
 
 static void
-pg_logical_relcache_init(void)
+pglogical_relcache_init(void)
 {
 	HASHCTL		ctl;
 
@@ -172,7 +172,7 @@ pg_logical_relcache_init(void)
 										HASH_ELEM | HASH_CONTEXT);
 
 	/* Watch for invalidation events. */
-	CacheRegisterRelcacheCallback(pg_logical_relcache_invalidate_callback,
+	CacheRegisterRelcacheCallback(pglogical_relcache_invalidate_callback,
 								  (Datum) 0);
 }
 

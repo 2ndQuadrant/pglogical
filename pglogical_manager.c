@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_manager.c
- * 		pg_logical worker for managing apply workers in a database
+ * pglogical_manager.c
+ * 		pglogical worker for managing apply workers in a database
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_manager.c
+ *		  pglogical_manager.c
  *
  *-------------------------------------------------------------------------
  */
@@ -35,9 +35,9 @@
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 
-#include "pg_logical_proto.h"
-#include "pg_logical_relcache.h"
-#include "pg_logical_node.h"
+#include "pglogical_proto.h"
+#include "pglogical_relcache.h"
+#include "pglogical_node.h"
 #include "pglogical_init_replica.h"
 #include "pglogical.h"
 
@@ -78,7 +78,7 @@ register_apply_workers(dsm_segment *seg, int cnt)
 		snprintf(bgw.bgw_library_name, BGW_MAXLEN,
 				 EXTENSION_NAME);
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
-				 "pg_logical_apply_main");
+				 "pglogical_apply_main");
 		bgw.bgw_restart_time = 1;
 		bgw.bgw_notify_pid = 0;
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
@@ -143,7 +143,7 @@ setup_dynamic_shared_memory(List *conns)
  * Entry point for manager worker.
  */
 void
-pg_logical_manager_main(Datum main_arg)
+pglogical_manager_main(Datum main_arg)
 {
 	Oid			dbid = DatumGetObjectId(main_arg);
 	Oid			extoid;

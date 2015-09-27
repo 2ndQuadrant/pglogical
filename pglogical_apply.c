@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_apply.c
- * 		pg_logical apply logic
+ * pglogical_apply.c
+ * 		pglogical apply logic
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical.c
+ *		  pglogical.c
  *
  *-------------------------------------------------------------------------
  */
@@ -45,10 +45,10 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
-#include "pg_logical_proto.h"
-#include "pg_logical_relcache.h"
-#include "pg_logical_conflict.h"
-#include "pg_logical_node.h"
+#include "pglogical_proto.h"
+#include "pglogical_relcache.h"
+#include "pglogical_conflict.h"
+#include "pglogical_node.h"
 #include "pglogical.h"
 
 
@@ -77,7 +77,7 @@ handle_begin(StringInfo s)
 	TimestampTz		committime;
 	TransactionId	remote_xid;
 
-	pg_logical_read_begin(s, &remote_lsn, &committime, &remote_xid);
+	pglogical_read_begin(s, &remote_lsn, &committime, &remote_xid);
 
 	in_remote_transaction = true;
 }
@@ -92,7 +92,7 @@ handle_commit(StringInfo s)
 	XLogRecPtr		end_lsn;
    	TimestampTz		committime;
 
-	pg_logical_read_commit(s, &commit_lsn, &end_lsn, &committime);
+	pglogical_read_commit(s, &commit_lsn, &end_lsn, &committime);
 
 	if (IsTransactionState())
 		CommitTransactionCommand();
@@ -133,7 +133,7 @@ handle_origin(StringInfo s)
 	if (!in_remote_transaction || IsTransactionState())
 		elog(ERROR, "ORIGIN message sent out of order");
 
-	origin = pg_logical_read_origin(s, &remote_origin_lsn);
+	origin = pglogical_read_origin(s, &remote_origin_lsn);
 	remote_origin_id = replorigin_by_name(origin, false);
 }
 
@@ -146,7 +146,7 @@ handle_origin(StringInfo s)
 static void
 handle_relation(StringInfo s)
 {
-	(void) pg_logical_read_rel(s);
+	(void) pglogical_read_rel(s);
 }
 
 
@@ -210,7 +210,7 @@ handle_insert(StringInfo s)
 
 	ensure_transaction();
 
-	rel = pg_logical_read_insert(s, RowExclusiveLock, &newtup);
+	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
@@ -255,7 +255,7 @@ handle_insert(StringInfo s)
 
 	/* Cleanup */
 	ExecCloseIndices(estate->es_result_relation_info);
-	pg_logical_relation_close(rel, RowExclusiveLock);
+	pglogical_relation_close(rel, RowExclusiveLock);
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
@@ -275,7 +275,7 @@ handle_update(StringInfo s)
 
 	ensure_transaction();
 
-	rel = pg_logical_read_insert(s, RowExclusiveLock, &newtup);
+	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
@@ -309,7 +309,7 @@ handle_update(StringInfo s)
 	}
 
 	/* Cleanup. */
-	pg_logical_relation_close(rel, RowExclusiveLock);
+	pglogical_relation_close(rel, RowExclusiveLock);
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
@@ -326,7 +326,7 @@ handle_delete(StringInfo s)
 
 	ensure_transaction();
 
-	rel = pg_logical_read_delete(s, RowExclusiveLock, &newtup);
+	rel = pglogical_read_delete(s, RowExclusiveLock, &newtup);
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
@@ -352,7 +352,7 @@ handle_delete(StringInfo s)
 	PopActiveSnapshot();
 
 	/* Cleanup. */
-	pg_logical_relation_close(rel, NoLock);
+	pglogical_relation_close(rel, NoLock);
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
@@ -508,7 +508,7 @@ apply_work(PGconn *streamConn)
 }
 
 void
-pg_logical_apply_main(Datum main_arg)
+pglogical_apply_main(Datum main_arg)
 {
 	PGconn		   *streamConn;
 	PGresult	   *res;

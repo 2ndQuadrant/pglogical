@@ -46,8 +46,8 @@ extern void gen_slot_name(Name slot_name, char *dbname,
 						  PGLogicalNode *origin_node,
 						  PGLogicalNode *target_node);
 
-extern void pg_logical_manager_main(Datum main_arg);
-extern void pg_logical_apply_main(Datum main_arg);
+extern void pglogical_manager_main(Datum main_arg);
+extern void pglogical_apply_main(Datum main_arg);
 extern void handle_sigterm(SIGNAL_ARGS);
 
 #endif /* PGLOGICAL_H */

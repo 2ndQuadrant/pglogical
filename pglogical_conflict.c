@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_conflict.c
+ * pglogical_conflict.c
  * 		Functions for detecting and handling conflicts
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_conflict.c
+ *		  pglogical_conflict.c
  *
  *-------------------------------------------------------------------------
  */
@@ -37,8 +37,8 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
-#include "pg_logical_proto.h"
-#include "pg_logical_conflict.h"
+#include "pglogical_proto.h"
+#include "pglogical_conflict.h"
 
 int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_ERROR;
 

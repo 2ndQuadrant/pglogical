@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pglogical_repset.c
- *		pg_logical replication set manipulation functions
+ *		pglogical replication set manipulation functions
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
@@ -38,7 +38,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
-#include "pg_logical_node.h"
+#include "pglogical_node.h"
 #include "pglogical_repset.h"
 #include "pglogical.h"
 

@@ -1,17 +1,17 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_node.h
- *		pg_logical node and connection catalog manipulation functions
+ * pglogical_node.h
+ *		pglogical node and connection catalog manipulation functions
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		pg_logical_node.h
+ *		pglogical_node.h
  *
  *-------------------------------------------------------------------------
  */
-#ifndef PG_LOGICAL_NODE_H
-#define PG_LOGICAL_NODE_H
+#ifndef PGLOGICAL_NODE_H
+#define PGLOGICAL_NODE_H
 
 typedef struct PGLogicalNode
 {
@@ -64,5 +64,5 @@ extern PGLogicalConnection *get_node_connection(int originid, int targetid,
 extern void create_node_connection(int originid, int targetid);
 extern void drop_node_connection(int connid);
 
-#endif /* PG_LOGICAL_NODE_H */
+#endif /* PGLOGICAL_NODE_H */
 

@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_manager.c
- * 		pg_logical worker for managing apply workers in a database
+ * pglogical.c
+ * 		pglogical initialization and common functionality
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_manager.c
+ *		  pglogical.c
  *
  *-------------------------------------------------------------------------
  */
@@ -27,8 +27,8 @@
 
 #include "utils/guc.h"
 
-#include "pg_logical_node.h"
-#include "pg_logical_conflict.h"
+#include "pglogical_node.h"
+#include "pglogical_conflict.h"
 #include "pglogical.h"
 
 PG_MODULE_MAGIC;
@@ -96,7 +96,7 @@ gen_slot_name(Name slot_name, char *dbname, PGLogicalNode *origin_node,
  * funcions.
  */
 static void
-pg_logical_manager_register(Oid dboid)
+pglogical_manager_register(Oid dboid)
 {
 	BackgroundWorker bgw;
 	BackgroundWorkerHandle *bgw_handle;
@@ -108,7 +108,7 @@ pg_logical_manager_register(Oid dboid)
 	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
 			 EXTENSION_NAME);
 	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
-			 "pg_logical_manager_main");
+			 "pglogical_manager_main");
 	bgw.bgw_restart_time = 1;
 	bgw.bgw_notify_pid = 0;
 	snprintf(bgw.bgw_name, BGW_MAXLEN,
@@ -149,7 +149,7 @@ pglogical_init(Datum main_arg)
 		{
 			elog(DEBUG1, "registering pglogical manager process for database %s",
 				 NameStr(pgdatabase->datname));
-			pg_logical_manager_register(HeapTupleGetOid(tup));
+			pglogical_manager_register(HeapTupleGetOid(tup));
 		}
 	}
 

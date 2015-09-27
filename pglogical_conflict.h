@@ -1,23 +1,23 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_conflict.h
- *		pg_logical conflict detection and resolution
+ * pglogical_conflict.h
+ *		pglogical conflict detection and resolution
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		pg_logical_conflict.h
+ *		pglogical_conflict.h
  *
  *-------------------------------------------------------------------------
  */
-#ifndef PG_LOGICAL_CONGLICT_H
-#define PG_LOGICAL_CONGLICT_H
+#ifndef PGLOGICAL_CONGLICT_H
+#define PGLOGICAL_CONGLICT_H
 
 #include "nodes/execnodes.h"
 
 #include "utils/guc.h"
 
-#include "pg_logical_proto.h"
+#include "pglogical_proto.h"
 
 typedef enum PGLogicalConflictResolution
 {
@@ -66,4 +66,4 @@ extern void pglogical_report_conflict(PGLogicalConflictType conflict_type, Relat
 extern bool pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 									   GucSource source);
 
-#endif /* PG_LOGICAL_CONGLICT_H */
+#endif /* PGLOGICAL_CONGLICT_H */

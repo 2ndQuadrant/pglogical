@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_node.c
- *		pg_logical node and connection catalog manipulation functions
+ * pglogical_node.c
+ *		pglogical node and connection catalog manipulation functions
  *
  * TODO: caching
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		pg_logical_node.c
+ *		pglogical_node.c
  *
  *-------------------------------------------------------------------------
  */
@@ -31,7 +31,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
-#include "pg_logical_node.h"
+#include "pglogical_node.h"
 #include "pglogical_repset.h"
 #include "pglogical.h"
 

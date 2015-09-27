@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_proto.c
- * 		pg_logical protocol functions
+ * pglogical_proto.c
+ * 		pglogical protocol functions
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_proto.c
+ *		  pglogical_proto.c
  *
  *-------------------------------------------------------------------------
  */
@@ -46,14 +46,14 @@
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
 
-#include "pg_logical_proto.h"
-#include "pg_logical_relcache.h"
+#include "pglogical_proto.h"
+#include "pglogical_relcache.h"
 
 #define IS_REPLICA_IDENTITY 1
 
-static void pg_logical_read_attrs(StringInfo in, char ***attrnames,
+static void pglogical_read_attrs(StringInfo in, char ***attrnames,
 								  int *nattrnames);
-static void pg_logical_read_tuple(StringInfo in, PGLogicalRelation *rel,
+static void pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 					  PGLogicalTupleData *tuple);
 
 /*
@@ -64,7 +64,7 @@ static void pg_logical_read_tuple(StringInfo in, PGLogicalRelation *rel,
  * Read transaction BEGIN from the stream.
  */
 void
-pg_logical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
+pglogical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
 					  TimestampTz *committime, TransactionId *remote_xid)
 {
 	/* read flags */
@@ -82,7 +82,7 @@ pg_logical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
  * Read transaction COMMIT from the stream.
  */
 void
-pg_logical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
+pglogical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
 					   XLogRecPtr *end_lsn, TimestampTz *committime)
 {
 	/* read flags */
@@ -99,7 +99,7 @@ pg_logical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
  * Read ORIGIN from the output stream.
  */
 char *
-pg_logical_read_origin(StringInfo in, XLogRecPtr *origin_lsn)
+pglogical_read_origin(StringInfo in, XLogRecPtr *origin_lsn)
 {
 	uint8	flags;
 	uint8	len;
@@ -123,7 +123,7 @@ pg_logical_read_origin(StringInfo in, XLogRecPtr *origin_lsn)
  * Fills the new tuple.
  */
 PGLogicalRelation *
-pg_logical_read_insert(StringInfo in, LOCKMODE lockmode,
+pglogical_read_insert(StringInfo in, LOCKMODE lockmode,
 					   PGLogicalTupleData *newtup)
 {
 	char		action;
@@ -143,9 +143,9 @@ pg_logical_read_insert(StringInfo in, LOCKMODE lockmode,
 		elog(ERROR, "expected new tuple but got %d",
 			 action);
 
-	rel = pg_logical_relation_open(relid, lockmode);
+	rel = pglogical_relation_open(relid, lockmode);
 
-	pg_logical_read_tuple(in, rel, newtup);
+	pglogical_read_tuple(in, rel, newtup);
 
 	return rel;
 }
@@ -154,7 +154,7 @@ pg_logical_read_insert(StringInfo in, LOCKMODE lockmode,
  * Read UPDATE from stream.
  */
 PGLogicalRelation *
-pg_logical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
+pglogical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
 					   PGLogicalTupleData *oldtup, PGLogicalTupleData *newtup)
 {
 	char		action;
@@ -175,12 +175,12 @@ pg_logical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
 		elog(ERROR, "expected action 'N', 'O' or 'K', got %c",
 			 action);
 
-	rel = pg_logical_relation_open(relid, lockmode);
+	rel = pglogical_relation_open(relid, lockmode);
 
 	/* check for old tuple */
 	if (action == 'K' || action == 'O')
 	{
-		pg_logical_read_tuple(in, rel, oldtup);
+		pglogical_read_tuple(in, rel, oldtup);
 		*hasoldtup = true;
 		action = pq_getmsgbyte(in);
 	}
@@ -192,7 +192,7 @@ pg_logical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
 		elog(ERROR, "expected action 'N', got %c",
 			 action);
 
-	pg_logical_read_tuple(in, rel, newtup);
+	pglogical_read_tuple(in, rel, newtup);
 
 	return rel;
 }
@@ -203,7 +203,7 @@ pg_logical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
  * Fills the old tuple.
  */
 PGLogicalRelation *
-pg_logical_read_delete(StringInfo in, LOCKMODE lockmode,
+pglogical_read_delete(StringInfo in, LOCKMODE lockmode,
 					   PGLogicalTupleData *oldtup)
 {
 	char		action;
@@ -223,9 +223,9 @@ pg_logical_read_delete(StringInfo in, LOCKMODE lockmode,
 	if (action != 'K' && action != 'O')
 		elog(ERROR, "expected action 'O' or 'K' %c", action);
 
-	rel = pg_logical_relation_open(relid, lockmode);
+	rel = pglogical_relation_open(relid, lockmode);
 
-	pg_logical_read_tuple(in, rel, oldtup);
+	pglogical_read_tuple(in, rel, oldtup);
 
 	return rel;
 }
@@ -237,7 +237,7 @@ pg_logical_read_delete(StringInfo in, LOCKMODE lockmode,
  * The returned tuple is converted to the local relation tuple format.
  */
 static void
-pg_logical_read_tuple(StringInfo in, PGLogicalRelation *rel,
+pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 					  PGLogicalTupleData *tuple)
 {
 	int			i;
@@ -342,7 +342,7 @@ pg_logical_read_tuple(StringInfo in, PGLogicalRelation *rel,
  * lockmode.
  */
 uint32
-pg_logical_read_rel(StringInfo in)
+pglogical_read_rel(StringInfo in)
 {
 	uint8		flags;
 	uint32		relid;
@@ -366,9 +366,9 @@ pg_logical_read_rel(StringInfo in)
 	relname = (char *) pq_getmsgbytes(in, len);
 
 	/* Get attribute description */
-	pg_logical_read_attrs(in, &attrnames, &natts);
+	pglogical_read_attrs(in, &attrnames, &natts);
 
-	pg_logical_relation_cache_update(relid, schemaname, relname, natts, attrnames);
+	pglogical_relation_cache_update(relid, schemaname, relname, natts, attrnames);
 
 	return relid;
 }
@@ -379,7 +379,7 @@ pg_logical_read_rel(StringInfo in)
  * TODO handle flags.
  */
 static void
-pg_logical_read_attrs(StringInfo in, char ***attrnames, int *nattrnames)
+pglogical_read_attrs(StringInfo in, char ***attrnames, int *nattrnames)
 {
 	int			i;
 	uint16		nattrs;

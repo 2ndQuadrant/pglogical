@@ -34,7 +34,7 @@
 
 #include "utils/pg_lsn.h"
 
-#include "pg_logical_node.h"
+#include "pglogical_node.h"
 #include "pglogical_repset.h"
 #include "pglogical_rpc.h"
 #include "pglogical_init_replica.h"
