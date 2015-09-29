@@ -1,20 +1,20 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_config.c
+ * pglogical_config.c
  *		  Logical Replication output plugin
  *
  * Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_config.c
+ *		  pglogical_config.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
-#include "pg_logical_config.h"
-#include "pg_logical_compat.h"
-#include "pg_logical_output.h"
+#include "pglogical_config.h"
+#include "pglogical_compat.h"
+#include "pglogical_output.h"
 
 #include "catalog/catversion.h"
 #include "catalog/namespace.h"
@@ -252,7 +252,7 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_UNRECOGNISED:
 				ereport(DEBUG1,
-						(errmsg("Unrecognised pg_logical parameter %s ignored", elem->defname)));
+						(errmsg("Unrecognised pglogical parameter %s ignored", elem->defname)));
 				break;
 		}
 	}

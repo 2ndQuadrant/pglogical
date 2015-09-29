@@ -1,9 +1,7 @@
-# contrib/pg_logical_output/Makefile
+MODULE_big = pglogical_output
+PGFILEDESC = "pglogical_output - logical replication output plugin"
 
-MODULE_big = pg_logical_output
-PGFILEDESC = "pg_logical_output - logical replication output plugin"
-
-OBJS = pg_logical_output.o pg_logical_proto.o pg_logical_config.o
+OBJS = pglogical_output.o pglogical_proto.o pglogical_config.o
 
 ifdef USE_PGXS
 # For regression checks
@@ -16,7 +14,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = contrib/pg_logical_output
+subdir = contrib/pglogical_output
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk

@@ -36,7 +36,7 @@ If you get an error like:
 you need to install `psycopg2` for your local Python install. It'll be
 available as a package via the same channel you installed Python its self from.
 
-could not access file "pg_logical_output": No such file or directory
+could not access file "pglogical_output": No such file or directory
 ===
 
 You forgot to install the output plugin before running the tests, or

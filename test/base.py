@@ -1,7 +1,7 @@
 import unittest
 import psycopg2
 
-from pg_logical_proto import ReplicationMessage
+from pglogical_proto import ReplicationMessage
 
 SLOT_NAME = 'test'
 
@@ -16,7 +16,7 @@ class PGLogicalOutputTest(unittest.TestCase):
         if cur.rowcount == 1:
             cur.execute("SELECT * FROM pg_drop_replication_slot(%s)", (SLOT_NAME,))
             print "Cleaned up abandoned slot from prior aborted test run"
-        cur.execute("SELECT * FROM pg_create_logical_replication_slot(%s, 'pg_logical_output')", (SLOT_NAME,))
+        cur.execute("SELECT * FROM pg_create_logical_replication_slot(%s, 'pglogical_output')", (SLOT_NAME,))
         cur.close()
         self.conn.commit()
 

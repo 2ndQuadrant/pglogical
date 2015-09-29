@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_output.h
- *		pg_logical output plugin
+ * pglogical_output.h
+ *		pglogical output plugin
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		pg_logical_output.h
+ *		pglogical_output.h
  *
  *-------------------------------------------------------------------------
  */

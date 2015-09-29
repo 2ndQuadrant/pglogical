@@ -1,21 +1,21 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_output.c
+ * pglogical_output.c
  *		  Logical Replication output plugin
  *
  * Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_output.c
+ *		  pglogical_output.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
 
-#include "pg_logical_compat.h"
-#include "pg_logical_config.h"
-#include "pg_logical_output.h"
-#include "pg_logical_proto.h"
+#include "pglogical_compat.h"
+#include "pglogical_config.h"
+#include "pglogical_output.h"
+#include "pglogical_proto.h"
 
 #include "access/hash.h"
 #include "access/sysattr.h"
@@ -136,7 +136,7 @@ init_hook_cache(void)
 #else
 	hash_flags |= HASH_BLOBS;
 #endif
-	HookCache = hash_create("pg_logical hook cache", 32, &ctl, hash_flags);
+	HookCache = hash_create("pglogical hook cache", 32, &ctl, hash_flags);
 
 	Assert(HookCache != NULL);
 
@@ -220,7 +220,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	PGLogicalOutputData  *data = palloc0(sizeof(PGLogicalOutputData));
 
 	data->context = AllocSetContextCreate(TopMemoryContext,
-										  "pg_logical conversion context",
+										  "pglogical conversion context",
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
@@ -365,7 +365,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 
 #endif
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
-	pg_logical_write_begin(ctx->out, txn);
+	pglogical_write_begin(ctx->out, txn);
 
 #ifdef HAVE_REPLICATION_ORIGINS
 	if (send_replication_origin)
@@ -386,7 +386,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 		 *  - send some special "unknown" origin
 		 */
 		if (replorigin_by_oid(txn->origin_id, true, &origin))
-			pg_logical_write_origin(ctx->out, origin, txn->origin_lsn);
+			pglogical_write_origin(ctx->out, origin, txn->origin_lsn);
 	}
 #endif
 
@@ -401,7 +401,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
 	OutputPluginPrepareWrite(ctx, true);
-	pg_logical_write_commit(ctx->out, txn, commit_lsn);
+	pglogical_write_commit(ctx->out, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
 }
 
@@ -423,7 +423,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	/* TODO: add caching (send only if changed) */
 	OutputPluginPrepareWrite(ctx, false);
-	pg_logical_write_rel(ctx->out, relation);
+	pglogical_write_rel(ctx->out, relation);
 	OutputPluginWrite(ctx, false);
 
 	/* Send the data */
@@ -431,7 +431,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
 			OutputPluginPrepareWrite(ctx, true);
-			pg_logical_write_insert(ctx->out, data, relation,
+			pglogical_write_insert(ctx->out, data, relation,
 									&change->data.tp.newtuple->tuple);
 			OutputPluginWrite(ctx, true);
 			break;
@@ -441,7 +441,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					&change->data.tp.oldtuple->tuple : NULL;
 
 				OutputPluginPrepareWrite(ctx, true);
-				pg_logical_write_update(ctx->out, data, relation, oldtuple,
+				pglogical_write_update(ctx->out, data, relation, oldtuple,
 										&change->data.tp.newtuple->tuple);
 				OutputPluginWrite(ctx, true);
 				break;
@@ -450,7 +450,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			if (change->data.tp.oldtuple)
 			{
 				OutputPluginPrepareWrite(ctx, true);
-				pg_logical_write_delete(ctx->out, data, relation,
+				pglogical_write_delete(ctx->out, data, relation,
 										&change->data.tp.oldtuple->tuple);
 				OutputPluginWrite(ctx, true);
 			}

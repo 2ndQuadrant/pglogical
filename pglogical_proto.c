@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pg_logical_proto.c
- * 		pg_logical protocol functions
+ * pglogical_proto.c
+ * 		pglogical protocol functions
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pg_logical_proto.c
+ *		  pglogical_proto.c
  *
  *-------------------------------------------------------------------------
  */
@@ -14,8 +14,8 @@
 
 #include "miscadmin.h"
 
-#include "pg_logical_output.h"
-#include "pg_logical_proto.h"
+#include "pglogical_output.h"
+#include "pglogical_proto.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
@@ -48,8 +48,8 @@
 
 #define IS_REPLICA_IDENTITY 1
 
-static void pg_logical_write_attrs(StringInfo out, Relation rel);
-static void pg_logical_write_tuple(StringInfo out, PGLogicalOutputData *data,
+static void pglogical_write_attrs(StringInfo out, Relation rel);
+static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 								   Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
@@ -60,7 +60,7 @@ static char decide_datum_transfer(Form_pg_attribute att,
  * Write relation description to the output stream.
  */
 void
-pg_logical_write_rel(StringInfo out, Relation rel)
+pglogical_write_rel(StringInfo out, Relation rel)
 {
 	const char *nspname;
 	uint8		nspnamelen;
@@ -92,14 +92,14 @@ pg_logical_write_rel(StringInfo out, Relation rel)
 	pq_sendbytes(out, relname, relnamelen);
 
 	/* send the attribute info */
-	pg_logical_write_attrs(out, rel);
+	pglogical_write_attrs(out, rel);
 }
 
 /*
  * Write relation attributes to the outputstream.
  */
 static void
-pg_logical_write_attrs(StringInfo out, Relation rel)
+pglogical_write_attrs(StringInfo out, Relation rel)
 {
 	TupleDesc	desc;
 	int			i;
@@ -152,7 +152,7 @@ pg_logical_write_attrs(StringInfo out, Relation rel)
  * Write BEGIN to the output stream.
  */
 void
-pg_logical_write_begin(StringInfo out, ReorderBufferTXN *txn)
+pglogical_write_begin(StringInfo out, ReorderBufferTXN *txn)
 {
 	uint8	flags = 0;
 
@@ -171,7 +171,7 @@ pg_logical_write_begin(StringInfo out, ReorderBufferTXN *txn)
  * Write COMMIT to the output stream.
  */
 void
-pg_logical_write_commit(StringInfo out, ReorderBufferTXN *txn,
+pglogical_write_commit(StringInfo out, ReorderBufferTXN *txn,
 						XLogRecPtr commit_lsn)
 {
 	uint8 flags = 0;
@@ -191,7 +191,7 @@ pg_logical_write_commit(StringInfo out, ReorderBufferTXN *txn,
  * Write ORIGIN to the output stream.
  */
 void
-pg_logical_write_origin(StringInfo out, const char *origin,
+pglogical_write_origin(StringInfo out, const char *origin,
 						XLogRecPtr origin_lsn)
 {
 	uint8	flags = 0;
@@ -217,7 +217,7 @@ pg_logical_write_origin(StringInfo out, const char *origin,
  * Write INSERT to the output stream.
  */
 void
-pg_logical_write_insert(StringInfo out, PGLogicalOutputData *data,
+pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple)
 {
 	uint8 flags = 0;
@@ -231,14 +231,14 @@ pg_logical_write_insert(StringInfo out, PGLogicalOutputData *data,
 	pq_sendint(out, RelationGetRelid(rel), 4);
 
 	pq_sendbyte(out, 'N');		/* new tuple follows */
-	pg_logical_write_tuple(out, data, rel, newtuple);
+	pglogical_write_tuple(out, data, rel, newtuple);
 }
 
 /*
  * Write UPDATE to the output stream.
  */
 void
-pg_logical_write_update(StringInfo out, PGLogicalOutputData *data,
+pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 {
 	uint8 flags = 0;
@@ -255,18 +255,18 @@ pg_logical_write_update(StringInfo out, PGLogicalOutputData *data,
 	if (oldtuple != NULL)
 	{
 		pq_sendbyte(out, 'K');	/* old key follows */
-		pg_logical_write_tuple(out, data, rel, oldtuple);
+		pglogical_write_tuple(out, data, rel, oldtuple);
 	}
 
 	pq_sendbyte(out, 'N');		/* new tuple follows */
-	pg_logical_write_tuple(out, data, rel, newtuple);
+	pglogical_write_tuple(out, data, rel, newtuple);
 }
 
 /*
  * Write DELETE to the output stream.
  */
 void
-pg_logical_write_delete(StringInfo out, PGLogicalOutputData *data,
+pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple)
 {
 	uint8 flags = 0;
@@ -281,12 +281,12 @@ pg_logical_write_delete(StringInfo out, PGLogicalOutputData *data,
 
 	/* FIXME support whole tuple (O tuple type) */
 	pq_sendbyte(out, 'K');	/* old key follows */
-	pg_logical_write_tuple(out, data, rel, oldtuple);
+	pglogical_write_tuple(out, data, rel, oldtuple);
 }
 
 /*
  * Most of the brains for startup message creation lives in
- * pg_logical_config.c, so this presently just sends the set of key/value pairs.
+ * pglogical_config.c, so this presently just sends the set of key/value pairs.
  */
 void
 write_startup_message(StringInfo out, const char *msg, int len)
@@ -300,7 +300,7 @@ write_startup_message(StringInfo out, const char *msg, int len)
  * Write a tuple to the outputstream, in the most efficient format possible.
  */
 static void
-pg_logical_write_tuple(StringInfo out, PGLogicalOutputData *data,
+pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 					   Relation rel, HeapTuple tuple)
 {
 	TupleDesc	desc;

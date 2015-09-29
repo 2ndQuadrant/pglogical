@@ -1,8 +1,8 @@
-# `pg_logical` Output Plugin
+# `pglogical` Output Plugin
 
 This is the [logical decoding](http://www.postgresql.org/docs/current/static/logicaldecoding.html)
 [output plugin](http://www.postgresql.org/docs/current/static/logicaldecoding-output-plugin.html)
-for `pg_logical`. Its purpose is to extract a change stream from a PostgreSQL
+for `pglogical`. Its purpose is to extract a change stream from a PostgreSQL
 database and send it to a client over a network connection using a
 well-defined, efficient protocol that multiple different applications can
 consume.
@@ -14,7 +14,7 @@ as supported in PostgreSQL 9.4 or newer, and sent on top of the
 [PostgreSQL streaming replication protocol](http://www.postgresql.org/docs/current/static/protocol-replication.html).
 
 Unlike block-level ("physical") streaming replication, the change stream from
-the `pg_logical` output plugin is compatible across different PostgreSQL
+the `pglogical` output plugin is compatible across different PostgreSQL
 versions and can even be consumed by non-PostgreSQL clients.
 
 The use of a replication slot means that the change stream is reliable and
@@ -34,7 +34,7 @@ option `replication=database`, then uses
 over a non-replication connection, but this is mainly for debugging purposes).
 
 The client supplies parameters to the  `START_REPLICATION SLOT ... LOGICAL ...`
-command to specify the version of the `pg_logical` protocol it supports,
+command to specify the version of the `pglogical` protocol it supports,
 whether it wants binary format, etc.
 
 The output plugin processes the connection parameters and the connection enters
@@ -60,12 +60,12 @@ The overall flow of client/server interaction is:
     * The same mechanisms are used for authentication and protocol encryption as for a normal non-replication connection
 * [Client issues `IDENTIFY_SYSTEM`
     * Server responds with a single row containing system identity info
-* Client issues `CREATE_REPLICATION_SLOT slotname LOGICAL 'pg_logical'` if it's setting up for the first time
+* Client issues `CREATE_REPLICATION_SLOT slotname LOGICAL 'pglogical'` if it's setting up for the first time
     * Server responds with success info and a snapshot identifier
     * Client may at this point use the snapshot identifier on other connections while leaving this one idle
 * Client issues `START_REPLICATION SLOT slotname LOGICAL 0/0 (...options...)` to start streaming, which loops:
-    * Server emits `pg_logical` message block encapsulated in a replication protocol `CopyData` message
-    * Client receives and unwraps message, then decodes the `pg_logical` message block
+    * Server emits `pglogical` message block encapsulated in a replication protocol `CopyData` message
+    * Client receives and unwraps message, then decodes the `pglogical` message block
     * Client intermittently sends a standby status update message to server to confirm replay
 * ... until client sends a graceful connection termination message on the fe/be protocol level or the connection is broken
 
@@ -73,7 +73,7 @@ The overall flow of client/server interaction is:
 
 ### Make a replication connection
 
-To use the `pg_logical` plugin you must first establish a PostgreSQL FE/BE
+To use the `pglogical` plugin you must first establish a PostgreSQL FE/BE
 protocol connection using the client library of your choice, passing
 `replication=database` as one of the connection parameters. `database` is a
 literal string and is not replaced with the database name; instead the database
@@ -86,7 +86,7 @@ Example connection string for `libpq`:
 
     'user=postgres replication=database sslmode=verify-full dbname=mydb'
 
-The plug-in name to pass on logical slot creation is `'pg_logical'`.
+The plug-in name to pass on logical slot creation is `'pglogical'`.
 
 Details are in the replication protocol docs.
 
@@ -112,11 +112,11 @@ The slot name may be anything your application wants up to a limit of 63
 characters in length. It's strongly advised that the slot name clearly identify
 the application and the host it runs on.
 
-Pass `pg_logical` as the plugin name.
+Pass `pglogical` as the plugin name.
 
 e.g.
 
-    CREATE_REPLICATION_SLOT "reporting_host_42" LOGICAL "pg_logical";
+    CREATE_REPLICATION_SLOT "reporting_host_42" LOGICAL "pglogical";
 
 `CREATE_REPLICATION_SLOT` returns a snapshot identifier that may be used with
 [`SET TRANSACTION SNAPSHOT`](http://www.postgresql.org/docs/current/static/sql-set-transaction.html)
@@ -142,12 +142,12 @@ The client now sends:
 to start replication.
 
 The parameters are very important for ensuring that the plugin accepts
-the replication request and streams changes in the expected form. `pg_logical`
-parameters are discussed in the separate `pg_logical` protocol documentation.
+the replication request and streams changes in the expected form. `pglogical`
+parameters are discussed in the separate `pglogical` protocol documentation.
 
 ### Process the startup message
 
-`pg_logical`'s output plugin will send a `CopyData` message containing its
+`pglogical`'s output plugin will send a `CopyData` message containing its
 startup message as the first protocol message. This message contains a
 set of key/value entries describing the capabilities of the upstream output
 plugin, its version and the Pg version, the tuple format options selected,
@@ -160,8 +160,8 @@ first connection's startup message.
 
 ### Consume the change stream
 
-`pg_logical`'s output plugin now sends a continuous series of `CopyData`
-protocol messages, each of which encapsulates a `pg_logical` protocol message
+`pglogical`'s output plugin now sends a continuous series of `CopyData`
+protocol messages, each of which encapsulates a `pglogical` protocol message
 as documented in the separate protocol docs.
 
 These messages provide information about transaction boundaries, changed
