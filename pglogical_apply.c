@@ -73,11 +73,14 @@ ensure_transaction(void)
 static void
 handle_begin(StringInfo s)
 {
-	XLogRecPtr		remote_lsn;
-	TimestampTz		committime;
+	XLogRecPtr		commit_lsn;
+	TimestampTz		commit_time;
 	TransactionId	remote_xid;
 
-	pglogical_read_begin(s, &remote_lsn, &committime, &remote_xid);
+	pglogical_read_begin(s, &commit_lsn, &commit_time, &remote_xid);
+
+	replorigin_session_origin_timestamp = commit_time;
+	replorigin_session_origin_lsn = commit_lsn;
 
 	in_remote_transaction = true;
 }
@@ -90,9 +93,12 @@ handle_commit(StringInfo s)
 {
 	XLogRecPtr		commit_lsn;
 	XLogRecPtr		end_lsn;
-   	TimestampTz		committime;
+	TimestampTz		commit_time;
 
-	pglogical_read_commit(s, &commit_lsn, &end_lsn, &committime);
+	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
+
+	Assert(commit_lsn == replorigin_session_origin_lsn);
+	Assert(commit_time == replorigin_session_origin_timestamp);
 
 	if (IsTransactionState())
 		CommitTransactionCommand();
