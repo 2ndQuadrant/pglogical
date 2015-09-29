@@ -44,7 +44,7 @@ Now create the provider node:
     );
 
 Optionally you can also create replication sets and add tables to them (see
-[#Replication sets]). It's usually better to create replication sets beforehand.
+[Replication sets](#replication-sets)). It's usually better to create replication sets beforehand.
 
 Once the provider node is setup, subscribers can be subscribed to it:
 
