@@ -39,7 +39,7 @@ void pglogical_init(Datum main_arg);
 static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{"error", PGLOGICAL_RESOLVE_ERROR, false},
 	{"apply_remote", PGLOGICAL_RESOLVE_APPLY_REMOTE, false},
-	{"apply_remote", PGLOGICAL_RESOLVE_KEEP_LOCAL, false},
+	{"keep_local", PGLOGICAL_RESOLVE_KEEP_LOCAL, false},
 	{"last_update_wins", PGLOGICAL_RESOLVE_LAST_UPDATE_WINS, false},
 	{"first_update_wins", PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS, false},
 	{NULL, 0, false}
