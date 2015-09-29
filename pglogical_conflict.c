@@ -383,7 +383,7 @@ try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
 	TransactionIdGetCommitTsData(xmin, &local_ts, &local_id);
 
 	/* If tuple was written twice in same transaction, apply row */
-	if (replorigin_sesssion_origin == local_id)
+	if (replorigin_session_origin == local_id)
 	{
 		*resolution = PGLogicalResolution_ApplyRemote;
 		*resulttuple = remotetuple;
@@ -401,15 +401,15 @@ try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
 			apply = false;
 		case PGLOGICAL_RESOLVE_LAST_UPDATE_WINS:
 			apply = conflict_resolve_by_timestamp(local_id,
-												  replorigin_sesssion_origin,
+												  replorigin_session_origin,
 												  local_ts,
-												  replorigin_sesssion_origin_timestamp,
+												  replorigin_session_origin_timestamp,
 												  true, resolution);
 		case PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS:
 			apply = conflict_resolve_by_timestamp(local_id,
-												  replorigin_sesssion_origin,
+												  replorigin_session_origin,
 												  local_ts,
-												  replorigin_sesssion_origin_timestamp,
+												  replorigin_session_origin_timestamp,
 												  false, resolution);
 	}
 

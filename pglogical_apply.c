@@ -109,7 +109,7 @@ handle_commit(StringInfo s)
 	 * change data at the right place.
 	 */
 	if (remote_origin_id != InvalidRepOriginId &&
-		remote_origin_id != replorigin_sesssion_origin)
+		remote_origin_id != replorigin_session_origin)
 	{
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
