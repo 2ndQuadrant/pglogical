@@ -74,7 +74,7 @@ static void send_startup_message(LogicalDecodingContext *ctx,
 /* hooks */
 static Oid get_table_filter_function_id(HookFuncName *funcname, bool validate);
 static void hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue);
-static inline bool pg_decode_change_filter(PGLogicalOutputData *data,
+static inline bool pg_decode_table_filter(PGLogicalOutputData *data,
 						Relation rel,
 						enum ReorderBufferChangeType change);
 
@@ -331,7 +331,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		}
 
 		/* Hooks */
-		if (data->table_change_filter != NULL)
+		if (data->table_filter != NULL)
 		{
 			/*
 			 * Validate the function but don't store the FmgrInfo
@@ -341,7 +341,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			 * slot at, and the relcache is going to get invalidated
 			 * anyway. So we need to look it up on first use.
 			 */
-			(void) get_table_filter_function_id(data->table_change_filter, true);
+			(void) get_table_filter_function_id(data->table_filter, true);
 		}
 	}
 }
@@ -415,7 +415,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	data = ctx->output_plugin_private;
 
 	/* First check the table filter */
-	if (pg_decode_change_filter(data, relation, change->action))
+	if (pg_decode_table_filter(data, relation, change->action))
 		return;
 
 	/* Avoid leaking memory by using and resetting our own context */
@@ -489,11 +489,11 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
  * Decide if the individual change should be filtered out.
  */
 static inline bool
-pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
+pg_decode_table_filter(PGLogicalOutputData *data, Relation rel,
 						enum ReorderBufferChangeType change)
 {
 	/* Call hook if provided. */
-	if (data->table_change_filter)
+	if (data->table_filter)
 	{
 		Datum	res;
 		char	change_type;
@@ -501,13 +501,13 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 
 		/* Find cached function info */
 		hook = (HookCacheEntry*) hash_search(HookCache,
-											 (void *) data->table_change_filter,
+											 (void *) data->table_filter,
 											 HASH_FIND, NULL);
 
 		if (hook == NULL)
 		{
 			Oid		funcoid =
-				get_table_filter_function_id(data->table_change_filter, false);
+				get_table_filter_function_id(data->table_filter, false);
 
 			/*
 			 * Not found, this can be historical snapshot and we can't do
@@ -525,7 +525,7 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 
 			/* Update the cache and continue */
 			hook = (HookCacheEntry*) hash_search(HookCache,
-												 (void *) data->table_change_filter,
+												 (void *) data->table_filter,
 											     HASH_ENTER, NULL);
 
 			hook->funcoid = funcoid;
@@ -565,7 +565,7 @@ pg_decode_change_filter(PGLogicalOutputData *data, Relation rel,
 		}
 
 		res = FunctionCall3(&hook->flinfo,
-							CStringGetTextDatum(data->table_change_filter_arg),
+							CStringGetTextDatum(data->table_filter_arg),
 							ObjectIdGetDatum(RelationGetRelid(rel)),
 							CharGetDatum(change_type));
 

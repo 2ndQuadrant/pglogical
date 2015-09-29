@@ -71,8 +71,8 @@ enum {
 	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
 	PARAM_PG_VERSION,
 	PARAM_FORWARD_CHANGESETS,
-	PARAM_HOOKS_TABLE_CHANGE_FILTER,
-	PARAM_HOOKS_TABLE_CHANGE_FILTER_ARG
+	PARAM_HOOKS_TABLE_FILTER,
+	PARAM_HOOKS_TABLE_FILTER_ARG
 } OutputPluginParamKey;
 
 typedef struct {
@@ -97,8 +97,8 @@ static OutputPluginParam param_lookup[] = {
 	{"binary.basetypes_major_version", PARAM_BINARY_BASETYPES_MAJOR_VERSION},
 	{"pg_version", PARAM_PG_VERSION},
 	{"forward_changesets", PARAM_FORWARD_CHANGESETS},
-	{"hooks.table_change_filter", PARAM_HOOKS_TABLE_CHANGE_FILTER},
-	{"hooks.table_change_filter_arg", PARAM_HOOKS_TABLE_CHANGE_FILTER_ARG},
+	{"hooks.table_filter", PARAM_HOOKS_TABLE_FILTER},
+	{"hooks.table_filter_arg", PARAM_HOOKS_TABLE_FILTER_ARG},
 	{NULL, PARAM_UNRECOGNISED}
 };
 
@@ -235,19 +235,19 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				data->client_binary_basetypes_major_version = DatumGetUInt32(val);
 				break;
 
-			case PARAM_HOOKS_TABLE_CHANGE_FILTER:
+			case PARAM_HOOKS_TABLE_FILTER:
 				{
 					List *qname;
 					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_QUALIFIED_NAME);
 					qname = (List*) PointerGetDatum(val);
-					data->table_change_filter = qname_to_hookfunc(qname);
+					data->table_filter = qname_to_hookfunc(qname);
 					list_free_deep(qname);
 				}
 				break;
 
-			case PARAM_HOOKS_TABLE_CHANGE_FILTER_ARG:
+			case PARAM_HOOKS_TABLE_FILTER_ARG:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
-				data->table_change_filter_arg = DatumGetCString(val);
+				data->table_filter_arg = DatumGetCString(val);
 				break;
 
 			case PARAM_UNRECOGNISED:
@@ -409,7 +409,7 @@ qname_to_hookfunc(List *qname)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("Hook function names must be fully schema qualified"),
-				 errdetail("hooks.table_change_filter was not schema-qualified")));
+				 errdetail("hooks.table_filter was not schema-qualified")));
 	}
 
 	Assert(strlen(schemaname) != 0);
@@ -519,8 +519,8 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 	/*
 	 * Confirm that we've enabled the requested hook function.
 	 */
-	append_startup_msg_b(&si, "hooks.table_change_filter_enabled",
-			data->table_change_filter != NULL);
+	append_startup_msg_b(&si, "hooks.table_filter_enabled",
+			data->table_filter != NULL);
 
 	/*
 	 * TODO: Should provide a hook to emit startup parameters.
