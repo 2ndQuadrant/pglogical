@@ -123,6 +123,61 @@ get_node(int nodeid)
 }
 
 /*
+ * Load the info for specific node.
+ */
+PGLogicalNode *
+get_node_by_name(const char *node_name, bool missing_ok)
+{
+	PGLogicalNode  *node;
+	NodeTuple	   *nodetup;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	TupleDesc		desc;
+	ScanKeyData		key[1];
+	bool			isnull;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for node record. */
+	ScanKeyInit(&key[0],
+				Anum_nodes_name,
+				BTEqualStrategyNumber, F_TEXTEQ,
+				Int32GetDatum(node_name));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+	{
+		if (missing_ok)
+			return NULL;
+
+		elog(ERROR, "node %s not found", node_name);
+	}
+
+	desc = RelationGetDescr(rel);
+	nodetup = (NodeTuple *) GETSTRUCT(tuple);
+
+	/* Create and fill the node struct. */
+	node = (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
+	node->id = nodetup->node_id;
+	node->name = pstrdup(NameStr(nodetup->node_name));
+	node->role = nodetup->node_role;
+	node->status = nodetup->node_status;
+	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_nodes_dsn,
+														desc, &isnull)));
+	node->valid = true;
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return node;
+}
+
+/*
  * Load the local node information.
  */
 PGLogicalNode *
@@ -384,7 +439,7 @@ get_node_publishers(int nodeid)
 }
 
 PGLogicalConnection *
-get_node_connection(int originid, int targetid, bool missing_ok)
+find_node_connection(int originid, int targetid, bool missing_ok)
 {
 	PGLogicalConnection *conn;
 	RangeVar	   *rv;
@@ -446,7 +501,7 @@ get_node_connection(int originid, int targetid, bool missing_ok)
 }
 
 PGLogicalConnection *
-get_node_connection_by_id(int connid)
+get_node_connection(int connid)
 {
 	PGLogicalConnection *conn;
 	RangeVar	   *rv;

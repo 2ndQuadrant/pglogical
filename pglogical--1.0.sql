@@ -9,6 +9,13 @@ CREATE TABLE pglogical.nodes (
 	UNIQUE (node_name)
 );
 
+CREATE TABLE pglogical.local_node (
+	node_id integer
+);
+
+CREATE UNIQUE INDEX local_node_onlyone ON pglogical.local_node ((true));
+
+
 CREATE TABLE pglogical.connections (
 	conn_id integer NOT NULL PRIMARY KEY,
 	conn_origin_id integer NOT NULL,
@@ -16,13 +23,6 @@ CREATE TABLE pglogical.connections (
 	conn_replication_sets text[],
 	UNIQUE (conn_origin_id, conn_target_id),
 );
-
-
-CREATE TABLE pglogical.local_node (
-	node_id integer
-);
-
-CREATE UNIQUE INDEX local_node_onlyone ON pglogical.local_node ((true));
 
 
 CREATE TABLE pglogical.replication_sets (
@@ -42,7 +42,6 @@ CREATE TABLE pglogical.replication_set_tables (
 	set_relation regclass NOT NULL,
 	PRIMARY KEY(set_id, set_relation)
 ) WITH (user_catalog_table=true);
-
 
 CREATE VIEW pglogical.tables AS
 	WITH set_tables AS (
@@ -78,3 +77,10 @@ CREATE VIEW pglogical.tables AS
 	  FROM user_tables t,
 		   pglogical.replication_sets rs
      WHERE rs.set_id = -2;
+
+
+CREATE FUNCTION pglogical.origin_filter(filter text, origin text)
+RETURNS bool STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_origin_filter';
+
+CREATE FUNCTION pglogical.table_filter(nodename text, relid oid, action "char")
+RETURNS bool STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_table_filter';

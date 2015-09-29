@@ -47,8 +47,9 @@
 
 #include "pglogical_proto.h"
 #include "pglogical_relcache.h"
-#include "pglogical_conflict.h"
 #include "pglogical_node.h"
+#include "pglogical_repset.h"
+#include "pglogical_conflict.h"
 #include "pglogical.h"
 
 
@@ -569,7 +570,7 @@ pglogical_apply_main(Datum main_arg)
 	BackgroundWorkerInitializeConnection("postgres", NULL);
 
 	StartTransactionCommand();
-	conn = get_node_connection_by_id(MyApplyWorker->connid);
+	conn = get_node_connection(MyApplyWorker->connid);
 	origin_node = conn->origin;
 
 	elog(DEBUG1, "conneting to node %d (%s), dsn %s",
@@ -604,7 +605,57 @@ pglogical_apply_main(Datum main_arg)
 					 (uint32) (origin_startpos >> 32),
 					 (uint32) origin_startpos);
 
-	appendStringInfo(&command, "client_encoding '%s'", GetDatabaseEncodingName());
+	appendStringInfo(&command, "expected_encoding '%s'", GetDatabaseEncodingName());
+	appendStringInfo(&command, ", min_proto_version '1'");
+	appendStringInfo(&command, ", max_proto_version '1'");
+	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
+
+	/* Binary protocol compatibility. */
+	appendStringInfo(&command, ", binary.want_binary_basetypes '1'");
+	appendStringInfo(&command, ", binary.want_sendrecv_basetypes '1'");
+	appendStringInfo(&command, ", binary.basetypes_major_version '%u'", PG_VERSION_NUM/100);
+	appendStringInfo(&command, ", binary.sizeof_datum '%zu'", sizeof(Datum));
+	appendStringInfo(&command, ", binary.sizeof_int '%zu'", sizeof(int));
+	appendStringInfo(&command, ", binary.sizeof_long '%zu'", sizeof(long));
+	appendStringInfo(&command, ", binary.bigendian '%d'",
+#ifdef WORDS_BIGENDIAN
+					 true
+#else
+					 false
+#endif
+					 );
+	appendStringInfo(&command, ", binary.float4_byval '%d'",
+#ifdef USE_FLOAT4_BYVAL
+					 true
+#else
+					 false
+#endif
+					 );
+	appendStringInfo(&command, ", binary.float8_byval '%d'",
+#ifdef USE_FLOAT8_BYVAL
+					 true
+#else
+					 false
+#endif
+					 );
+	appendStringInfo(&command, ", binary.integer_datetimes '%d'",
+#ifdef USE_INTEGER_DATETIMES
+					 true
+#else
+					 false
+#endif
+					 );
+
+	/* Table filter hook (replication set handling). */
+	appendStringInfo(&command, ", hooks.origin_filter 'pglogical.origin_filter'");
+	/* Currently we forward all changes. */
+	appendStringInfo(&command, ", hooks.origin_filter_arg '%s'",
+					 REPLICATION_ORIGIN_ALL);
+
+	/* Table filter hook (replication set handling). */
+	appendStringInfo(&command, ", hooks.table_filter 'pglogical.table_filter'");
+	appendStringInfo(&command, ", hooks.table_filter_arg '%s'",
+					 conn->target->name); /* No need to escape, it's Name. */
 
 	appendStringInfoChar(&command, ')');
 

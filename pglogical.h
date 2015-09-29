@@ -21,6 +21,8 @@
 #define PGLOGICAL_MASTER_TOC_STATE	1
 #define PGLOGICAL_MASTER_TOC_APPLY	2
 
+#define REPLICATION_ORIGIN_ALL "all"
+
 typedef struct PGLogicalApplyWorker
 {
 	int		connid;

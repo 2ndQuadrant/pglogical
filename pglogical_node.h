@@ -52,15 +52,16 @@ extern void drop_node(int nodeid);
 extern PGLogicalNode **get_nodes(void);
 extern PGLogicalNode *get_node(int nodeid);
 extern PGLogicalNode *get_local_node(void);
+extern PGLogicalNode *get_node_by_name(const char *node_name, bool missing_ok);
 extern void set_node_status(int nodeid, char status);
 
 extern List *get_node_subscribers(int nodeid);
 extern List *get_node_publishers(int nodeid);
 
 extern int get_node_connectionid(int originid, int targetid);
-extern PGLogicalConnection *get_node_connection_by_id(int connid);
-extern PGLogicalConnection *get_node_connection(int originid, int targetid,
-												bool missing_ok);
+extern PGLogicalConnection *get_node_connection(int connid);
+extern PGLogicalConnection *find_node_connection(int originid, int targetid,
+												 bool missing_ok);
 extern void create_node_connection(int originid, int targetid);
 extern void drop_node_connection(int connid);
 
