@@ -16,7 +16,7 @@ To run these tests:
 
 * Start the temporary PostgreSQL instance with:
 
-        PGPORT=5142 postgres -D tmp_install -c max_replication_slots=5 -c wal_level=logical
+        PGPORT=5142 postgres -D tmp_install -c max_replication_slots=5 -c wal_level=logical -c max_wal_senders=10
 
 * In another session, in the test directory:
 
