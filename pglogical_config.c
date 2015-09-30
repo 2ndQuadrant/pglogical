@@ -360,7 +360,7 @@ parse_param_bool(DefElem *elem)
 	if (!parse_bool(strVal(elem->arg), &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not parse boolean value \"%s\" for parameter \"%s\": %m",
+				 errmsg("could not parse boolean value \"%s\" for parameter \"%s\"",
 						strVal(elem->arg), elem->defname)));
 
 	return res;
@@ -374,13 +374,13 @@ parse_param_uint32(DefElem *elem)
 	if (!scanint8(strVal(elem->arg), true, &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not parse integer value \"%s\" for parameter \"%s\": %m",
+				 errmsg("could not parse integer value \"%s\" for parameter \"%s\"",
 						strVal(elem->arg), elem->defname)));
 
 	if (res > PG_UINT32_MAX || res < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("value \"%s\" out of range for parameter \"%s\": %m",
+				 errmsg("value \"%s\" out of range for parameter \"%s\"",
 						strVal(elem->arg), elem->defname)));
 
 	return (uint32) res;
