@@ -505,7 +505,7 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 	/* Binary format characteristics of server */
 	append_startup_msg_i(&si, "binary.sizeof_int", sizeof(int));
 	append_startup_msg_i(&si, "binary.sizeof_long", sizeof(long));
-	append_startup_msg_i(&si, "binary.sizeof_long", sizeof(Datum));
+	append_startup_msg_i(&si, "binary.sizeof_datum", sizeof(Datum));
 	append_startup_msg_i(&si, "binary.maxalign", MAXIMUM_ALIGNOF);
 	append_startup_msg_b(&si, "binary.bigendian", server_bigendian());
 	append_startup_msg_b(&si, "binary.float4_byval", server_float4_byval());
