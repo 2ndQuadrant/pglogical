@@ -152,7 +152,6 @@ drop_node(int nodeid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
-	heap_freetuple(tuple);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }
@@ -244,7 +243,11 @@ get_node_by_name(const char *node_name, bool missing_ok)
 	if (!HeapTupleIsValid(tuple))
 	{
 		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
 			return NULL;
+		}
 
 		elog(ERROR, "node %s not found", node_name);
 	}
@@ -539,7 +542,11 @@ find_node_connection(int originid, int targetid, bool missing_ok)
 	if (!HeapTupleIsValid(tuple))
 	{
 		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
 			return NULL;
+		}
 
 		elog(ERROR, "connection between node %d and %d not found", originid,
 			 targetid);
@@ -633,7 +640,7 @@ create_node_connection(int originid, int targetid, List *replication_sets)
 	bool		nulls[Natts_connections];
 	int			connid = originid ^ targetid;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
@@ -645,7 +652,7 @@ create_node_connection(int originid, int targetid, List *replication_sets)
 	values[Anum_connections_target_id - 1] = Int32GetDatum(targetid);
 
 	if (replication_sets && replication_sets->length > 0)
-		values[Anum_connections_replication_sets -1] =
+		values[Anum_connections_replication_sets - 1] =
 			PointerGetDatum(strlist_to_textarray(replication_sets));
 	else
 		nulls[Anum_connections_replication_sets - 1] = true;
@@ -694,7 +701,6 @@ drop_node_connection(int connid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
-	heap_freetuple(tuple);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }

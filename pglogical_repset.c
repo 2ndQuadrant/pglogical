@@ -143,7 +143,11 @@ get_replication_set_by_name(const char *setname, bool missing_ok)
 	if (!HeapTupleIsValid(tuple))
 	{
 		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
 			return NULL;
+		}
 
 		elog(ERROR, "replication set %s not found", setname);
 	}
@@ -413,7 +417,6 @@ drop_replication_set(int setid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
-	heap_freetuple(tuple);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }
@@ -492,7 +495,6 @@ replication_set_remove_table(int setid, Oid reloid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
-	heap_freetuple(tuple);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }

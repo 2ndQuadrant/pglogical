@@ -16,10 +16,10 @@ CREATE TABLE pglogical.local_node (
 
 CREATE UNIQUE INDEX local_node_onlyone ON pglogical.local_node ((true));
 
-CREATE FUNCTION pglogical.create_node(node_name name, node_role "char", node_dns text, node_init_dsn text := NULL)
-RETURNS int STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_create_node';
-CREATE FUNCTION pglogical.drop_node(node_name text)
-RETURNS void STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_drop_node';
+CREATE FUNCTION pglogical.create_node(node_name name, node_role "char", node_dns text, node_init_dsn text = NULL)
+RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_node';
+CREATE FUNCTION pglogical.drop_node(node_name name)
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_node';
 
 
 CREATE TABLE pglogical.connections (
@@ -27,13 +27,13 @@ CREATE TABLE pglogical.connections (
 	conn_origin_id integer NOT NULL,
 	conn_target_id integer NOT NULL,
 	conn_replication_sets text[],
-	UNIQUE (conn_origin_id, conn_target_id),
+	UNIQUE (conn_origin_id, conn_target_id)
 );
 
-CREATE FUNCTION pglogical.create_connection(origin name, target name, replication_sets text[] := NULL)
-RETURNS int STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_create_connection';
-CREATE FUNCTION pglogical.drop_connection(origin text, target text)
-RETURNS void STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_drop_connection';
+CREATE FUNCTION pglogical.create_connection(origin name, target name, replication_sets text[] = NULL)
+RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_connection';
+CREATE FUNCTION pglogical.drop_connection(origin name, target name)
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_connection';
 
 
 CREATE TABLE pglogical.replication_sets (
@@ -69,6 +69,7 @@ CREATE VIEW pglogical.tables AS
 		   AND n.oid = r.relnamespace
 		   AND n.nspname !~ '^pg_'
 		   AND n.nspname != 'information_schema'
+		   AND n.nspname != 'pglogical'
 	)
     SELECT s.set_name, n.nspname, r.relname
 	  FROM pg_catalog.pg_namespace n,
@@ -91,18 +92,18 @@ CREATE VIEW pglogical.tables AS
 
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
-	replicate_inserts boolean := true, replicate_updates boolean := true,
-	replicate_deletes boolean := true)
-RETURNS int STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_create_replication_set';
-CREATE FUNCTION pglogical.drop_replication_set(set_name text)
-RETURNS void STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_drop_replication_set';
+	replicate_inserts boolean = true, replicate_updates boolean = true,
+	replicate_deletes boolean = true)
+RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_replication_set';
+CREATE FUNCTION pglogical.drop_replication_set(set_name name)
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
 
-CREATE FUNCTION pglogical.replication_add_table(set_name name, relation regclass)
-RETURNS int STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_replication_add_table';
-CREATE FUNCTION pglogical.replication_remove_table(set_name text, relation regclass)
-RETURNS int STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_replication_remove_table';
+CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass)
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
+CREATE FUNCTION pglogical.replication_set_remove_table(set_name name, relation regclass)
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
 
 CREATE FUNCTION pglogical.origin_filter(filter text, origin text)
-RETURNS boolean STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_origin_filter';
+RETURNS boolean STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_origin_filter';
 CREATE FUNCTION pglogical.table_filter(nodename text, relid oid, action "char")
-RETURNS boolean STABLE LANGUAGE c AS 'MODULE_NAME, pglogical_table_filter';
+RETURNS boolean STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_table_filter';

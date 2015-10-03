@@ -155,10 +155,9 @@ pglogical_create_node(PG_FUNCTION_ARGS)
 Datum
 pglogical_drop_node(PG_FUNCTION_ARGS)
 {
-	const char	   *node_name = TextDatumGetCString(PG_GETARG_DATUM(0));
 	PGLogicalNode  *node;
 
-	node = get_node_by_name(node_name, false);
+	node = get_node_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 
 	drop_node(node->id);
 
@@ -173,8 +172,6 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 Datum
 pglogical_create_connection(PG_FUNCTION_ARGS)
 {
-	const char	   *origin_name;
-	const char     *target_name;
 	PGLogicalNode  *origin;
 	PGLogicalNode  *target;
 	List		   *replication_sets;
@@ -190,10 +187,8 @@ pglogical_create_connection(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("target name cannot be null")));
 
-	origin_name = TextDatumGetCString(PG_GETARG_DATUM(0));
-	origin = get_node_by_name(origin_name, false);
-	target_name = TextDatumGetCString(PG_GETARG_DATUM(1));
-	target = get_node_by_name(target_name, false);
+	origin = get_node_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	target = get_node_by_name(NameStr(*PG_GETARG_NAME(1)), false);
 
 	if (PG_ARGISNULL(2))
 		replication_sets = NIL;
@@ -213,14 +208,12 @@ pglogical_create_connection(PG_FUNCTION_ARGS)
 Datum
 pglogical_drop_connection(PG_FUNCTION_ARGS)
 {
-	const char	   *origin_name = TextDatumGetCString(PG_GETARG_DATUM(0));
-	const char     *target_name = TextDatumGetCString(PG_GETARG_DATUM(1));
 	PGLogicalNode  *origin;
 	PGLogicalNode  *target;
 	PGLogicalConnection *conn;
 
-	origin = get_node_by_name(origin_name, false);
-	target = get_node_by_name(target_name, false);
+	origin = get_node_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	target = get_node_by_name(NameStr(*PG_GETARG_NAME(1)), false);
 
 	conn = find_node_connection(origin->id, target->id, false);
 
@@ -258,10 +251,9 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 Datum
 pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 {
-	const char		   *setname = TextDatumGetCString(PG_GETARG_DATUM(0));
 	PGLogicalRepSet    *repset;
 
-	repset = get_replication_set_by_name(setname, false);
+	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 
 	drop_replication_set(repset->id);
 
@@ -274,13 +266,12 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 Datum
 pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 {
-	const char *setname = TextDatumGetCString(PG_GETARG_DATUM(0));
-	Oid			reloid = PG_GETARG_OID(PG_GETARG_DATUM(1));
+	Oid			reloid = PG_GETARG_OID(1);
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 
 	/* Find the replication set. */
-	repset = get_replication_set_by_name(setname, false);
+	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 
 	/* Make sure the relation exists. */
 	rel = heap_open(reloid, AccessShareLock);
@@ -302,13 +293,12 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 Datum
 pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 {
-	const char *setname = TextDatumGetCString(PG_GETARG_DATUM(0));
-	Oid			reloid = PG_GETARG_OID(PG_GETARG_DATUM(1));
+	Oid			reloid = PG_GETARG_OID(1);
 
 	PGLogicalRepSet    *repset;
 
 	/* Find the replication set. */
-	repset = get_replication_set_by_name(setname, false);
+	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 
 	replication_set_remove_table(repset->id, reloid);
 
