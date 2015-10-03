@@ -36,10 +36,20 @@ typedef struct PGLogicalRepSetRelation
 	bool			replicate_deletes;	/* should deletes be replicated? */
 } PGLogicalRepSetRelation;
 
-extern PGLogicalRepSet *replication_set_get(int setid);
+extern PGLogicalRepSet *get_replication_set(int setid);
+extern PGLogicalRepSet *get_replication_set_by_name(const char *setname,
+													bool missing_ok);
+
 extern List *get_replication_sets(List *replication_set_names);
 
 extern bool relation_is_replicated(Relation rel, PGLogicalConnection *conn,
 								   enum ReorderBufferChangeType action);
 
+extern void create_replication_set(PGLogicalRepSet *repset);
+extern void drop_replication_set(int setid);
+
+extern void replication_set_add_table(int setid, Oid reloid);
+extern void replication_set_remove_table(int setid, Oid reloid);
+
 #endif /* PGLOGICAL_REPSET_H */
+

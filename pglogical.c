@@ -18,13 +18,16 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 
 #include "catalog/pg_database.h"
+#include "catalog/pg_type.h"
 
 #include "postmaster/bgworker.h"
 
 #include "storage/ipc.h"
 
+#include "utils/builtins.h"
 #include "utils/guc.h"
 
 #include "pglogical_node.h"
@@ -86,6 +89,57 @@ gen_slot_name(Name slot_name, char *dbname, PGLogicalNode *origin_node,
 			 shorten_hash(origin_node->name, 16),
 			 shorten_hash(target_node->name, 16));
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
+}
+
+/*
+ * Generates new random id, hopefully unique enough.
+ *
+ * TODO: this could be improved.
+ */
+Oid
+pglogical_generate_id(void)
+{
+	uint32	hashinput[3];
+	uint64	sysid = GetSystemIdentifier();
+	uint32	id = random(); /* XXX: this would be better as sequence. */
+
+	do
+	{
+		hashinput[0] = (uint32) sysid;
+		hashinput[1] = (uint32) (sysid >> 32);
+		hashinput[2] = id++;
+
+		id = DatumGetUInt32(hash_any((const unsigned char *) hashinput,
+									 (int) sizeof(hashinput)));
+	}
+	while (id == InvalidOid); /* Protect against returning InvalidOid */
+
+	return id;
+}
+
+/*
+ * Convert text array to list of strings.
+ *
+ * Note: the resulting list points to the memory of the input array.
+ */
+List *
+textarray_to_list(ArrayType *textarray)
+{
+	Datum		   *elems;
+	int				nelems, i;
+	List		   *res = NIL;
+
+	deconstruct_array(textarray,
+					  TEXTOID, -1, false, 'i',
+					  &elems, NULL, &nelems);
+
+	if (nelems == 0)
+		return NIL;
+
+	for (i = 0; i < nelems; i++)
+		res = lappend(res, TextDatumGetCString(elems[i]));
+
+	return res;
 }
 
 /*

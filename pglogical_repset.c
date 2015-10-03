@@ -17,6 +17,7 @@
 #include "miscadmin.h"
 
 #include "access/genam.h"
+#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
@@ -54,102 +55,24 @@ typedef struct RepSetTuple
 	bool		replicate_deletes;
 } RepSetTuple;
 
+#define Natts_repsets					5
 #define Anum_repsets_id					1
 #define Anum_repsets_name				2
 #define Anum_repsets_replicate_inserts	3
 #define Anum_repsets_replicate_updates	4
 #define Anum_repsets_replicate_deletes	5
 
+#define Natts_repset_tables			2
 #define Anum_repset_tables_setid	1
 #define Anum_repset_tables_reloid	2
 
 static HTAB *RepSetRelationHash = NULL;
 
-PGDLLEXPORT Datum pglogical_get_replication_set_tables(PG_FUNCTION_ARGS);
-PG_FUNCTION_INFO_V1(pglogical_get_replication_set_tables);
-
-Datum
-pglogical_get_replication_set_tables(PG_FUNCTION_ARGS)
-{
-	ArrayType	   *arr = PG_GETARG_ARRAYTYPE_P(0);
-	ReturnSetInfo  *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-	TupleDesc		tupdesc;
-	Tuplestorestate *tupstore;
-	MemoryContext	per_query_ctx;
-	MemoryContext	oldcontext;
-	int				ret;
-	int				i;
-	Datum			vals[1] = {PointerGetDatum(arr)};
-	Oid				types[1] = {TEXTARRAYOID};
-
-	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("set-valued function called in context that cannot accept a set")));
-	if (!(rsinfo->allowedModes & SFRM_Materialize))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("materialize mode required, but it is not allowed in this context")));
-
-	/* Build a tuple descriptor for our result type */
-	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-		elog(ERROR, "return type must be a row type");
-
-	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
-	oldcontext = MemoryContextSwitchTo(per_query_ctx);
-
-	tupstore = tuplestore_begin_heap(true, false, work_mem);
-	rsinfo->returnMode = SFRM_Materialize;
-	rsinfo->setResult = tupstore;
-	rsinfo->setDesc = tupdesc;
-
-	MemoryContextSwitchTo(oldcontext);
-
-	/*
-	 * Run this through SPI. This is not performance critical function so it
-	 * does not seem worthwile to implement the join in C.
-	 */
-	SPI_connect();
-	ret = SPI_execute_with_args("SELECT DISTINCT n.nspname, r.relname"
-								"  FROM pg_catalog.pg_namespace n,"
-								"       pg_catalog.pg_class r,"
-								"       pglogical.replication_set_tables t,"
-								"       pglogical.replication_sets s"
-								" WHERE s.set_name = ANY($1)"
-								"   AND s.set_id = t.set_id"
-								"   AND r.oid = t.set_relation"
-								"   AND n.oid = r.relnamespace",
-								1, types, vals, NULL, false, 0);
-
-	if (ret != SPI_OK_SELECT)
-		elog(ERROR, "SPI error while querying replication sets");
-
-	for (i = 0; i < SPI_processed; i++)
-	{
-		Datum		values[2];
-		bool		nulls[2] = {false, false};
-
-		values[0] = CStringGetTextDatum(SPI_getvalue(SPI_tuptable->vals[i],
-													 SPI_tuptable->tupdesc,
-													 1));
-		values[1] = CStringGetTextDatum(SPI_getvalue(SPI_tuptable->vals[i],
-													 SPI_tuptable->tupdesc,
-													 2));
-
-		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
-	}
-
-	tuplestore_donestoring(tupstore);
-	SPI_finish();
-
-	return (Datum) 0;
-}
-
 /*
- * Load the info for specific node.
+ * Read the replication set.
  */
 PGLogicalRepSet *
-replication_set_get(int setid)
+get_replication_set(int setid)
 {
 	PGLogicalRepSet    *repset;
 	RepSetTuple		   *repsettup;
@@ -162,7 +85,7 @@ replication_set_get(int setid)
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
-	/* Search for node record. */
+	/* Search for repset record. */
 	ScanKeyInit(&key[0],
 				Anum_repsets_id,
 				BTEqualStrategyNumber, F_INT4EQ,
@@ -180,6 +103,57 @@ replication_set_get(int setid)
 	repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
 	repset->id = setid;
 
+	repset->name = pstrdup(NameStr(repsettup->name));
+	repset->replicate_inserts = repsettup->replicate_inserts;
+	repset->replicate_updates = repsettup->replicate_updates;
+	repset->replicate_deletes = repsettup->replicate_deletes;
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return repset;
+}
+
+/*
+ * Find replication set by name
+ */
+PGLogicalRepSet *
+get_replication_set_by_name(const char *setname, bool missing_ok)
+{
+	PGLogicalRepSet    *repset;
+	RepSetTuple		   *repsettup;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for repset record. */
+	ScanKeyInit(&key[0],
+				Anum_repsets_name,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(setname));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+	{
+		if (missing_ok)
+			return NULL;
+
+		elog(ERROR, "replication set %s not found", setname);
+	}
+
+	repsettup = (RepSetTuple *) GETSTRUCT(tuple);
+
+	/* Create and fill the replication set struct. */
+	repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
+
+	repset->id = repsettup->id;
 	repset->name = pstrdup(NameStr(repsettup->name));
 	repset->replicate_inserts = repsettup->replicate_inserts;
 	repset->replicate_updates = repsettup->replicate_updates;
@@ -250,7 +224,7 @@ get_replication_sets(List *replication_set_names)
 		RepSetTuple	   *repsettup;
 		PGLogicalRepSet	  *repset;
 
-		/* Search for node record. */
+		/* Search for repset record. */
 		ScanKeyInit(&key[0],
 					Anum_repsets_name,
 					BTEqualStrategyNumber, F_NAMEEQ,
@@ -352,4 +326,173 @@ relation_is_replicated(Relation rel, PGLogicalConnection *conn,
 
 	/* Not reachable. */
 	return false;
+}
+
+
+/*
+ * Add new tuple to the replication_sets catalog.
+ */
+void
+create_replication_set(PGLogicalRepSet *repset)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_repsets];
+	bool		nulls[Natts_repsets];
+	NameData	repset_name;
+
+	if (get_node_by_name(repset->name, true) != NULL)
+		elog(ERROR, "replication set %s already exists", repset->name);
+
+	/* Generate new id unless one was already specified. */
+	if (repset->id == InvalidOid)
+		repset->id = DatumGetInt32(hash_any((const unsigned char *) repset->name,
+											strlen(repset->name)));
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_repsets_id - 1] = Int32GetDatum(repset->id);
+	namestrcpy(&repset_name, repset->name);
+	values[Anum_repsets_name - 1] = NameGetDatum(&repset_name);
+	values[Anum_repsets_replicate_inserts - 1] =
+		BoolGetDatum(repset->replicate_inserts);
+	values[Anum_repsets_replicate_updates - 1] =
+		BoolGetDatum(repset->replicate_updates);
+	values[Anum_repsets_replicate_deletes - 1] =
+		BoolGetDatum(repset->replicate_deletes);
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
+
+/*
+ * Delete the tuple from replication sets catalog.
+ */
+void
+drop_replication_set(int setid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for repset record. */
+	ScanKeyInit(&key[0],
+				Anum_repsets_id,
+				BTEqualStrategyNumber, F_INT4EQ,
+				Int32GetDatum(setid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "replication set %d not found", setid);
+
+	/* Remove the tuple. */
+	simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	heap_freetuple(tuple);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Insert new replication set / relation mapping.
+ *
+ * The caller is responsible for ensuring the relation exists.
+ */
+void
+replication_set_add_table(int setid, Oid reloid)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_repset_tables];
+	bool		nulls[Natts_repset_tables];
+	PGLogicalRepSet *repset = get_replication_set(setid);
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_repset_tables_setid - 1] = Int32GetDatum(repset->id);
+	values[Anum_repset_tables_reloid - 1] = reloid;
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Remove existing replication set / relation mapping.
+ */
+void
+replication_set_remove_table(int setid, Oid reloid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[2];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for the record. */
+	ScanKeyInit(&key[0],
+				Anum_repset_tables_setid,
+				BTEqualStrategyNumber, F_INT4EQ,
+				Int32GetDatum(setid));
+	ScanKeyInit(&key[1],
+				Anum_repset_tables_reloid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				Int32GetDatum(reloid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "replication set mapping %d:%d not found", setid, reloid);
+
+	/* Remove the tuple. */
+	simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	heap_freetuple(tuple);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
 }

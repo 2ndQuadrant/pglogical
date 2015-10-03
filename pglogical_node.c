@@ -16,11 +16,13 @@
 #include "postgres.h"
 
 #include "access/genam.h"
+#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
 
 #include "catalog/indexing.h"
+#include "catalog/objectaddress.h"
 #include "catalog/pg_type.h"
 
 #include "nodes/makefuncs.h"
@@ -48,12 +50,14 @@ typedef struct NodeTuple
 	text		node_dsn;
 } NodeTuple;
 
+#define Natts_nodes			5
 #define Anum_nodes_id		1
 #define Anum_nodes_name		2
 #define Anum_nodes_role		3
 #define Anum_nodes_status	4
 #define Anum_nodes_dsn		5
 
+#define Natts_connections			4
 #define Anum_connections_id			1
 #define Anum_connections_origin_id	2
 #define Anum_connections_target_id	3
@@ -62,9 +66,96 @@ typedef struct NodeTuple
 #define Anum_connections_local_node	1
 
 
-void create_node(PGLogicalNode *node);
+/*
+ * Add new tuple to the nodes catalog.
+ */
+void
+create_node(PGLogicalNode *node)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_nodes];
+	bool		nulls[Natts_nodes];
+	NameData	node_name;
+
+	if (get_node_by_name(node->name, true) != NULL)
+		elog(ERROR, "node %s already exists", node->name);
+
+	/* Generate new id unless one was already specified. */
+	if (node->id == InvalidOid)
+		node->id = DatumGetInt32(hash_any((const unsigned char *) node->name,
+										  strlen(node->name)));
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_nodes_id - 1] = Int32GetDatum(node->id);
+	namestrcpy(&node_name, node->name);
+	values[Anum_nodes_name - 1] = NameGetDatum(&node_name);
+	values[Anum_nodes_role - 1] = CharGetDatum(node->role);
+	values[Anum_nodes_status - 1] = CharGetDatum(node->status);
+
+	if (node->dsn != NULL)
+		values[Anum_nodes_dsn - 1] = CStringGetTextDatum(node->dsn);
+	else
+		nulls[Anum_nodes_dsn - 1] = true;
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
 void alter_node(PGLogicalNode *node);
-void drop_node(int nodeid);
+
+/*
+ * Delete the tuple from nodes catalog.
+ */
+void
+drop_node(int nodeid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for node record. */
+	ScanKeyInit(&key[0],
+				Anum_nodes_id,
+				BTEqualStrategyNumber, F_INT4EQ,
+				Int32GetDatum(nodeid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "node %d not found", nodeid);
+
+	/* Remove the tuple. */
+	simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	heap_freetuple(tuple);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
 
 PGLogicalNode **
 get_nodes(void)
@@ -144,8 +235,8 @@ get_node_by_name(const char *node_name, bool missing_ok)
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
 				Anum_nodes_name,
-				BTEqualStrategyNumber, F_TEXTEQ,
-				Int32GetDatum(node_name));
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(node_name));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
@@ -279,31 +370,6 @@ set_node_status(int nodeid, char status)
 
 	if (tx_started)
 		CommitTransactionCommand();
-}
-
-/*
- * Convert text array to list of strings.
- *
- * Note: the resulting list points to the memory of the input array.
- */
-static List *
-textarray_to_list(ArrayType *textarray)
-{
-	Datum		   *elems;
-	int				nelems, i;
-	List		   *res = NIL;
-
-	deconstruct_array(textarray,
-					  TEXTOID, -1, false, 'i',
-					  &elems, NULL, &nelems);
-
-	if (nelems == 0)
-		return NIL;
-
-	for (i = 0; i < nelems; i++)
-		res = lappend(res, TextDatumGetCString(elems[i]));
-
-	return res;
 }
 
 static List *
@@ -553,5 +619,82 @@ get_node_connection(int connid)
 	return conn;
 }
 
-void create_node_connection(int originid, int targetid);
-void drop_node_connection(int connid);
+/*
+ * Add new connectiions tuple.
+ */
+int
+create_node_connection(int originid, int targetid, List *replication_sets)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_connections];
+	bool		nulls[Natts_connections];
+	int			connid = originid ^ targetid;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_connections_id - 1] = Int32GetDatum(connid);
+	values[Anum_connections_origin_id - 1] = Int32GetDatum(originid);
+	values[Anum_connections_target_id - 1] = Int32GetDatum(targetid);
+
+	if (replication_sets && replication_sets->length > 0)
+		values[Anum_connections_replication_sets -1] =
+			PointerGetDatum(strlist_to_textarray(replication_sets));
+	else
+		nulls[Anum_connections_replication_sets - 1] = true;
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+
+	return connid;
+}
+
+/* Remove the tuple from the connections catalog. */
+void
+drop_node_connection(int connid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for connection record. */
+	ScanKeyInit(&key[0],
+				Anum_connections_id,
+				BTEqualStrategyNumber, F_INT4EQ,
+				Int32GetDatum(connid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "connection %d not found", connid);
+
+	/* Remove the tuple. */
+	simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	heap_freetuple(tuple);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}

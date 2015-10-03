@@ -20,6 +20,7 @@ typedef struct PGLogicalNode
 	char		role;
 	char		status;
 	const char *dsn;
+	const char *init_dsn;
 	bool		valid;
 } PGLogicalNode;
 
@@ -62,7 +63,8 @@ extern int get_node_connectionid(int originid, int targetid);
 extern PGLogicalConnection *get_node_connection(int connid);
 extern PGLogicalConnection *find_node_connection(int originid, int targetid,
 												 bool missing_ok);
-extern void create_node_connection(int originid, int targetid);
+extern int32 create_node_connection(int originid, int targetid,
+									List *replication_sets);
 extern void drop_node_connection(int connid);
 
 #endif /* PGLOGICAL_NODE_H */
