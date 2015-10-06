@@ -3,7 +3,11 @@ import collections
 class ProtocolReader(collections.Iterator):
     """
     A protocol generator wrapper that can validate a message before returning
-    it.
+    it and has helpers for reading different message types.
+
+    The underlying message generator is stored as the message_generator
+    member, but you shouldn't consume any messages from it directly, since
+    that'll break validation if enabled.
     """
 
     startup_params = None
