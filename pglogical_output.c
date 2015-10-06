@@ -19,6 +19,7 @@
 
 #include "access/hash.h"
 #include "access/sysattr.h"
+#include "access/xact.h"
 
 #include "catalog/pg_class.h"
 #include "catalog/pg_proc.h"
@@ -635,6 +636,13 @@ get_table_filter_function_id(HookFuncName *funcname, bool validate)
 	Oid			funcid;
 	Oid			funcargtypes[3];
 	List		*key;
+	bool		tx_started = false;
+
+	if (!IsTransactionState())
+	{
+		StartTransactionCommand();
+		tx_started = true;
+	}
 
 	funcargtypes[0] = TEXTOID;	/* identifier of this node */
 	funcargtypes[1] = OIDOID;	/* relation */
@@ -685,6 +693,9 @@ get_table_filter_function_id(HookFuncName *funcname, bool validate)
 	}
 
 	list_free(key);
+
+	if (tx_started)
+		CommitTransactionCommand();
 
 	return funcid;
 }
