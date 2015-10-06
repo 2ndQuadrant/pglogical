@@ -205,10 +205,7 @@ class PGLogicalOutputTest(unittest.TestCase):
         self.logger = logging.getLogger(__name__)
 
         # Set up the interface class
-        if os.environ.get("PGLOGICALTEST_USEWALSENDER", None):
-            self.interface = WalsenderDecodingInterface(self.connstring)
-        else:
-            self.interface = SQLDecodingInterface(self.connstring)
+        self.reconnect_decoding()
 
         # Get connections for test classes to use to run SQL
         self.conn = psycopg2.connect(self.connstring)
@@ -228,5 +225,27 @@ class PGLogicalOutputTest(unittest.TestCase):
         if self.interface:
             self.interface.cleanup()
 
+    def reconnect_decoding(self):
+        """
+        Close the logical decoding connection and re-establish it.
+
+        This is useful when we want to restart decoding with different parameters,
+        since in walsender mode there's no way to end a decoding session once
+        begun.
+        """
+        if self.interface is not None:
+            self.interface.cleanup()
+
+        if os.environ.get("PGLOGICALTEST_USEWALSENDER", None):
+            self.interface = WalsenderDecodingInterface(self.connstring)
+        else:
+            self.interface = SQLDecodingInterface(self.connstring)
+
+
     def get_changes(self, kwargs = {}):
+        """
+        Get a stream of messages as a generator that may be read from
+        to fetch a new message each call. Messages are instances of
+        class ReplicationMessage .
+        """
         return self.interface.get_changes(kwargs)
