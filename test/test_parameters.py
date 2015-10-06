@@ -72,7 +72,7 @@ class ParametersTest(PGLogicalOutputTest):
     def get_startup_msg(self, messages):
         """Read and return the startup message"""
         m = messages.next()
-        self.assertEqual(m.mesage_type, 'S')
+        self.assertEqual(m.message_type, 'S')
         return m
 
 if __name__ == '__main__':

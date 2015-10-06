@@ -9,6 +9,7 @@ import select
 import time
 import sys
 import os
+from pglogical_protoreader import ProtocolReader
 
 from pglogical_proto import ReplicationMessage
 
@@ -111,7 +112,9 @@ class SQLDecodingInterface(BaseDecodingInterface):
     def get_changes(self, kwargs = {}):
         params_dict = self._get_changes_params(kwargs)
 
-        params = [i for k, v in params_dict.items() for i in [k,v] if v is not None]
+        # Filter out entries with value None
+        params = [i for k, v in params_dict.items() for i in [k,str(v)] if v is not None]
+        # and create the slot
         try:
             self.cur.execute("SELECT * FROM pg_logical_slot_get_binary_changes(%s, NULL, NULL" + (", %s" * len(params)) + ")",
                     [SLOT_NAME] + params);
@@ -247,5 +250,9 @@ class PGLogicalOutputTest(unittest.TestCase):
         Get a stream of messages as a generator that may be read from
         to fetch a new message each call. Messages are instances of
         class ReplicationMessage .
+
+        The generator has helper methods for decoding particular
+        types of message, for validation, etc.
         """
-        return self.interface.get_changes(kwargs)
+        msg_gen = self.interface.get_changes(kwargs)
+        return ProtocolReader(msg_gen, tester=self)
