@@ -14,6 +14,9 @@ class FilterTest(PGLogicalOutputTest):
         cur.execute("DROP FUNCTION IF EXISTS test_filter(text, oid, \"char\")");
         cur.execute("CREATE TABLE test_changes (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
         cur.execute("CREATE TABLE test_changes_filter (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
+
+        # Filter function that filters out (removes) all changes
+        # in tables named *_filter*
         cur.execute("""
             CREATE FUNCTION test_filter(nodeid text, relid oid, action \"char\")
             returns bool stable language plpgsql AS $$
@@ -25,16 +28,31 @@ class FilterTest(PGLogicalOutputTest):
             END
             $$;
             """)
+
+        # function to filter out Deletes and Updates - Only Inserts pass through
+        cur.execute("""
+            CREATE FUNCTION test_action_filter(nodeid text, relid oid, action \"char\")
+            returns bool stable language plpgsql AS $$
+            BEGIN
+                IF nodeid <> 'foo' THEN
+                    RAISE EXCEPTION 'Expected nodeid foo, got %',nodeid;
+                END IF;
+                RETURN action IN ('U', 'D');
+            END
+            $$;
+            """)
+
         self.conn.commit()
 
     def tear_down(self):
         cur = self.conn.cursor()
         cur.execute("DROP TABLE test_changes, test_changes_filter;")
         cur.execute("DROP FUNCTION test_filter(text, oid, \"char\")");
+        cur.execute("DROP FUNCTION test_action_filter(text, oid, \"char\")");
         self.conn.commit()
 
-    def test_filter(self):
-
+    def exec_changes(self):
+        """Execute a stream of changes we can process via various filters"""
         cur = self.conn.cursor()
         cur.execute("INSERT INTO test_changes(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'foobar'))
         cur.execute("INSERT INTO test_changes_filter(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'foobar'))
@@ -44,40 +62,100 @@ class FilterTest(PGLogicalOutputTest):
         cur.execute("INSERT INTO test_changes_filter(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'bazbar'))
         self.conn.commit()
 
+        cur.execute("UPDATE test_changes set colc = 'oobar' where cola=1")
+        cur.execute("UPDATE test_changes_filter set colc = 'oobar' where cola=1")
+        self.conn.commit()
+
+        cur.execute("DELETE FROM test_changes where cola=2")
+        cur.execute("DELETE FROM test_changes_filter where cola=2")
+        self.conn.commit()
+
+
+    def test_filter(self):
+        self.exec_changes();
+
         messages = self.get_changes({'hooks.table_filter': 'public.test_filter', 'hooks.table_filter_arg': 'foo'})
 
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'S')
+        (m, params) = messages.expect_startup()
 
         self.assertIn('hooks.table_filter_enabled', m.message['params'])
         self.assertEquals(m.message['params']['hooks.table_filter_enabled'], 't')
 
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'B')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'C')
+        # consume empty tx from setUp(...)
+        messages.expect_begin()
+        messages.expect_commit()
 
         # two inserts into test_changes, the test_changes_filter insert is filtered out
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'B')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'R')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'I')
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_insert()
         self.assertEqual(m.message['newtup'][2], 'foobar\0')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'R')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'I')
+        messages.expect_row_meta()
+        m = messages.expect_insert()
         self.assertEqual(m.message['newtup'][2], 'bazbar\0')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'C')
+        messages.expect_commit()
 
-        # just empty tx test_changes_filter insert is filtered out
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'B')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'C')
+        # just an empty tx as the  test_changes_filter insert is filtered out
+        messages.expect_begin()
+        messages.expect_commit()
+
+        # 1 update each into test_changes and test_changes_filter
+        # update of test_changes_filter is filtered out
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_update()
+        self.assertEqual(m.message['newtup'][0], '1\0')
+        self.assertEqual(m.message['newtup'][2], 'oobar\0')
+        messages.expect_commit()
+
+        # 1 delete each into test_changes and test_changes_filter
+        # delete of test_changes_filter is filtered out
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_delete()
+        self.assertEqual(m.message['keytup'][0], '2\0')
+        messages.expect_commit()
+
+    def test_action_filter(self):
+        self.exec_changes();
+
+        messages = self.get_changes({'hooks.table_filter': 'public.test_action_filter', 'hooks.table_filter_arg': 'foo'})
+
+        (m, params) = messages.expect_startup()
+
+        self.assertIn('hooks.table_filter_enabled', params)
+        self.assertEquals(params['hooks.table_filter_enabled'], 't')
+
+        # consume empty tx from setUp(...)
+        messages.expect_begin()
+        messages.expect_commit()
+
+        # two inserts into test_changes, the test_changes_filter insert is filtered out
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_insert()
+        self.assertEqual(m.message['newtup'][2], 'foobar\0')
+        messages.expect_row_meta()
+        m = messages.expect_insert()
+        self.assertEqual(m.message['newtup'][2], 'foobar\0')
+        messages.expect_row_meta()
+        m = messages.expect_insert()
+        self.assertEqual(m.message['newtup'][2], 'bazbar\0')
+        messages.expect_commit()
+
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_insert()
+        self.assertEqual(m.message['newtup'][2], 'bazbar\0')
+        messages.expect_commit()
+
+        # just empty tx as updates are filtered out
+        messages.expect_begin()
+        messages.expect_commit()
+
+        # just empty tx as deletes are filtered out
+        messages.expect_begin()
+        messages.expect_commit()
 
     def test_validation(self):
         with self.assertRaises(Exception):
