@@ -34,13 +34,7 @@ class BasicTest(PGLogicalOutputTest):
         messages = self.get_changes()
 
         # Startup msg
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'S')
-
-        self.assertEquals(m.message['startup_msg_version'], 1)
-
-        # Validate startup msg
-        params = m.message['params']
+        (m, params) = messages.expect_startup()
 
         self.assertEquals(params['max_proto_version'], '1')
         self.assertEquals(params['min_proto_version'], '1')
@@ -71,43 +65,29 @@ class BasicTest(PGLogicalOutputTest):
         self.assertIn('pg_version_num', params)
 
         # CREATE TABLE produced empty TX
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'B')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'C')
+        messages.expect_begin()
+        messages.expect_commit()
 
         # two inserts in one tx
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'B')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'R')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'I')
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_insert()
         self.assertEqual(m.message['newtup'][2], 'foobar\0')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'R')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'I')
+        messages.expect_row_meta()
+        m = messages.expect_insert()
         self.assertEqual(m.message['newtup'][2], 'bazbar\0')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'C')
+        messages.expect_commit()
 
         # delete and update in one tx
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'B')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'R')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'D')
+        messages.expect_begin()
+        messages.expect_row_meta()
+        m = messages.expect_delete()
         self.assertEqual(m.message['keytup'][0], '1\0')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'R')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'U')
+        messages.expect_row_meta()
+        m = messages.expect_update()
         self.assertEqual(m.message['newtup'][0], '2\0')
         self.assertEqual(m.message['newtup'][2], 'foobar\0')
-        m = messages.next()
-        self.assertEqual(m.mesage_type, 'C')
+        messages.expect_commit()
 
 if __name__ == '__main__':
     unittest.main()
