@@ -26,8 +26,6 @@ class FilterTest(PGLogicalOutputTest):
             $$;
             """)
         self.conn.commit()
-        # empty the slot
-        self.get_changes().next()
 
     def tear_down(self):
         cur = self.conn.cursor()
@@ -54,6 +52,11 @@ class FilterTest(PGLogicalOutputTest):
         self.assertIn('hooks.table_filter_enabled', m.message['params'])
         self.assertEquals(m.message['params']['hooks.table_filter_enabled'], 't')
 
+        m = messages.next()
+        self.assertEqual(m.mesage_type, 'B')
+        m = messages.next()
+        self.assertEqual(m.mesage_type, 'C')
+
         # two inserts into test_changes, the test_changes_filter insert is filtered out
         m = messages.next()
         self.assertEqual(m.mesage_type, 'B')
@@ -77,8 +80,6 @@ class FilterTest(PGLogicalOutputTest):
         self.assertEqual(m.mesage_type, 'C')
 
     def test_validation(self):
-        with self.assertRaises(Exception):
-            self.get_changes({'hooks.table_filter': 'public.test_filter'}).next()
         with self.assertRaises(Exception):
             self.get_changes({'hooks.table_filter': 'public.foobar'}).next()
 
