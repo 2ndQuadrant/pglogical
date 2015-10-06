@@ -2,6 +2,10 @@ from StringIO import StringIO
 import struct
 import datetime
 
+class UnchangedField(object):
+    """Opaque placeholder object for a TOASTed field that didn't change"""
+    pass
+
 def readcstr(f):
     buf = bytearray()
     while True:
@@ -66,8 +70,9 @@ class ReplicationMessage(object):
             if typ == 'n':
                 cols.append(None)
             elif typ == 'u':
-                cols.append(0xdeadbeef)
+                cols.append(UnchangedField())
             else:
+                assert typ in ('b','s','t') #typ should be 'b'inary, 's'end/recv, 't'ext
                 datalen = struct.unpack("!I", msg.read(4))[0]
                 cols.append(msg.read(datalen))
 
