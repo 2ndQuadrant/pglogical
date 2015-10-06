@@ -22,6 +22,29 @@ To run these tests:
 
         PGPORT=5142 make
 
+WALSENDER VS SQL MODE
+---
+
+By default the tests use the SQL interface for logical decoding.
+
+You can instead use the walsender interface, i.e. the streaming replication
+protocol. However, this requires a patched psycopg2 at time of writing. You
+can get the branch from https://github.com/zalando/psycopg2/tree/feature/replication-protocol
+
+You should uninstall your existing `psycopg2` packages, then:
+
+    git clone https://github.com/zalando/psycopg2.git
+    git checkout feature/replication-protocol
+    PATH=/path/to/pg/bin:$PATH python setup.py build
+    sudo PATH=/path/to/pg/bin:$PATH python setup.py install
+
+Now run the tests with the extra enviroment variable PGLOGICALTEST_USEWALSENDER=1
+set, e.g.
+
+    PGLOGICALTEST_USEWALSENDER=1 PGPORT=5142 make
+
+At time of writing the walsender tests may not always be passing, as the
+SQL tests are the authorative ones.
 
 TROUBLESHOOTING
 ---
