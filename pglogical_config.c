@@ -503,6 +503,7 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 			data->allow_sendrecv_protocol);
 
 	/* Binary format characteristics of server */
+	append_startup_msg_i(&si, "binary.basetypes_major_version", PG_VERSION_NUM/100);
 	append_startup_msg_i(&si, "binary.sizeof_int", sizeof(int));
 	append_startup_msg_i(&si, "binary.sizeof_long", sizeof(long));
 	append_startup_msg_i(&si, "binary.sizeof_datum", sizeof(Datum));
