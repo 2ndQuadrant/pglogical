@@ -53,11 +53,6 @@ class ReplicationMessage(object):
     def message_type(self):
         return self.msg[0]
 
-    # Compat for a typo. Deprecated.
-    @property
-    def mesage_type(self):
-        return self.message_type
-
     @property
     def message(self):
         return None
