@@ -11,13 +11,12 @@ class BinaryModeTest(PGLogicalOutputTest):
         cur.execute("DROP TABLE IF EXISTS test_binary;")
         cur.execute("CREATE TABLE test_binary (colv bytea, colts timestamp);")
         self.conn.commit()
-        self.get_changes().next()#empty slot
+        self.connect_decoding()
 
     def tearDown(self):
         cur = self.conn.cursor()
         cur.execute("DROP TABLE IF EXISTS test_binary;")
         self.conn.commit()
-        self.get_changes().next() #empty slot
         PGLogicalOutputTest.tearDown(self)
 
     def probe_for_server_params(self):

@@ -11,6 +11,7 @@ class ParametersTest(PGLogicalOutputTest):
         self.cur.execute("DROP TABLE IF EXISTS blah;")
         self.cur.execute("CREATE TABLE blah(id integer);")
         self.conn.commit()
+        self.connect_decoding()
 
     def tearDown(self):
         self.cur.execute("DROP TABLE blah;")

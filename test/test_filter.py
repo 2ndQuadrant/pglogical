@@ -44,6 +44,7 @@ class FilterTest(PGLogicalOutputTest):
             """)
 
         self.conn.commit()
+        self.connect_decoding()
 
     def tear_down(self):
         cur = self.conn.cursor()
@@ -81,10 +82,6 @@ class FilterTest(PGLogicalOutputTest):
 
         self.assertIn('hooks.table_filter_enabled', m.message['params'])
         self.assertEquals(m.message['params']['hooks.table_filter_enabled'], 't')
-
-        # consume empty tx from setUp(...)
-        messages.expect_begin()
-        messages.expect_commit()
 
         # two inserts into test_changes, the test_changes_filter insert is filtered out
         messages.expect_begin()
@@ -126,10 +123,6 @@ class FilterTest(PGLogicalOutputTest):
 
         self.assertIn('hooks.table_filter_enabled', params)
         self.assertEquals(params['hooks.table_filter_enabled'], 't')
-
-        # consume empty tx from setUp(...)
-        messages.expect_begin()
-        messages.expect_commit()
 
         # two inserts into test_changes, the test_changes_filter insert is filtered out
         messages.expect_begin()

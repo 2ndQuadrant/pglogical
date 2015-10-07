@@ -21,6 +21,7 @@ class TupleFieldsTest(PGLogicalOutputTest):
         cur.execute("CREATE TABLE test_binary (colv bytea);")
 
         self.conn.commit()
+        self.connect_decoding()
 
     def tearDown(self):
         cur = self.conn.cursor()
@@ -44,10 +45,6 @@ class TupleFieldsTest(PGLogicalOutputTest):
         messages = self.get_changes()
 
         messages.expect_startup()
-
-        # Skip the empty transaction from setUp(...)
-        messages.expect_begin()
-        messages.expect_commit()
 
         messages.expect_begin()
         messages.expect_row_meta()
@@ -84,10 +81,6 @@ class TupleFieldsTest(PGLogicalOutputTest):
 
         # Startup msg
         messages.expect_startup()
-
-        # Skip the empty transaction from setUp(...)
-        messages.expect_begin()
-        messages.expect_commit()
 
         # consume the insert
         messages.expect_begin()
@@ -139,10 +132,6 @@ class TupleFieldsTest(PGLogicalOutputTest):
         messages = self.get_changes()
 
         messages.expect_startup()
-
-        # Skip the empty transaction from setUp(...)
-        messages.expect_begin()
-        messages.expect_commit()
 
         # consume the insert
         messages.expect_begin()

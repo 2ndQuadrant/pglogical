@@ -220,9 +220,6 @@ class PGLogicalOutputTest(unittest.TestCase):
         self.logger.addHandler(self.loghandler)
         self.logger.setLevel(os.environ.get('PGLOGICALTEST_LOGLEVEL', 'INFO'))
 
-        # Set up the interface class
-        self.reconnect_decoding()
-
         # Get connections for test classes to use to run SQL
         self.conn = psycopg2.connect(self.connstring, connection_factory=psycopg2.extras.LoggingConnection)
         self.conn.initialize(self.logger.getChild('sql'))
@@ -254,6 +251,14 @@ class PGLogicalOutputTest(unittest.TestCase):
             self.logger.debug("Disconnecting old decoding session and forcing reconnect")
             self.interface.cleanup()
 
+        self.connect_decoding()
+
+    def connect_decoding(self):
+        """
+        Make a slot and establish a decoding connection.
+
+        Prior to this changes are not recorded, which is useful for setup.
+        """
         self.decoding_generation += 1
         fmt = logging.Formatter('%%(name)-50s w=%s %%(message)s' % (self.decoding_generation,))
         self.loghandler.setFormatter(fmt)
@@ -273,5 +278,8 @@ class PGLogicalOutputTest(unittest.TestCase):
         The generator has helper methods for decoding particular
         types of message, for validation, etc.
         """
+        if self.interface is None:
+            raise ValueError("No logical decoding connection. Call connect_decoding()")
+
         msg_gen = self.interface.get_changes(kwargs)
         return ProtocolReader(msg_gen, tester=self, parentlogger=self.logger)

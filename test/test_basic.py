@@ -13,6 +13,7 @@ class BasicTest(PGLogicalOutputTest):
         cur.execute("DROP TABLE IF EXISTS test_changes;")
         cur.execute("CREATE TABLE test_changes (cola serial PRIMARY KEY, colb timestamptz default now(), colc text);")
         self.conn.commit()
+        self.connect_decoding()
 
     def tearDown(self):
         cur = self.conn.cursor()
@@ -21,7 +22,6 @@ class BasicTest(PGLogicalOutputTest):
         PGLogicalOutputTest.tearDown(self)
 
     def test_changes(self):
-
         cur = self.conn.cursor()
         cur.execute("INSERT INTO test_changes(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'foobar'))
         cur.execute("INSERT INTO test_changes(colb, colc) VALUES(%s, %s)", ('2015-08-08', 'bazbar'))
@@ -63,10 +63,6 @@ class BasicTest(PGLogicalOutputTest):
         self.assertIn('pg_catversion', params)
         self.assertIn('pg_version', params)
         self.assertIn('pg_version_num', params)
-
-        # CREATE TABLE produced empty TX
-        messages.expect_begin()
-        messages.expect_commit()
 
         # two inserts in one tx
         messages.expect_begin()

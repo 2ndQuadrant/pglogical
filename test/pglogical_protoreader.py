@@ -43,10 +43,14 @@ class ProtocolReader(collections.Iterator):
         """Read a message and check it's type char is as specified"""
         m = self.next()
         # this is ugly, better suggestions welcome:
-        if self.tester:
-            self.tester.assertEqual(m.message_type, msgtype)
-        elif m.message_type <> msgtype:
-            raise ValueError("Expected message %s but got %s", msgtype, m.message_type)
+        try:
+            if self.tester:
+                self.tester.assertEqual(m.message_type, msgtype)
+            elif m.message_type <> msgtype:
+                raise ValueError("Expected message %s but got %s", msgtype, m.message_type)
+        except Exception, ex:
+            self.logger.debug("Expecting %s msg, got %s, unexpected message was: %s", msgtype, m.message_type, m)
+            raise
         return m
 
     def expect_startup(self):
