@@ -21,11 +21,12 @@ class BaseDecodingInterface(object):
     conn = None
     cur = None
 
-    def __init__(self, connstring, parentlogger):
+    def __init__(self, connstring, logger):
         # Establish base connection, which we use in walsender mode too
-        self.logger = parentlogger.getChild(self.__class__.__name__)
+        self.logger = logger
         self.connstring = connstring
         self.conn = psycopg2.connect(self.connstring)
+        self.logger.debug("Acquired connection with pid %s", self.conn.get_backend_pid())
         self.conn.autocommit = True
         self.cur = self.conn.cursor()
 
@@ -34,6 +35,7 @@ class BaseDecodingInterface(object):
         return self.cur.rowcount == 1
 
     def drop_slot_when_inactive(self):
+        self.logger.debug("Dropping slot %s", SLOT_NAME)
         try:
             # We can't use the walsender protocol connection to drop
             # the slot because we have no way to exit COPY BOTH mode
@@ -71,6 +73,7 @@ class BaseDecodingInterface(object):
                 """, (SLOT_NAME,))
         except psycopg2.ProgrammingError, ex:
             self.logger.exception("Attempt to DROP slot %s failed", SLOT_NAME)
+        self.logger.debug("Dropped slot %s", SLOT_NAME)
 
     def cleanup(self):
         if self.cur is not None:
@@ -94,7 +97,7 @@ class SQLDecodingInterface(BaseDecodingInterface):
     """Use the SQL level logical decoding interfaces"""
 
     def __init__(self, connstring, parentlogger=logging.getLogger('base')):
-        BaseDecodingInterface.__init__(self, connstring, parentlogger)
+        BaseDecodingInterface.__init__(self, connstring, logger=parentlogger.getChild('sqldecoding:%s' % hex(id(self))))
 
         # cleanup old slot
         if self.slot_exists():
@@ -104,8 +107,10 @@ class SQLDecodingInterface(BaseDecodingInterface):
         self.cur.execute("SELECT * FROM pg_create_logical_replication_slot(%s, 'pglogical_output')", (SLOT_NAME,))
 
     def cleanup(self):
+        self.logger.debug("Closing sql decoding connection")
         self.drop_slot_when_inactive()
         BaseDecodingInterface.cleanup(self)
+        self.logger.debug("Closed sql decoding connection")
 
     def get_changes(self, kwargs = {}):
         params_dict = self._get_changes_params(kwargs)
@@ -133,11 +138,12 @@ class WalsenderDecodingInterface(BaseDecodingInterface):
     replication_started = False
 
     def __init__(self, connstring, parentlogger=logging.getLogger('base')):
-        BaseDecodingInterface.__init__(self, connstring, parentlogger)
+        BaseDecodingInterface.__init__(self, connstring, logger=parentlogger.getChild('waldecoding:%s' % hex(id(self))))
 
         # Establish an async logical replication connection
         self.walconn = psycopg2.connect(self.connstring,
                 connection_factory=psycopg2.extras.LogicalReplicationConnection)
+        self.logger.debug("Acquired replication connection with pid %s", self.walconn.get_backend_pid())
         self.walcur = self.walconn.cursor()
 
         # clean up old slot
@@ -151,6 +157,7 @@ class WalsenderDecodingInterface(BaseDecodingInterface):
 
 
     def cleanup(self):
+        self.logger.debug("Closing walsender connection")
 
         if self.walcur is not None:
             self.walcur.close()
@@ -161,6 +168,7 @@ class WalsenderDecodingInterface(BaseDecodingInterface):
 
         self.drop_slot_when_inactive()
         BaseDecodingInterface.cleanup(self)
+        self.logger.debug("Closed walsender connection")
 
     def get_changes(self, kwargs = {}):
         params_dict = self._get_changes_params(kwargs)
@@ -183,7 +191,10 @@ class WalsenderDecodingInterface(BaseDecodingInterface):
                     if not sel[0]:
                         raise IOError("Server didn't send an expected message before timeout")
                 else:
-                    self.logger.debug("Got payload: " + repr(message.payload))
+                    if len(message.payload) < 200:
+                        self.logger.debug("payload: %s", repr(message.payload))
+                    else:
+                        self.logger.debug("payload (truncated): %s...", repr(message.payload)[:200])
                     yield ReplicationMessage((message.data_start, None, message.payload))
         except psycopg2.InternalError, ex:
             self.logger.debug("While retrieving a message: sqlstate=%s", ex.pgcode, exc_info=True)
@@ -202,7 +213,7 @@ class PGLogicalOutputTest(unittest.TestCase):
         self.decoding_generation = 0
 
         # Set up our logger
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.loghandler = logging.StreamHandler()
         for handler in self.logger.handlers:
             self.logger.removeHandler(handler)
@@ -214,7 +225,7 @@ class PGLogicalOutputTest(unittest.TestCase):
 
         # Get connections for test classes to use to run SQL
         self.conn = psycopg2.connect(self.connstring, connection_factory=psycopg2.extras.LoggingConnection)
-        self.conn.initialize(self.logger)
+        self.conn.initialize(self.logger.getChild('sql'))
         self.cur = self.conn.cursor()
 
         if hasattr(self, 'set_up'):
@@ -244,7 +255,7 @@ class PGLogicalOutputTest(unittest.TestCase):
             self.interface.cleanup()
 
         self.decoding_generation += 1
-        fmt = logging.Formatter('%s:%s: %%(asctime)s - %%(message)s' % (type(self).__name__, self.decoding_generation))
+        fmt = logging.Formatter('%%(name)-50s w=%s %%(message)s' % (self.decoding_generation,))
         self.loghandler.setFormatter(fmt)
 
         if os.environ.get("PGLOGICALTEST_USEWALSENDER", None):
