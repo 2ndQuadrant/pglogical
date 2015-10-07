@@ -64,7 +64,9 @@ class BinaryModeTest(PGLogicalOutputTest):
 
         # We have to disconnect and reconnect if using walsender so that
         # we can start a new replication session
+        self.logger.debug("before: Interface is %s", self.interface)
         self.reconnect_decoding()
+        self.logger.debug("after: Interface is %s", self.interface)
 
         return params
 

@@ -46,6 +46,12 @@ set, e.g.
 At time of writing the walsender tests may not always be passing, as the
 SQL tests are the authorative ones.
 
+DETAILED LOGGING
+---
+
+You can get more detailed info about what's being done by setting the env var
+`PGLOGICALTEST_LOGLEVEL=DEBUG`
+
 TROUBLESHOOTING
 ---
 

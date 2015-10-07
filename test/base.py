@@ -20,10 +20,10 @@ class BaseDecodingInterface(object):
 
     conn = None
     cur = None
-    logger = logging.getLogger(__name__)
 
-    def __init__(self, connstring):
+    def __init__(self, connstring, parentlogger):
         # Establish base connection, which we use in walsender mode too
+        self.logger = parentlogger.getChild(self.__class__.__name__)
         self.connstring = connstring
         self.conn = psycopg2.connect(self.connstring)
         self.conn.autocommit = True
@@ -93,10 +93,8 @@ class BaseDecodingInterface(object):
 class SQLDecodingInterface(BaseDecodingInterface):
     """Use the SQL level logical decoding interfaces"""
 
-    logger = logging.getLogger(__name__)
-
-    def __init__(self, connstring):
-        BaseDecodingInterface.__init__(self, connstring)
+    def __init__(self, connstring, parentlogger=logging.getLogger('base')):
+        BaseDecodingInterface.__init__(self, connstring, parentlogger)
 
         # cleanup old slot
         if self.slot_exists():
@@ -133,10 +131,9 @@ class WalsenderDecodingInterface(BaseDecodingInterface):
     walconn = None
     select_timeout = 1
     replication_started = False
-    logger = logging.getLogger(__name__)
 
-    def __init__(self, connstring):
-        BaseDecodingInterface.__init__(self, connstring)
+    def __init__(self, connstring, parentlogger=logging.getLogger('base')):
+        BaseDecodingInterface.__init__(self, connstring, parentlogger)
 
         # Establish an async logical replication connection
         self.walconn = psycopg2.connect(self.connstring,
@@ -200,18 +197,24 @@ class PGLogicalOutputTest(unittest.TestCase):
     interface = None
 
     def setUp(self):
-        # Set up logging system
-        logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
-        logbase = logging.getLogger('base')
+        # A counter we can increment each time we reconnet with decoding,
+        # for logging purposes.
+        self.decoding_generation = 0
 
         # Set up our logger
         self.logger = logging.getLogger(__name__)
+        self.loghandler = logging.StreamHandler()
+        for handler in self.logger.handlers:
+            self.logger.removeHandler(handler)
+        self.logger.addHandler(self.loghandler)
+        self.logger.setLevel(os.environ.get('PGLOGICALTEST_LOGLEVEL', 'INFO'))
 
         # Set up the interface class
         self.reconnect_decoding()
 
         # Get connections for test classes to use to run SQL
-        self.conn = psycopg2.connect(self.connstring)
+        self.conn = psycopg2.connect(self.connstring, connection_factory=psycopg2.extras.LoggingConnection)
+        self.conn.initialize(self.logger)
         self.cur = self.conn.cursor()
 
         if hasattr(self, 'set_up'):
@@ -237,12 +240,17 @@ class PGLogicalOutputTest(unittest.TestCase):
         begun.
         """
         if self.interface is not None:
+            self.logger.debug("Disconnecting old decoding session and forcing reconnect")
             self.interface.cleanup()
 
+        self.decoding_generation += 1
+        fmt = logging.Formatter('%s:%s: %%(asctime)s - %%(message)s' % (type(self).__name__, self.decoding_generation))
+        self.loghandler.setFormatter(fmt)
+
         if os.environ.get("PGLOGICALTEST_USEWALSENDER", None):
-            self.interface = WalsenderDecodingInterface(self.connstring)
+            self.interface = WalsenderDecodingInterface(self.connstring, parentlogger=self.logger)
         else:
-            self.interface = SQLDecodingInterface(self.connstring)
+            self.interface = SQLDecodingInterface(self.connstring, parentlogger=self.logger)
 
 
     def get_changes(self, kwargs = {}):
@@ -255,4 +263,4 @@ class PGLogicalOutputTest(unittest.TestCase):
         types of message, for validation, etc.
         """
         msg_gen = self.interface.get_changes(kwargs)
-        return ProtocolReader(msg_gen, tester=self)
+        return ProtocolReader(msg_gen, tester=self, parentlogger=self.logger)

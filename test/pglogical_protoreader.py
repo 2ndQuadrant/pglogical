@@ -1,4 +1,5 @@
 import collections
+import logging
 
 class ProtocolReader(collections.Iterator):
     """
@@ -12,7 +13,7 @@ class ProtocolReader(collections.Iterator):
 
     startup_params = None
 
-    def __init__(self, message_generator, validator=None, tester=None):
+    def __init__(self, message_generator, validator=None, tester=None, parentlogger=logging.getLogger('base')):
         """
         Build a protocol reader to wrap the passed message_generator, which
         must return a ReplicationMessage instance when next() is called.
@@ -26,6 +27,7 @@ class ProtocolReader(collections.Iterator):
         of unittest.TestCase. If provided, unittest assertions are used
         to check message types, etc.
         """
+        self.logger = parentlogger.getChild(self.__class__.__name__)
         self.message_generator = message_generator
         self.validator = validator
         self.tester = tester
