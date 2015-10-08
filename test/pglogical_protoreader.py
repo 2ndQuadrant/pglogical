@@ -88,6 +88,12 @@ class ProtocolReader(collections.Iterator):
         """Read a message and ensure it's a delete"""
         return self.expect_msg('D')
 
+    def expect_origin(self):
+        """
+        Read a message and ensure it's a replication origin message.
+        """
+        return self.expect_msg('O')
+
     def maybe_expect_origin(self):
         """
         If the upstream sends replication origins, read one, otherwise
@@ -101,6 +107,6 @@ class ProtocolReader(collections.Iterator):
         if self.startup_params is None:
             raise ValueError("Startup message was not read with expect_startup()")
         if self.startup_params['forward_changeset_origins'] == 't':
-            return self.expect_msg('O')
+            return self.expect_origin()
         else:
             return None
