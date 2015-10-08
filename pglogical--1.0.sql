@@ -30,7 +30,7 @@ CREATE TABLE pglogical.connections (
 	UNIQUE (conn_origin_id, conn_target_id)
 );
 
-CREATE FUNCTION pglogical.create_connection(origin name, target name, replication_sets text[] = NULL)
+CREATE FUNCTION pglogical.create_connection(origin name, target name, replication_sets text[] = '{default}')
 RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_connection';
 CREATE FUNCTION pglogical.drop_connection(origin name, target name)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_connection';
