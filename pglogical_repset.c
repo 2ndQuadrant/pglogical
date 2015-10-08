@@ -282,6 +282,9 @@ get_repset_relation(Oid reloid, List *replication_sets)
 
 	/* Fill the entry */
 	entry->reloid = reloid;
+	entry->replicate_inserts = false;
+	entry->replicate_updates = false;
+	entry->replicate_deletes = false;
 
 	foreach(lc, replication_sets)
 	{
