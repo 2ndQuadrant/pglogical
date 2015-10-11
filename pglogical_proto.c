@@ -69,7 +69,7 @@ pglogical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
 {
 	/* read flags */
 	uint8	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	/* read fields */
 	*remote_lsn = pq_getmsgint64(in);
@@ -87,7 +87,7 @@ pglogical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
 {
 	/* read flags */
 	uint8	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	/* read fields */
 	*commit_lsn = pq_getmsgint64(in);
@@ -106,7 +106,7 @@ pglogical_read_origin(StringInfo in, XLogRecPtr *origin_lsn)
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	/* fixed fields */
 	*origin_lsn = pq_getmsgint64(in);
@@ -133,7 +133,7 @@ pglogical_read_insert(StringInfo in, LOCKMODE lockmode,
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -164,7 +164,7 @@ pglogical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -213,7 +213,7 @@ pglogical_read_delete(StringInfo in, LOCKMODE lockmode,
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -248,6 +248,9 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 	action = pq_getmsgbyte(in);
 	if (action != 'T')
 		elog(ERROR, "expected TUPLE, got %c", action);
+
+	memset(tuple->nulls, 1, sizeof(tuple->nulls));
+	memset(tuple->changed, 0, sizeof(tuple->changed));
 
 	natts = pq_getmsgint(in, 2);
 	if (rel->natts != natts)
@@ -354,7 +357,7 @@ pglogical_read_rel(StringInfo in)
 
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
-	Assert(flags = 0);
+	Assert(flags == 0);
 
 	relid = pq_getmsgint(in, 4);
 
@@ -403,7 +406,7 @@ pglogical_read_attrs(StringInfo in, char ***attrnames, int *nattrnames)
 		if (blocktype != 'C')
 			elog(ERROR, "expected COLUMN, got %c", blocktype);
 		flags = pq_getmsgbyte(in);
-		Assert(flags = 0);
+//		Assert(flags == 0);
 
 		blocktype = pq_getmsgbyte(in);		/* column name block follows */
 		if (blocktype != 'N')
