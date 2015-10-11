@@ -106,12 +106,6 @@ handle_commit(StringInfo s)
 		CommitTransactionCommand();
 
 	/*
-	 * Advance the local replication identifier's lsn, so we don't replay this
-	 * transaction again.
-	 */
-	replorigin_session_advance(end_lsn, XactLastCommitEnd);
-
-	/*
 	 * If the row isn't from the immediate upstream; advance the slot of the
 	 * node it originally came from so we start replay of that node's
 	 * change data at the right place.
