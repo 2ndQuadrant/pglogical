@@ -228,6 +228,8 @@ handle_insert(StringInfo s)
 
 	ExecOpenIndices(estate->es_result_relation_info, false);
 
+	PushActiveSnapshot(GetTransactionSnapshot());
+
 	conflicts = pglogical_tuple_find_conflict(estate, &newtup, localslot);
 
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
@@ -249,6 +251,7 @@ handle_insert(StringInfo s)
 			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
 							   applytuple);
+			/* TODO: check for HOT update? */
 			UserTableUpdateOpenIndexes(estate, applyslot);
 		}
 	}
@@ -262,7 +265,8 @@ handle_insert(StringInfo s)
 
 	/* Cleanup */
 	ExecCloseIndices(estate->es_result_relation_info);
-	pglogical_relation_close(rel, RowExclusiveLock);
+	PopActiveSnapshot();
+	pglogical_relation_close(rel, NoLock);
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
@@ -272,17 +276,21 @@ handle_insert(StringInfo s)
 static void
 handle_update(StringInfo s)
 {
+	PGLogicalTupleData	oldtup;
 	PGLogicalTupleData	newtup;
+	PGLogicalTupleData *searchtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
 	bool				found;
+	bool				hasoldtup;
 	TupleTableSlot	   *localslot,
 					   *applyslot;
 	HeapTuple			remotetuple;
 
 	ensure_transaction();
 
-	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
+	rel = pglogical_read_update(s, RowExclusiveLock, &hasoldtup, &oldtup,
+								&newtup);
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
@@ -291,7 +299,10 @@ handle_update(StringInfo s)
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
 
-	found = pglogical_tuple_find_replidx(estate, &newtup, localslot);
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	searchtup = hasoldtup ? &oldtup : &newtup;
+	found = pglogical_tuple_find_replidx(estate, searchtup, localslot);
 
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup.values, newtup.nulls);
@@ -306,7 +317,13 @@ handle_update(StringInfo s)
 		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
 		simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
 						   remotetuple);
-		UserTableUpdateOpenIndexes(estate, applyslot);
+		/* Only update indexes if it's not HOT update. */
+		if (!HeapTupleIsHeapOnly(applyslot->tts_tuple))
+		{
+			ExecOpenIndices(estate->es_result_relation_info, false);
+			UserTableUpdateOpenIndexes(estate, applyslot);
+			ExecCloseIndices(estate->es_result_relation_info);
+		}
 	}
 	else
 	{
@@ -316,7 +333,8 @@ handle_update(StringInfo s)
 	}
 
 	/* Cleanup. */
-	pglogical_relation_close(rel, RowExclusiveLock);
+	PopActiveSnapshot();
+	pglogical_relation_close(rel, NoLock);
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
@@ -326,14 +344,14 @@ handle_update(StringInfo s)
 static void
 handle_delete(StringInfo s)
 {
-	PGLogicalTupleData	newtup;
+	PGLogicalTupleData	oldtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
 	TupleTableSlot	   *localslot;
 
 	ensure_transaction();
 
-	rel = pglogical_read_delete(s, RowExclusiveLock, &newtup);
+	rel = pglogical_read_delete(s, RowExclusiveLock, &oldtup);
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
@@ -342,7 +360,7 @@ handle_delete(StringInfo s)
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (pglogical_tuple_find_replidx(estate, &newtup, localslot))
+	if (pglogical_tuple_find_replidx(estate, &oldtup, localslot))
 	{
 		/* Tuple found, delete it. */
 		simple_heap_delete(rel->rel, &localslot->tts_tuple->t_self);
@@ -351,7 +369,7 @@ handle_delete(StringInfo s)
 	{
 		/* The tuple to be deleted could not be found. */
 		HeapTuple remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
-												newtup.values, newtup.nulls);
+												oldtup.values, oldtup.nulls);
 		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel->rel, NULL,
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
@@ -372,7 +390,6 @@ replication_handler(StringInfo s)
 {
 	char action = pq_getmsgbyte(s);
 
-	elog(WARNING, "ACTION %c", action);
 	switch (action)
 	{
 		/* BEGIN */
