@@ -65,10 +65,9 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, PGLogicalTuple
 	opclass = (oidvector *) DatumGetPointer(indclassDatum);
 
 	indkeyDatum = SysCacheGetAttr(INDEXRELID, idxrel->rd_indextuple,
-									Anum_pg_index_indkey, &isnull);
+								  Anum_pg_index_indkey, &isnull);
 	Assert(!isnull);
 	indkey = (int2vector *) DatumGetPointer(indkeyDatum);
-
 
 	for (attoff = 0; attoff < RelationGetNumberOfAttributes(idxrel); attoff++)
 	{
@@ -470,22 +469,20 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 		case CONFLICT_UPDATE_UPDATE:
 			ereport(LOG,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
-					 errmsg("CONFLICT: remote %s on relation %s originating at node %s at %s. Resolution: %s.",
+					 errmsg("CONFLICT: remote %s on relation %s. Resolution: %s.",
 							CONFLICT_INSERT_INSERT ? "INSERT" : "UPDATE",
 							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
 													   RelationGetRelationName(rel)),
-							"node", "ts",
 							conflict_resolution_to_string(resolution))));
 			break;
 		case CONFLICT_UPDATE_DELETE:
 		case CONFLICT_DELETE_DELETE:
 			ereport(LOG,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
-					 errmsg("CONFLICT: remote %s on relation %s originating at node %s at %s. Resolution: %s.",
+					 errmsg("CONFLICT: remote %s on relation %s (tuple not found). Resolution: %s.",
 							CONFLICT_UPDATE_DELETE ? "UPDATE" : "DELETE",
 							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
 													   RelationGetRelationName(rel)),
-							"node", "ts",
 							conflict_resolution_to_string(resolution))));
 			break;
 	}
