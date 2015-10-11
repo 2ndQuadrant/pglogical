@@ -103,8 +103,8 @@ dump_structure(PGLogicalConnection *conn, const char *snapshot)
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -F c -f \"%s\" \"%s\"",
-					 pg_dump, snapshot, "/tmp/pglogical.dump",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -N %s -F c -f \"%s\" \"%s\"",
+					 pg_dump, snapshot, EXTENSION_NAME, "/tmp/pglogical.dump",
 					 conn->origin->dsn);
 
 	res = system(command.data);
@@ -441,7 +441,7 @@ ensure_replication_slot_snapshot(PGconn *origin_conn, Name slot_name,
 	initStringInfo(&query);
 
 	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s",
-					 NameStr(*slot_name), "pg_logical_output");
+					 NameStr(*slot_name), "pglogical_output");
 
 	res = PQexec(origin_conn, query.data);
 
@@ -507,7 +507,9 @@ pglogical_init_replica(PGLogicalConnection *conn)
 		case NODE_STATUS_CONNECT_BACK:
 			break;
 		default:
-			elog(ERROR, "node initialization failed during nonrecoverable step, please try the setup again");
+			elog(ERROR,
+				 "node %s initialization failed during nonrecoverable step (%c), please try the setup again",
+				 target->name, status);
 			break;
 	}
 
