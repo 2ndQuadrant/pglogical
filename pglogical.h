@@ -14,6 +14,7 @@
 #define PGLOGICAL_H
 
 #include "storage/s_lock.h"
+#include "postmaster/bgworker.h"
 
 #define EXTENSION_NAME "pglogical"
 
@@ -25,7 +26,9 @@
 
 typedef struct PGLogicalApplyWorker
 {
+	Oid		dboid;
 	int		connid;
+	BackgroundWorkerHandle *bgwhandle;
 } PGLogicalApplyWorker;
 
 typedef struct PGLogicalDBState
@@ -43,6 +46,7 @@ typedef struct PGLogicalDBState
 	int		apply_attached;
 } PGLogicalDBState;
 
+extern volatile sig_atomic_t got_SIGTERM;
 
 extern void gen_slot_name(Name slot_name, char *dbname,
 						  PGLogicalNode *origin_node,
@@ -50,9 +54,11 @@ extern void gen_slot_name(Name slot_name, char *dbname,
 extern Oid pglogical_generate_id(void);
 extern List *textarray_to_list(ArrayType *textarray);
 
-extern void pglogical_manager_main(Datum main_arg);
-extern void pglogical_apply_main(Datum main_arg);
+extern void pglogical_connections_changed(void);
+
+extern void pglogical_manager_attach(Oid dboid);
+extern void pglogical_manager_detach(bool signal_supervisor);
+
 extern void handle_sigterm(SIGNAL_ARGS);
 
 #endif /* PGLOGICAL_H */
-

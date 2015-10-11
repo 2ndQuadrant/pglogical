@@ -53,7 +53,8 @@
 #include "pglogical.h"
 
 
-volatile sig_atomic_t got_SIGTERM = false;
+void pglogical_apply_main(Datum main_arg);
+
 static bool			in_remote_transaction = false;
 static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
 static RepOriginId	remote_origin_id = InvalidRepOriginId;
@@ -649,7 +650,7 @@ pglogical_apply_main(Datum main_arg)
 	PGLogicalNode		   *origin_node;
 
 	/* Establish signal handlers. */
-//	pqsignal(SIGTERM, die);
+	pqsignal(SIGTERM, handle_sigterm);
 	BackgroundWorkerUnblockSignals();
 
 	/* Attach to dsm segment. */

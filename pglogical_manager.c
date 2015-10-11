@@ -29,6 +29,7 @@
 #include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/procsignal.h"
 #include "storage/shm_toc.h"
 #include "storage/spin.h"
 
@@ -41,22 +42,10 @@
 #include "pglogical_init_replica.h"
 #include "pglogical.h"
 
+static PGLogicalApplyWorker	   *apply_workers = NULL;
+static PGLogicalDBState		   *manager_state = NULL;
 
-static volatile sig_atomic_t got_SIGTERM = false;
-
-void
-handle_sigterm(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	got_SIGTERM = true;
-
-	if (MyProc)
-		SetLatch(&MyProc->procLatch);
-
-	errno = save_errno;
-}
-
+void pglogical_manager_main(Datum main_arg);
 
 /*
  * Start apply workers for each of the publisher node.
@@ -69,7 +58,25 @@ register_apply_workers(dsm_segment *seg, int cnt)
 	for (i = 0; i < cnt; i++)
 	{
 		BackgroundWorker	bgw;
-		BackgroundWorkerHandle *bgw_handle;
+
+		/* Already assigned handle? Check if still running. */
+		if (apply_workers[i].bgwhandle != NULL)
+		{
+			pid_t	pid;
+			BgwHandleStatus status;
+
+			status = GetBackgroundWorkerPid(apply_workers[i].bgwhandle, &pid);
+			if (status == BGWH_STOPPED || status == BGWH_POSTMASTER_DIED)
+			{
+				pfree(apply_workers[i].bgwhandle);
+				apply_workers[i].bgwhandle = NULL;
+				SpinLockAcquire(&manager_state->mutex);
+				manager_state->apply_attached--;
+				SpinLockRelease(&manager_state->mutex);
+			}
+			else
+				continue;
+		}
 
 		bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 			BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -79,13 +86,13 @@ register_apply_workers(dsm_segment *seg, int cnt)
 				 EXTENSION_NAME);
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 				 "pglogical_apply_main");
-		bgw.bgw_restart_time = 1;
-		bgw.bgw_notify_pid = 0;
+		bgw.bgw_restart_time = BGW_NEVER_RESTART;
+		bgw.bgw_notify_pid = MyProcPid;
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
 				 "pglogical apply");
 		bgw.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 
-		if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
+		if (!RegisterDynamicBackgroundWorker(&bgw, &apply_workers[i].bgwhandle))
 		{
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
@@ -103,13 +110,11 @@ setup_dynamic_shared_memory(List *conns)
 	Size			segsize;
 	ListCell	   *lc;
 	int				i;
-	PGLogicalDBState	   *state;
-	PGLogicalApplyWorker   *apply;
 
 	shm_toc_initialize_estimator(&estimator);
 	shm_toc_estimate_chunk(&estimator, sizeof(PGLogicalDBState));
 	shm_toc_estimate_chunk(&estimator,
-						   conns->length * sizeof(PGLogicalApplyWorker));
+						   list_length(conns) * sizeof(PGLogicalApplyWorker));
 	shm_toc_estimate_keys(&estimator, 2);
 
 	segsize = shm_toc_estimate(&estimator);
@@ -118,25 +123,38 @@ setup_dynamic_shared_memory(List *conns)
 	toc = shm_toc_create(PGLOGICAL_MASTER_TOC_MAGIC, dsm_segment_address(seg),
 						 segsize);
 
-	state = shm_toc_allocate(toc, sizeof(PGLogicalDBState));
-	SpinLockInit(&state->mutex);
-	state->apply_total = conns->length;
-	state->apply_attached = 0;
-	shm_toc_insert(toc, PGLOGICAL_MASTER_TOC_STATE, state);
+	manager_state = shm_toc_allocate(toc, sizeof(PGLogicalDBState));
+	SpinLockInit(&manager_state->mutex);
+	manager_state->apply_total = list_length(conns);
+	manager_state->apply_attached = 0;
+	shm_toc_insert(toc, PGLOGICAL_MASTER_TOC_STATE, manager_state);
 
-	apply = shm_toc_allocate(toc,
-							 conns->length * sizeof(PGLogicalApplyWorker));
-	shm_toc_insert(toc, PGLOGICAL_MASTER_TOC_APPLY, apply);
+	apply_workers = shm_toc_allocate(toc,
+							list_length(conns) * sizeof(PGLogicalApplyWorker));
+	shm_toc_insert(toc, PGLOGICAL_MASTER_TOC_APPLY, apply_workers);
 
 	i = 0;
 	foreach (lc, conns)
 	{
 		PGLogicalConnection *c = (PGLogicalConnection *) lfirst(lc);
 
-		apply[i++].connid = c->id;
+		apply_workers[i].dboid = MyDatabaseId;
+		apply_workers[i].bgwhandle = NULL;
+		apply_workers[i++].connid = c->id;
 	}
 
 	return seg;
+}
+
+/*
+ * Cleanup function.
+ *
+ * Called on process exit.
+ */
+static void
+pglogical_manager_on_exit(int code, Datum arg)
+{
+	pglogical_manager_detach(code != 0);
 }
 
 /*
@@ -145,18 +163,23 @@ setup_dynamic_shared_memory(List *conns)
 void
 pglogical_manager_main(Datum main_arg)
 {
-	Oid			dbid = DatumGetObjectId(main_arg);
+	Oid			dboid = DatumGetObjectId(main_arg);
 	Oid			extoid;
 	List	   *conns;
 	PGLogicalNode  *node;
 	dsm_segment	   *seg;
 	MemoryContext	saved_ctx;
 
+	/* Setup shmem. */
+	before_shmem_exit(pglogical_manager_on_exit, main_arg);
+	pglogical_manager_attach(dboid);
+
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
 	BackgroundWorkerUnblockSignals();
 
-	BackgroundWorkerInitializeConnectionByOid(dbid, InvalidOid);
+	/* Connect to db. */
+	BackgroundWorkerInitializeConnectionByOid(dboid, InvalidOid);
 
 	StartTransactionCommand();
 
@@ -176,7 +199,7 @@ pglogical_manager_main(Datum main_arg)
 	conns = get_node_publishers(node->id);
 
 	/* No connections (this should probably be error). */
-	if (conns->length == 0)
+	if (list_length(conns) == 0)
 		proc_exit(0);
 
 	MemoryContextSwitchTo(saved_ctx);
@@ -193,15 +216,19 @@ pglogical_manager_main(Datum main_arg)
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
 	seg = setup_dynamic_shared_memory(conns);
 
-	/* Launch the apply workers. */
-	register_apply_workers(seg, conns->length);
+	set_latch_on_sigusr1 = true;
 
 	/* Main wait loop. */
 	while (!got_SIGTERM)
     {
-       int rc = WaitLatch(&MyProc->procLatch,
-						  WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						  180000L);
+		int rc;
+
+		/* Launch the apply workers. */
+		register_apply_workers(seg, list_length(conns));
+
+		rc = WaitLatch(&MyProc->procLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   180000L);
 
         ResetLatch(&MyProc->procLatch);
 
