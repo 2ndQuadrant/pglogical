@@ -117,6 +117,8 @@ create_node(PGLogicalNode *node)
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
 }
 
 void alter_node(PGLogicalNode *node);
@@ -154,6 +156,8 @@ drop_node(int nodeid)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
 }
 
 PGLogicalNode **
@@ -379,11 +383,9 @@ static List *
 get_node_connections(int32 nodeid, bool is_origin)
 {
 	List		   *res = NIL;
-	PGLogicalNode  *node;
-	RangeVar	   *rv,
-				   *noderv;
-	Relation		rel,
-					noderel;
+	PGLogicalNode  *searchnode;
+	RangeVar	   *rv;
+	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	TupleDesc		desc;
@@ -392,9 +394,9 @@ get_node_connections(int32 nodeid, bool is_origin)
 	int				searchcolumn,
 					othercolumn;
 
-	node = get_node(nodeid);
+	searchnode = get_node(nodeid);
 
-	if (node == NULL)
+	if (searchnode == NULL)
 		return NULL;
 
 	searchcolumn = is_origin ? Anum_connections_origin_id :
@@ -414,86 +416,56 @@ get_node_connections(int32 nodeid, bool is_origin)
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 
-	noderv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
-	noderel = heap_openrv(noderv, RowExclusiveLock);
-
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		PGLogicalNode  *cnode;
-		NodeTuple	   *cnodetup;
 		PGLogicalConnection *conn;
-		SysScanDesc		nodescan;
-		HeapTuple		nodetuple;
-		ScanKeyData		nodekey[1];
-		int				other_node_id;
+		PGLogicalNode  *othernode;
+		int				otherid;
 		Datum			d;
 		List		   *repset_names;
 
-		other_node_id = DatumGetInt32(fastgetattr(tuple, othercolumn,
+		/* Find the node on the other side of this connection. */
+		otherid = DatumGetInt32(fastgetattr(tuple, othercolumn,
 												  desc, &isnull));
+		othernode = get_node(otherid);
 
-		/* Search for node record. */
-		ScanKeyInit(&nodekey[0],
-					Anum_nodes_id,
-					BTEqualStrategyNumber, F_INT4EQ,
-					Int32GetDatum(other_node_id));
-
-		nodescan = systable_beginscan(noderel, 0, true, NULL, 1, nodekey);
-		nodetuple = systable_getnext(nodescan);
-
-		if (!HeapTupleIsValid(nodetuple))
-			return NULL;
-
+		/* Build connection/ */
 		conn = (PGLogicalConnection *) palloc(sizeof(PGLogicalConnection));
-
-		/* Get the connection id. */
 		conn->id = Int32GetDatum(heap_getattr(tuple, Anum_connections_id,
 											  desc, &isnull));
 
-		/* Create and fill the node struct. */
-		cnodetup = (NodeTuple *) GETSTRUCT(nodetuple);
-		cnode = (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
-		node->id = cnodetup->node_id;
-		node->name = pstrdup(NameStr(cnodetup->node_name));
-		node->role = cnodetup->node_role;
-		node->status = cnodetup->node_status;
-
-		d = fastgetattr(nodetuple, Anum_nodes_dsn, desc, &isnull);
-		Assert(!isnull);
-		node->dsn = pstrdup(TextDatumGetCString(d));
-
-		cnode->valid = true;
-
 		if (is_origin)
 		{
-			conn->origin = node;
-			conn->target = cnode;
+			conn->origin = searchnode;
+			conn->target = othernode;
 		}
 		else
 		{
-			conn->origin = cnode;
-			conn->target = node;
+			conn->origin = othernode;
+			conn->target = searchnode;
 		}
 
 		/* Get replication sets */
 		d = heap_getattr(tuple, Anum_connections_replication_sets, desc,
 						 &isnull);
-		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-		conn->replication_sets = get_replication_sets(repset_names);
+		if (isnull)
+			conn->replication_sets = NIL;
+		else
+		{
+			repset_names = textarray_to_list(DatumGetArrayTypeP(d));
+			conn->replication_sets = get_replication_sets(repset_names);
+		}
 
 		/* Put the connection object to the list. */
 		res = lappend(res, conn);
-
-		systable_endscan(nodescan);
 	}
-
-	heap_close(noderel, RowExclusiveLock);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
 	return res;
 }
+
 
 List *
 get_node_subscribers(int nodeid)
@@ -531,7 +503,7 @@ find_node_connection(int originid, int targetid, bool missing_ok)
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(originid));
 
-	ScanKeyInit(&key[0],
+	ScanKeyInit(&key[1],
 				Anum_connections_target_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(targetid));
@@ -564,8 +536,13 @@ find_node_connection(int originid, int targetid, bool missing_ok)
 
 	/* Get replication sets. */
 	d = heap_getattr(tuple, Anum_connections_replication_sets, desc, &isnull);
-	repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-	conn->replication_sets = get_replication_sets(repset_names);
+	if (isnull)
+		conn->replication_sets = NIL;
+	else
+	{
+		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
+		conn->replication_sets = get_replication_sets(repset_names);
+	}
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -617,8 +594,13 @@ get_node_connection(int connid)
 
 	/* Get replication sets */
 	d = heap_getattr(tuple, Anum_connections_replication_sets, desc, &isnull);
-	repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-	conn->replication_sets = get_replication_sets(repset_names);
+	if (isnull)
+		conn->replication_sets = NIL;
+	else
+	{
+		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
+		conn->replication_sets = get_replication_sets(repset_names);
+	}
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -651,7 +633,7 @@ create_node_connection(int originid, int targetid, List *replication_sets)
 	values[Anum_connections_origin_id - 1] = Int32GetDatum(originid);
 	values[Anum_connections_target_id - 1] = Int32GetDatum(targetid);
 
-	if (replication_sets && replication_sets->length > 0)
+	if (list_length(replication_sets) > 0)
 		values[Anum_connections_replication_sets - 1] =
 			PointerGetDatum(strlist_to_textarray(replication_sets));
 	else
@@ -668,6 +650,8 @@ create_node_connection(int originid, int targetid, List *replication_sets)
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
 
 	return connid;
 }
@@ -703,4 +687,6 @@ drop_node_connection(int connid)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
 }
