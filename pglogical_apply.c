@@ -403,16 +403,99 @@ replication_handler(StringInfo s)
 		case 'D':
 			handle_delete(s);
 			break;
+		/* STARTUP MESSAGE */
+		case 'S':
+			break;
 		default:
 			elog(ERROR, "unknown action of type %c", action);
 	}
 }
 
+/*
+ * Send a Standby Status Update message to server.
+ *
+ * 'recvpos' is the latest LSN we've received data to, force is set if we need
+ * to send a response to avoid timeouts.
+ */
+static bool
+send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
+{
+	static StringInfo	reply_message = NULL;
+
+	static XLogRecPtr last_recvpos = InvalidXLogRecPtr;
+	static XLogRecPtr last_writepos = InvalidXLogRecPtr;
+	static XLogRecPtr last_flushpos = InvalidXLogRecPtr;
+
+	XLogRecPtr writepos;
+	XLogRecPtr flushpos;
+
+	/* It's legal to not pass a recvpos */
+	if (recvpos < last_recvpos)
+		recvpos = last_recvpos;
+
+	flushpos = writepos = recvpos;
+
+	if (writepos < last_writepos)
+		writepos = last_writepos;
+
+	if (flushpos < last_flushpos)
+		flushpos = last_flushpos;
+
+	/* if we've already reported everything we're good */
+	if (!force &&
+		writepos == last_writepos &&
+		flushpos == last_flushpos)
+		return true;
+
+	if (!reply_message)
+		reply_message = makeStringInfo();
+	else
+		resetStringInfo(reply_message);
+
+	pq_sendbyte(reply_message, 'r');
+	pq_sendint64(reply_message, recvpos);		/* write */
+	pq_sendint64(reply_message, flushpos);		/* flush */
+	pq_sendint64(reply_message, writepos);		/* apply */
+	pq_sendint64(reply_message, now);			/* sendTime */
+	pq_sendbyte(reply_message, false);			/* replyRequested */
+
+	elog(DEBUG2, "sending feedback (force %d) to recv %X/%X, write %X/%X, flush %X/%X",
+		 force,
+		 (uint32) (recvpos >> 32), (uint32) recvpos,
+		 (uint32) (writepos >> 32), (uint32) writepos,
+		 (uint32) (flushpos >> 32), (uint32) flushpos
+		);
+
+
+	if (PQputCopyData(conn, reply_message->data, reply_message->len) <= 0 ||
+		PQflush(conn))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_CONNECTION_FAILURE),
+				 errmsg("could not send feedback packet: %s",
+						PQerrorMessage(conn))));
+		return false;
+	}
+
+	if (recvpos > last_recvpos)
+		last_recvpos = recvpos;
+	if (writepos > last_writepos)
+		last_writepos = writepos;
+	if (flushpos > last_flushpos)
+		last_flushpos = flushpos;
+
+	return true;
+}
+
+/*
+ * Apply main loop.
+ */
 static void
 apply_work(PGconn *streamConn)
 {
 	int			fd;
 	char	   *copybuf = NULL;
+	XLogRecPtr	last_received = InvalidXLogRecPtr;
 
 	fd = PQsocket(streamConn);
 
@@ -501,11 +584,26 @@ apply_work(PGconn *streamConn)
 					end_lsn = pq_getmsgint64(&s);
 					pq_getmsgint64(&s); /* sendTime */
 
+					if (last_received < start_lsn)
+						last_received = start_lsn;
+
+					if (last_received < end_lsn)
+						last_received = end_lsn;
+
 					replication_handler(&s);
 				}
 				else if (c == 'k')
 				{
-					/* TODO */
+					XLogRecPtr endpos;
+					bool reply_requested;
+
+					endpos = pq_getmsgint64(&s);
+					/* timestamp = */ pq_getmsgint64(&s);
+					reply_requested = pq_getmsgbyte(&s);
+
+					send_feedback(streamConn, endpos,
+								  GetCurrentTimestamp(),
+								  reply_requested);
 				}
 				/* other message types are purposefully ignored */
 			}
