@@ -16,7 +16,9 @@ To run these tests:
 
 * Start the temporary PostgreSQL instance with:
 
-        PGPORT=5142 postgres -D tmp_install -c max_replication_slots=5 -c wal_level=logical -c max_wal_senders=10
+        PGPORT=5142 postgres -D tmp_install -c max_replication_slots=5 -c wal_level=logical -c max_wal_senders=10 -c track_commit_timestamp=on
+
+  (leave out `track_commit_timestamp=on` for 9.4)
 
 * In another session, in the test directory:
 
