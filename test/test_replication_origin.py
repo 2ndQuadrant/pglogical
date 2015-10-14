@@ -39,11 +39,24 @@ class ReplicationOriginTest(PGLogicalOutputTest):
 
         self.is95plus = self.conn.server_version/100 > 904
 
+        if self.is95plus:
+            # Create the replication origin for the fake remote node
+            cur.execute("SELECT pg_replication_origin_create(%s);", (self.fake_upstream_origin_name,))
+            self.conn.commit()
+
+            # Ensure that commit timestamps are enabled.
+            cur.execute("SHOW track_commit_timestamp");
+            if cur.fetchone()[0] != 'on':
+                raise ValueError("This test requires track_commit_timestamp to be on")
+            self.conn.commit()
+
         self.connect_decoding()
 
     def tearDown(self):
         cur = self.conn.cursor()
         cur.execute("DROP TABLE IF EXISTS test_origin;")
+        self.conn.commit()
+        self.teardown_replication_session_origin(cur);
         self.conn.commit()
         PGLogicalOutputTest.tearDown(self)
 
@@ -53,9 +66,6 @@ class ReplicationOriginTest(PGLogicalOutputTest):
             raise ValueError("Transaction open or aborted, expected no open transaction")
 
         if self.is95plus:
-            # Create the replication origin for the fake remote node
-            cur.execute("SELECT pg_replication_origin_create(%s);", (self.fake_upstream_origin_name,))
-
             # Set our session up so it appears to be replaying from the nonexistent remote node
             cur.execute("SELECT pg_replication_origin_session_setup(%s);", (self.fake_upstream_origin_name,))
             self.conn.commit()
@@ -83,12 +93,30 @@ class ReplicationOriginTest(PGLogicalOutputTest):
             self.conn.commit()
 
     def teardown_replication_session_origin(self, cur):
-        self.reset_replication_session_origin(cur)
         if self.conn.get_transaction_status() != 0:
             raise ValueError("Transaction open or aborted, expected no open transaction")
         if self.is95plus:
-            cur.execute("SELECT pg_replication_origin_drop(%s);", (self.fake_upstream_origin_name))
-        self.conn.commit()
+            cur.execute("SELECT pg_replication_origin_session_is_setup()")
+            if cur.fetchone()[0] == 't':
+                cur.execute("SELECT pg_replication_origin_session_reset();")
+            self.conn.commit()
+            cur.execute("SELECT pg_replication_origin_drop(%s);", (self.fake_upstream_origin_name,))
+            self.conn.commit()
+
+    def expect_origin_progress(self, cur, lsn):
+        if self.is95plus:
+            initialtxstate = self.conn.get_transaction_status()
+            if initialtxstate not in (0,2):
+                raise ValueError("Expected open valid tx or no tx")
+            cur.execute("SELECT local_id, external_id, remote_lsn FROM pg_show_replication_origin_status()")
+            if lsn is not None:
+                (local_id, external_id, remote_lsn) = cur.fetchone()
+                self.assertEquals(local_id, 1)
+                self.assertEquals(external_id, self.fake_upstream_origin_name)
+                self.assertEquals(remote_lsn.lower(), lsn.lower())
+            self.assertIsNone(cur.fetchone(), msg="Expected only one replication origin to exist")
+            if initialtxstate == 0:
+                self.conn.commit()
 
     def run_test_transactions(self, cur):
         """
@@ -110,12 +138,16 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         different connection settings.
         """
 
+        self.expect_origin_progress(cur, None)
+
         # Some locally originated tx's for data we'll then modify
         cur.execute("INSERT INTO test_origin(colb, colc) VALUES(%s, %s)", ('2015-10-08', 'foobar'))
         self.assertEquals(cur.rowcount, 1)
         cur.execute("INSERT INTO test_origin(colb, colc) VALUES(%s, %s)", ('2015-10-08', 'bazbar'))
         self.assertEquals(cur.rowcount, 1)
         self.conn.commit()
+
+        self.expect_origin_progress(cur, None)
 
         # Now the fake remotely-originated tx
         self.setup_replication_session_origin(cur)
@@ -133,8 +165,12 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         self.assertEquals(cur.rowcount, 1)
         self.conn.commit()
 
+        self.expect_origin_progress(cur, self.fake_xact_lsn)
+
         # Reset replication origin to return to locally originated tx's
         self.reset_replication_session_origin(cur)
+
+        self.expect_origin_progress(cur, self.fake_xact_lsn)
 
         # and finally use a local tx to modify remotely originated transactions
         # Delete and modify remotely originated tuples
@@ -146,6 +182,8 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         cur.execute("INSERT INTO test_origin(colb, colc) VALUES (%s, %s)", ('2017-10-08', 'blahblah'))
         self.assertEquals(cur.rowcount, 1)
         self.conn.commit()
+
+        self.expect_origin_progress(cur, self.fake_xact_lsn)
 
     def decode_test_transactions(self, messages, expect_origins, expect_forwarding):
         """
@@ -233,7 +271,7 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         self.decode_test_transactions(messages, False, False)
 
     # Upstream doesn't send origin correctly yet
-    @unittest.expectedFailure
+    @unittest.skip("Doesn't work yet")
     def test_forwarding_requested_95plus(self):
         """
         In this test we request that forwarding be enabled. We'll get
