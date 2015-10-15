@@ -107,3 +107,14 @@ CREATE FUNCTION pglogical.origin_filter(filter text, origin text)
 RETURNS boolean STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_origin_filter';
 CREATE FUNCTION pglogical.table_filter(nodename text, relid oid, action "char")
 RETURNS boolean STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_table_filter';
+
+
+CREATE TABLE pglogical.queue (
+    queued_at timestamp with time zone NOT NULL,
+    role name NOT NULL,
+    message_type "char" NOT NULL,
+    message json NOT NULL
+);
+
+CREATE FUNCTION pglogical.replicate_ddl_command(command text)
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replicate_ddl_command';

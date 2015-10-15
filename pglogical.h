@@ -16,6 +16,8 @@
 #include "storage/s_lock.h"
 #include "postmaster/bgworker.h"
 
+#include "pglogical_node.h"
+
 #define EXTENSION_NAME "pglogical"
 
 #define PGLOGICAL_MASTER_TOC_MAGIC	123
@@ -60,5 +62,7 @@ extern void pglogical_manager_attach(Oid dboid);
 extern void pglogical_manager_detach(bool signal_supervisor);
 
 extern void handle_sigterm(SIGNAL_ARGS);
+
+void pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel);
 
 #endif /* PGLOGICAL_H */

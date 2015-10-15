@@ -38,18 +38,25 @@
 
 #include "storage/dsm.h"
 #include "storage/ipc.h"
+#include "storage/lmgr.h"
 #include "storage/proc.h"
 #include "storage/shm_toc.h"
 #include "storage/spin.h"
 
+#include "tcop/pquery.h"
+#include "tcop/tcopprot.h"
+#include "tcop/utility.h"
+
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
-#include "pglogical_proto.h"
-#include "pglogical_relcache.h"
-#include "pglogical_node.h"
-#include "pglogical_repset.h"
 #include "pglogical_conflict.h"
+#include "pglogical_node.h"
+#include "pglogical_proto.h"
+#include "pglogical_queue.h"
+#include "pglogical_relcache.h"
+#include "pglogical_repset.h"
 #include "pglogical.h"
 
 
@@ -59,17 +66,23 @@ static bool			in_remote_transaction = false;
 static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
 static RepOriginId	remote_origin_id = InvalidRepOriginId;
 
+static Oid			QueueRelid = InvalidOid;
+
 static PGLogicalApplyWorker *MyApplyWorker;
 static PGLogicalDBState	   *MyDBState;
 
 
-static void
+static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
+
+
+static bool
 ensure_transaction(void)
 {
 	if (IsTransactionState())
-		return;
+		return false;
 
 	StartTransactionCommand();
+	return true;
 }
 
 static void
@@ -209,8 +222,7 @@ handle_insert(StringInfo s)
 	HeapTuple			remotetuple;
 	HeapTuple			applytuple;
 	PGLogicalConflictResolution resolution;
-
-	ensure_transaction();
+	bool				started_tx = ensure_transaction();
 
 	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
 
@@ -222,8 +234,6 @@ handle_insert(StringInfo s)
 	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
 
 	ExecOpenIndices(estate->es_result_relation_info, false);
-
-	PushActiveSnapshot(GetTransactionSnapshot());
 
 	conflicts = pglogical_tuple_find_conflict(estate, &newtup, localslot);
 
@@ -258,12 +268,46 @@ handle_insert(StringInfo s)
 		UserTableUpdateOpenIndexes(estate, applyslot);
 	}
 
-	/* Cleanup */
 	ExecCloseIndices(estate->es_result_relation_info);
-	PopActiveSnapshot();
-	pglogical_relation_close(rel, NoLock);
-	ExecResetTupleTable(estate->es_tupleTable, true);
-	FreeExecutorState(estate);
+
+	/* if INSERT was into our queue, process the message. */
+	if (RelationGetRelid(rel->rel) == QueueRelid)
+	{
+		HeapTuple		ht;
+		LockRelId		lockid = rel->rel->rd_lockInfo.lockRelId;
+		TransactionId	oldxid = GetTopTransactionId();
+		Relation		qrel;
+
+		/*
+		 * Release transaction bound resources for CONCURRENTLY support.
+		 */
+		MemoryContextSwitchTo(MessageContext);
+		ht = heap_copytuple(applyslot->tts_tuple);
+
+		LockRelationIdForSession(&lockid, RowExclusiveLock);
+		pglogical_relation_close(rel, NoLock);
+
+		ExecResetTupleTable(estate->es_tupleTable, true);
+		FreeExecutorState(estate);
+
+		handle_queued_message(ht, started_tx);
+
+		qrel = heap_open(QueueRelid, RowExclusiveLock);
+
+		UnlockRelationIdForSession(&lockid, RowExclusiveLock);
+
+		heap_close(qrel, NoLock);
+
+		if (oldxid != GetTopTransactionId())
+			CommitTransactionCommand();
+	}
+	else
+	{
+		/* Otherwise do normal cleanup. */
+		pglogical_relation_close(rel, NoLock);
+		ExecResetTupleTable(estate->es_tupleTable, true);
+		FreeExecutorState(estate);
+	}
 
 	CommandCounterIncrement();
 }
@@ -379,6 +423,27 @@ handle_delete(StringInfo s)
 	CommandCounterIncrement();
 }
 
+/*
+ * Handles messages comming from the queue.
+ *
+ * Currently only SQL messages are supported.
+ */
+static void
+handle_queued_message(HeapTuple msgtup, bool tx_just_started)
+{
+	char		message_type;
+	char	   *command;
+	char	   *role;
+
+	message_type = message_type_from_queued_tuple(msgtup);
+	if (message_type != QUEUE_COMMAND_TYPE_SQL)
+		elog(ERROR, "unknown message type '%c'", message_type);
+
+	command = sql_from_queued_tuple(msgtup, &role);
+
+	pglogical_execute_sql_command(command, role, tx_just_started);
+}
+
 
 static void
 replication_handler(StringInfo s)
@@ -460,7 +525,11 @@ send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
 		return true;
 
 	if (!reply_message)
+	{
+		MemoryContext	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 		reply_message = makeStringInfo();
+		MemoryContextSwitchTo(oldcontext);
+	}
 	else
 		resetStringInfo(reply_message);
 
@@ -511,6 +580,13 @@ apply_work(PGconn *streamConn)
 
 	fd = PQsocket(streamConn);
 
+	/* Init the MessageContext which we use for easier cleanup. */
+	MessageContext = AllocSetContextCreate(TopMemoryContext,
+										   "MessageContext",
+										   ALLOCSET_DEFAULT_MINSIZE,
+										   ALLOCSET_DEFAULT_INITSIZE,
+										   ALLOCSET_DEFAULT_MAXSIZE);
+
 	/* mark as idle, before starting to loop */
 	pgstat_report_activity(STATE_IDLE, NULL);
 
@@ -531,6 +607,8 @@ apply_work(PGconn *streamConn)
 							   fd, 1000L);
 
 		ResetLatch(&MyProc->procLatch);
+
+		MemoryContextSwitchTo(MessageContext);
 
 		/* emergency bailout if postmaster has died */
 		if (rc & WL_POSTMASTER_DEATH)
@@ -578,8 +656,6 @@ apply_work(PGconn *streamConn)
 				int c;
 				StringInfoData s;
 
-//				MemoryContextSwitchTo(MessageContext);
-
 				initStringInfo(&s);
 				s.data = copybuf;
 				s.len = r;
@@ -619,9 +695,109 @@ apply_work(PGconn *streamConn)
 				}
 				/* other message types are purposefully ignored */
 			}
-
 		}
+
+		/* confirm all writes at once */
+		send_feedback(streamConn, last_received, GetCurrentTimestamp(), false);
+
+		/* Cleanup the memory. */
+		MemoryContextResetAndDeleteChildren(MessageContext);
 	}
+}
+
+/*
+ * Add context to the errors produced by pglogical_execute_sql_command().
+ */
+static void
+execute_sql_command_error_cb(void *arg)
+{
+	errcontext("during executions of queued SQL statement: %s", (char *) arg);
+}
+
+/*
+ * Execute an SQL command. This can be multiple multiple queries.
+ */
+void
+pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
+{
+	List	   *commands;
+	ListCell   *command_i;
+	MemoryContext oldcontext;
+	ErrorContextCallback errcallback;
+
+	oldcontext = MemoryContextSwitchTo(MessageContext);
+
+	errcallback.callback = execute_sql_command_error_cb;
+	errcallback.arg = cmdstr;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	commands = pg_parse_query(cmdstr);
+
+	MemoryContextSwitchTo(oldcontext);
+
+	/*
+	 * Do a limited amount of safety checking against CONCURRENTLY commands
+	 * executed in situations where they aren't allowed. The sender side should
+	 * provide protection, but better be safe than sorry.
+	 */
+	isTopLevel = isTopLevel & (list_length(commands) == 1);
+
+	foreach(command_i, commands)
+	{
+		List	   *plantree_list;
+		List	   *querytree_list;
+		Node	   *command = (Node *) lfirst(command_i);
+		const char *commandTag;
+		Portal		portal;
+		DestReceiver *receiver;
+
+		/* temporarily push snapshot for parse analysis/planning */
+		PushActiveSnapshot(GetTransactionSnapshot());
+
+		oldcontext = MemoryContextSwitchTo(MessageContext);
+
+		/*
+		 * Set the current role to the user that executed the command on the
+		 * origin server.  NB: there is no need to reset this afterwards, as
+		 * the value will be gone with our transaction.
+		 */
+		SetConfigOption("role", role, PGC_INTERNAL, PGC_S_OVERRIDE);
+
+		commandTag = CreateCommandTag(command);
+
+		querytree_list = pg_analyze_and_rewrite(
+			command, cmdstr, NULL, 0);
+
+		plantree_list = pg_plan_queries(
+			querytree_list, 0, NULL);
+
+		PopActiveSnapshot();
+
+		portal = CreatePortal("bdr", true, true);
+		PortalDefineQuery(portal, NULL,
+						  cmdstr, commandTag,
+						  plantree_list, NULL);
+		PortalStart(portal, NULL, 0, InvalidSnapshot);
+
+		receiver = CreateDestReceiver(DestNone);
+
+		(void) PortalRun(portal, FETCH_ALL,
+						 isTopLevel,
+						 receiver, receiver,
+						 NULL);
+		(*receiver->rDestroy) (receiver);
+
+		PortalDrop(portal, false);
+
+		CommandCounterIncrement();
+
+		MemoryContextSwitchTo(oldcontext);
+	}
+
+	/* protect against stack resets during CONCURRENTLY processing */
+	if (error_context_stack == &errcallback)
+		error_context_stack = errcallback.previous;
 }
 
 void
@@ -676,7 +852,7 @@ pglogical_apply_main(Datum main_arg)
 	MyDBState = state;
 	MyApplyWorker = &apply[applyworkernr];
 
-	/* TODO */
+	/* Connect to our database. */
 	BackgroundWorkerInitializeConnectionByOid(MyApplyWorker->dboid, InvalidOid);
 
 	StartTransactionCommand();
@@ -689,6 +865,12 @@ pglogical_apply_main(Datum main_arg)
 	initStringInfo(&conninfo_repl);
 	appendStringInfo(&conninfo_repl, "%s replication=database fallback_application_name='%s_apply'",
 					 origin_node->dsn, origin_node->name);
+
+	/*
+	 * Cache tne queue relation id.
+	 * TODO: invalidation
+	 */
+	QueueRelid = get_queue_table_oid();
 
 	streamConn = PQconnectdb(conninfo_repl.data);
 	if (PQstatus(streamConn) != CONNECTION_OK)

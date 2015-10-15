@@ -21,6 +21,8 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_type.h"
 
+#include "miscadmin.h"
+
 #include "nodes/makefuncs.h"
 
 #include "replication/reorderbuffer.h"
@@ -30,10 +32,13 @@
 #include "utils/catcache.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
+#include "utils/json.h"
+#include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
 #include "pglogical_node.h"
+#include "pglogical_queue.h"
 #include "pglogical_repset.h"
 
 #include "pglogical.h"
@@ -54,6 +59,8 @@ PG_FUNCTION_INFO_V1(pglogical_drop_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_add_table);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
 
+/* DDL */
+PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
 
 /*
  * Filter based on origin, currently we only support all or nothing only.
@@ -83,6 +90,9 @@ pglogical_table_filter(PG_FUNCTION_ARGS)
 	Relation		rel;
 	enum ReorderBufferChangeType action;
 	bool			res;
+
+	if (relid == get_queue_table_oid())
+		PG_RETURN_BOOL(false);
 
 	switch (change_type)
 	{
@@ -304,3 +314,40 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 
 	PG_RETURN_VOID();
 }
+
+/*
+ * pglogical_replicate_ddl_command
+ *
+ * Queues the input SQL for replication.
+ */
+Datum
+pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
+{
+	text   *command = PG_GETARG_TEXT_PP(0);
+	char   *query = text_to_cstring(command);
+	StringInfoData	cmd;
+
+	/* Force everything in the query to be fully qualified. */
+	(void) set_config_option("search_path", "",
+							 PGC_USERSET, PGC_S_SESSION,
+							 GUC_ACTION_SAVE, true, 0, false);
+
+	/* Convert the query to json string. */
+	initStringInfo(&cmd);
+	escape_json(&cmd, query);
+
+	/*
+	 * Queue the query for replication.
+	 *
+	 * Note, we keep "DDL" message type for the future when we have deparsing
+	 * support.
+	 */
+	queue_command(GetUserId(), QUEUE_COMMAND_TYPE_SQL, cmd.data);
+
+	/* Execute the query locally. */
+	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId(), false),
+								  false);
+
+	PG_RETURN_VOID();
+}
+
