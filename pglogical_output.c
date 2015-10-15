@@ -355,18 +355,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 void
 pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
-	bool send_replication_origin = false;
+	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
+	bool send_replication_origin = data->forward_changeset_origins;
 
 	if (!startup_message_sent)
-		send_startup_message(
-				ctx,
-				(PGLogicalOutputData*)ctx->output_plugin_private,
-				false /* can't be last message */);
+		send_startup_message( ctx, data, false /* can't be last message */);
 
 #ifdef HAVE_REPLICATION_ORIGINS
-	send_replication_origin = txn->origin_id != InvalidRepOriginId;
-
+	/* If the record didn't originate locally, send origin info */
+	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
 #endif
+
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
 	pglogical_write_begin(ctx->out, txn);
 
@@ -469,7 +468,6 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContextReset(data->context);
 }
 
-
 #ifdef HAVE_REPLICATION_ORIGINS
 /*
  * Decide if the whole transaction with specific origin should be filtered out.
@@ -484,7 +482,6 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 		return true;
 
 	return false;
-
 }
 #endif
 
