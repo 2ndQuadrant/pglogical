@@ -32,7 +32,7 @@ endif
 # typical installcheck users do not have (e.g. buildfarm clients).
 @installcheck: ;
 
-check: regresscheck
+check: regresscheck ;
 
 regresscheck:
 	$(MKDIR_P) regression_output
@@ -42,3 +42,4 @@ regresscheck:
 	    --outputdir=./regression_output \
 	    $(REGRESS)
 
+.PHONY: regresscheck
