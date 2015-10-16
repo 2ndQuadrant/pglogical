@@ -24,7 +24,10 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/objectaddress.h"
+#include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
+
+#include "commands/trigger.h"
 
 #include "miscadmin.h"
 
@@ -178,6 +181,9 @@ sql_from_queued_tuple(HeapTuple queue_tup, char **role)
 	return res;
 }
 
+/*
+ * Get oid of our queue table.
+ */
 Oid
 get_queue_table_oid(void)
 {
@@ -193,4 +199,39 @@ get_queue_table_oid(void)
 			 EXTENSION_NAME, CATALOG_QUEUE);
 
 	return reloid;
+}
+
+
+/*
+ * Create a TRUNCATE trigger for a persistent table and mark
+ * it tgisinternal so that it's not dumped by pg_dump.
+ *
+ * This is basically wrapper around CreateTrigger().
+ */
+void
+create_truncate_trigger(char *schemaname, char *relname)
+{
+	CreateTrigStmt *tgstmt;
+	RangeVar *relrv = makeRangeVar(schemaname, relname, -1);
+
+	tgstmt = makeNode(CreateTrigStmt);
+	tgstmt->trigname = "queue_truncate_trigger";
+	tgstmt->relation = copyObject(relrv);
+	tgstmt->funcname = list_make2(makeString(EXTENSION_NAME), makeString("queue_truncate"));
+	tgstmt->args = NIL;
+	tgstmt->row = false;
+	tgstmt->timing = TRIGGER_TYPE_AFTER;
+	tgstmt->events = TRIGGER_TYPE_TRUNCATE;
+	tgstmt->columns = NIL;
+	tgstmt->whenClause = NULL;
+	tgstmt->isconstraint = false;
+	tgstmt->deferrable = false;
+	tgstmt->initdeferred = false;
+	tgstmt->constrrel = NULL;
+
+	(void) CreateTrigger(tgstmt, NULL, InvalidOid, InvalidOid,
+						 InvalidOid, InvalidOid, true /* tgisinternal */);
+
+	/* Make the new trigger visible within this session */
+	CommandCounterIncrement();
 }

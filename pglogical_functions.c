@@ -19,7 +19,11 @@
 #include "access/xact.h"
 
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_type.h"
+
+#include "commands/event_trigger.h"
+#include "commands/trigger.h"
 
 #include "miscadmin.h"
 
@@ -61,6 +65,8 @@ PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
 
 /* DDL */
 PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
+PG_FUNCTION_INFO_V1(pglogical_queue_truncate);
+PG_FUNCTION_INFO_V1(pglogical_truncate_trigger_add);
 
 /*
  * Filter based on origin, currently we only support all or nothing only.
@@ -351,3 +357,101 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+/*
+ * pglogical_queue_trigger
+ *
+ * Trigger which queues the TRUNCATE command.
+ */
+Datum
+pglogical_queue_truncate(PG_FUNCTION_ARGS)
+{
+	TriggerData	   *trigdata = (TriggerData *) fcinfo->context;
+	const char	   *funcname = "queue_truncate";
+	char		   *nspname;
+	char		   *relname;
+	StringInfoData	command;
+	StringInfoData	json;
+
+	/* Return if this function was called from apply process. */
+	if (MyApplyWorker)
+		PG_RETURN_VOID();
+
+	/* Make sure this is being called as an AFTER TRUNCTATE trigger. */
+	if (!CALLED_AS_TRIGGER(fcinfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+				 errmsg("function \"%s\" was not called by trigger manager",
+						funcname)));
+
+	if (!TRIGGER_FIRED_AFTER(trigdata->tg_event) ||
+		!TRIGGER_FIRED_BY_TRUNCATE(trigdata->tg_event))
+		ereport(ERROR,
+				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+				 errmsg("function \"%s\" must be fired AFTER TRUNCATE",
+						funcname)));
+
+	/* Format the query. */
+	nspname = get_namespace_name(RelationGetNamespace(trigdata->tg_relation));
+	relname = RelationGetRelationName(trigdata->tg_relation);
+
+	initStringInfo(&command);
+	appendStringInfo(&command, "TRUNCATE TABLE ONLY %s.%s",
+					 quote_identifier(nspname), quote_identifier(relname));
+
+	initStringInfo(&json);
+	escape_json(&json, command.data);
+
+	/* Queue the truncate for replication. */
+	queue_command(GetUserId(), QUEUE_COMMAND_TYPE_SQL, json.data);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * pglogical_truncate_trigger_add
+ *
+ * This function, which is called as an event trigger handler, adds TRUNCATE
+ * trigger to newly created tables where appropriate.
+ *
+ * Since triggers are created tgisinternal and their creation is
+ * not replicated or dumped we must create truncate triggers on
+ * tables even if they're created by a replicated command or
+ * restore of a dump. Recursion is not a problem since we don't
+ * queue anything for replication anymore.
+ */
+Datum
+pglogical_truncate_trigger_add(PG_FUNCTION_ARGS)
+{
+	EventTriggerData   *trigdata = (EventTriggerData *) fcinfo->context;
+	const char	   *funcname = "truncate_trigger_add";
+
+	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+				 errmsg("function \"%s\" was not called by event trigger manager",
+						funcname)));
+
+	/* Check if this is CREATE TABLE [AS] and if it is, add the trigger. */
+	if (strncmp(trigdata->tag, "CREATE TABLE", strlen("CREATE TABLE")) == 0 &&
+		IsA(trigdata->parsetree, CreateStmt))
+	{
+		CreateStmt *stmt = (CreateStmt *)trigdata->parsetree;
+		char *nspname;
+
+		/* Skip temporary and unlogged tables */
+		if (stmt->relation->relpersistence != RELPERSISTENCE_PERMANENT)
+			PG_RETURN_VOID();
+
+		nspname = get_namespace_name(RangeVarGetCreationNamespace(stmt->relation));
+
+		/*
+		 * By this time the relation has been created so it's safe to
+		 * call RangeVarGetRelid.
+		 */
+		create_truncate_trigger(nspname, stmt->relation->relname);
+
+		pfree(nspname);
+	}
+
+	PG_RETURN_VOID();
+}

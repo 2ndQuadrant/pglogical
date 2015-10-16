@@ -68,7 +68,7 @@ static RepOriginId	remote_origin_id = InvalidRepOriginId;
 
 static Oid			QueueRelid = InvalidOid;
 
-static PGLogicalApplyWorker *MyApplyWorker;
+PGLogicalApplyWorker	   *MyApplyWorker = NULL;
 static PGLogicalDBState	   *MyDBState;
 
 

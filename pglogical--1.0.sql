@@ -118,3 +118,14 @@ CREATE TABLE pglogical.queue (
 
 CREATE FUNCTION pglogical.replicate_ddl_command(command text)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replicate_ddl_command';
+
+CREATE OR REPLACE FUNCTION pglogical.queue_truncate()
+RETURNS trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_queue_truncate';
+
+CREATE OR REPLACE FUNCTION pglogical.truncate_trigger_add()
+RETURNS event_trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_truncate_trigger_add';
+
+CREATE EVENT TRIGGER pglogical_truncate_trigger_add
+ON ddl_command_end
+WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
+EXECUTE PROCEDURE pglogical.truncate_trigger_add();

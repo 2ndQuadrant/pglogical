@@ -22,5 +22,7 @@ extern char *sql_from_queued_tuple(HeapTuple queue_tup, char **role);
 
 extern Oid get_queue_table_oid(void);
 
+extern void create_truncate_trigger(char *schemaname, char *relname);
+
 #endif /* PGLOGICAL_NODE_H */
 

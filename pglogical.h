@@ -33,6 +33,8 @@ typedef struct PGLogicalApplyWorker
 	BackgroundWorkerHandle *bgwhandle;
 } PGLogicalApplyWorker;
 
+extern PGLogicalApplyWorker *MyApplyWorker;
+
 typedef struct PGLogicalDBState
 {
 	/* Oid of the database this flock works on. */
