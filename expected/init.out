@@ -1,0 +1,68 @@
+-- This should be done with pg_regress's --create-role option
+-- but it's blocked by bug 37906
+CREATE USER nonsuper;
+CREATE USER super SUPERUSER;
+-- Can't because of bug 37906
+--GRANT ALL ON DATABASE regress TO nonsuper;
+--GRANT ALL ON DATABASE regress TO nonsuper;
+\c regression
+GRANT ALL ON SCHEMA public TO nonsuper;
+CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
+AS $FUNC$
+BEGIN
+    WHILE EXISTS(SELECT true FROM pg_stat_get_wal_senders() s WHERE s.flush_location < i_pos AND (i_pid = 0 OR s.pid = i_pid)) LOOP
+		PERFORM pg_sleep(0.01);
+	END LOOP;
+END;$FUNC$ LANGUAGE plpgsql;
+\c postgres
+GRANT ALL ON SCHEMA public TO nonsuper;
+\c regression
+CREATE EXTENSION pglogical;
+INSERT INTO pglogical.local_node SELECT pglogical.create_node('node_reg', 'p', 'dbname=regression');
+SELECT pglogical.create_node('node_pg', 's', 'dbname=postgres', 'dbname=regression');
+ create_node 
+-------------
+  1269063755
+(1 row)
+
+SELECT pglogical.create_connection('node_reg', 'node_pg');
+ create_connection 
+-------------------
+         656219154
+(1 row)
+
+\c postgres
+CREATE EXTENSION pglogical;
+SELECT pglogical.create_node('node_reg', 'p', 'dbname=regression');
+ create_node 
+-------------
+  1824095321
+(1 row)
+
+INSERT INTO pglogical.local_node SELECT pglogical.create_node('node_pg', 's', 'dbname=postgres', 'dbname=regression');
+SELECT pglogical.create_connection('node_reg', 'node_pg');
+ create_connection 
+-------------------
+         656219154
+(1 row)
+
+select pg_sleep(3);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+-- Make sure we see the slot and active connection
+\c regression
+SELECT plugin, slot_type, database, active FROM pg_replication_slots;
+      plugin      | slot_type |  database  | active 
+------------------+-----------+------------+--------
+ pglogical_output | logical   | regression | t
+(1 row)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     2
+(1 row)
+

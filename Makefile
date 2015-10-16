@@ -14,6 +14,8 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
+REGRESS = init basic extended toasted
+
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -24,4 +26,19 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+
+# Disabled because these tests require "wal_level=logical", which
+# typical installcheck users do not have (e.g. buildfarm clients).
+@installcheck: ;
+
+check: regresscheck
+
+regresscheck:
+	$(MKDIR_P) regression_output
+	$(pg_regress_check) \
+	    --temp-config ./postgresql.conf \
+	    --temp-instance=./tmp_check \
+	    --outputdir=./regression_output \
+	    $(REGRESS)
 
