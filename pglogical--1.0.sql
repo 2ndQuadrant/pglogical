@@ -21,6 +21,9 @@ RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_node';
 CREATE FUNCTION pglogical.drop_node(node_name name)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_node';
 
+CREATE FUNCTION pglogical.wait_for_node_ready()
+RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_node_ready';
+
 
 CREATE TABLE pglogical.connections (
 	conn_id integer NOT NULL PRIMARY KEY,

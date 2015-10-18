@@ -35,7 +35,7 @@ SELECT pglogical.create_node('node_reg', 'p', 'dbname=regression');
 INSERT INTO pglogical.local_node SELECT pglogical.create_node('node_pg', 's', 'dbname=postgres', 'dbname=regression');
 SELECT pglogical.create_connection('node_reg', 'node_pg');
 
-select pg_sleep(3);
+SELECT pglogical.wait_for_node_ready();
 
 -- Make sure we see the slot and active connection
 \c regression

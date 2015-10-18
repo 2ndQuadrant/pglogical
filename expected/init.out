@@ -46,9 +46,9 @@ SELECT pglogical.create_connection('node_reg', 'node_pg');
          656219154
 (1 row)
 
-select pg_sleep(3);
- pg_sleep 
-----------
+SELECT pglogical.wait_for_node_ready();
+ wait_for_node_ready 
+---------------------
  
 (1 row)
 

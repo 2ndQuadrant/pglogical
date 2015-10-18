@@ -31,6 +31,9 @@
 
 #include "replication/reorderbuffer.h"
 
+#include "storage/latch.h"
+#include "storage/proc.h"
+
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/catcache.h"
@@ -54,6 +57,7 @@ PG_FUNCTION_INFO_V1(pglogical_table_filter);
 /* Node management. */
 PG_FUNCTION_INFO_V1(pglogical_create_node);
 PG_FUNCTION_INFO_V1(pglogical_drop_node);
+PG_FUNCTION_INFO_V1(pglogical_wait_for_node_ready);
 PG_FUNCTION_INFO_V1(pglogical_create_connection);
 PG_FUNCTION_INFO_V1(pglogical_drop_connection);
 
@@ -178,6 +182,37 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 	drop_node(node->id);
 
 	/* TODO: notify the workers. */
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * Wait until local node is ready.
+ */
+Datum
+pglogical_wait_for_node_ready(PG_FUNCTION_ARGS)
+{
+	for (;;)
+	{
+		PGLogicalNode  *node = get_local_node();
+
+		if (!node)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("local node not found")));
+
+		if (node->status == NODE_STATUS_READY)
+			break;
+
+		pfree(node);
+
+		CHECK_FOR_INTERRUPTS();
+
+		(void) WaitLatch(&MyProc->procLatch,
+						 WL_LATCH_SET | WL_TIMEOUT, 1000L);
+
+        ResetLatch(&MyProc->procLatch);
+	}
 
 	PG_RETURN_VOID();
 }
