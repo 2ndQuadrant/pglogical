@@ -216,8 +216,6 @@ pglogical_manager_main(Datum main_arg)
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
 	seg = setup_dynamic_shared_memory(conns);
 
-	set_latch_on_sigusr1 = true;
-
 	/* Main wait loop. */
 	while (!got_SIGTERM)
     {
