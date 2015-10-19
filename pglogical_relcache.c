@@ -193,5 +193,5 @@ tupdesc_get_att_by_name(TupleDesc desc, const char *attname)
 			return i;
 	}
 
-	elog(ERROR, "Unknown column name %s", attname);
+	elog(ERROR, "unknown column name %s", attname);
 }

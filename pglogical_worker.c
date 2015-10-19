@@ -126,7 +126,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
-				 errmsg("Registering worker failed, check prior log messages for details")));
+				 errmsg("worker registration failed, check prior log messages for details")));
 	}
 
 	/* TODO: handle crash? */

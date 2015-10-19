@@ -294,7 +294,7 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 			ereport(ERROR,
 				(errcode(ERRCODE_UNIQUE_VIOLATION),
 				errmsg("multiple unique constraints violated by remote tuple"),
-				errdetail("Cannot apply transaction because remotely tuple "
+				errdetail("cannot apply transaction because remotely tuple "
 					  "conflicts with a local tuple on more than one UNIQUE "
 					  "constraint and/or PRIMARY KEY"),
 				errhint("Resolve the conflict by removing or changing the conflicting "
