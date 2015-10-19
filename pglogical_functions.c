@@ -94,7 +94,7 @@ pglogical_table_filter(PG_FUNCTION_ARGS)
 	Oid			relid = PG_GETARG_OID(1);
 	char		change_type = PG_GETARG_CHAR(2);
 	PGLogicalNode  *remote_node = get_node_by_name(remote_node_name, false);
-	PGLogicalNode  *local_node = get_local_node();
+	PGLogicalNode  *local_node = get_local_node(false);
 	PGLogicalConnection *conn = find_node_connection(local_node->id,
 													 remote_node->id,
 													 false);
@@ -195,12 +195,7 @@ pglogical_wait_for_node_ready(PG_FUNCTION_ARGS)
 {
 	for (;;)
 	{
-		PGLogicalNode  *node = get_local_node();
-
-		if (!node)
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("local node not found")));
+		PGLogicalNode  *node = get_local_node(false);
 
 		if (node->status == NODE_STATUS_READY)
 			break;

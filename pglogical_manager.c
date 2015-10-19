@@ -45,7 +45,7 @@ manage_apply_workers(void)
 
 	StartTransactionCommand();
 
-	node = get_local_node();
+	node = get_local_node(true);
 
 	/* No local node, exit. */
 	if (!node)
@@ -117,7 +117,7 @@ pglogical_manager_main(Datum main_arg)
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 
 	/* Fetch local node info. */
-	node = get_local_node();
+	node = get_local_node(true);
 
 	/* No local node, exit. */
 	if (!node)

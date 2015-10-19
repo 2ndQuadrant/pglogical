@@ -280,7 +280,7 @@ get_node_by_name(const char *node_name, bool missing_ok)
  * Load the local node information.
  */
 PGLogicalNode *
-get_local_node(void)
+get_local_node(bool missing_ok)
 {
 	int				nodeid;
 	RangeVar	   *rv;
@@ -299,7 +299,18 @@ get_local_node(void)
 
 	/* No local node record found. */
 	if (!HeapTupleIsValid(tuple))
-		return NULL;
+	{
+		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
+			return NULL;
+		}
+
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("local node not found")));
+	}
 
 	desc = RelationGetDescr(rel);
 
