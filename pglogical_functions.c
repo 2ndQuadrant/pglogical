@@ -47,6 +47,7 @@
 #include "pglogical_node.h"
 #include "pglogical_queue.h"
 #include "pglogical_repset.h"
+#include "pglogical_worker.h"
 
 #include "pglogical.h"
 
@@ -408,7 +409,7 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	StringInfoData	json;
 
 	/* Return if this function was called from apply process. */
-	if (MyApplyWorker)
+	if (MyPGLogicalWorker)
 		PG_RETURN_VOID();
 
 	/* Make sure this is being called as an AFTER TRUNCTATE trigger. */

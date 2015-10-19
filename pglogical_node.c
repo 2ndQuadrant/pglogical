@@ -35,6 +35,7 @@
 
 #include "pglogical_node.h"
 #include "pglogical_repset.h"
+#include "pglogical_worker.h"
 #include "pglogical.h"
 
 #define CATALOG_LOCAL_NODE	"local_node"

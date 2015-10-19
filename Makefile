@@ -9,7 +9,8 @@ DATA = pglogical--1.0.sql
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical_node.o pglogical_proto.o pglogical_relcache.o \
 	   pglogical.o pglogical_init_replica.o pglogical_repset.o \
-	   pglogical_rpc.o pglogical_functions.o pglogical_queue.o
+	   pglogical_rpc.o pglogical_functions.o pglogical_queue.o \
+	   pglogical_worker.o
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)

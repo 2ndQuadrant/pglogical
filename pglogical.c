@@ -15,7 +15,6 @@
 #include "miscadmin.h"
 
 #include "access/hash.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "access/xlog.h"
@@ -23,24 +22,17 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_type.h"
 
-#include "postmaster/bgworker.h"
-
 #include "storage/ipc.h"
-#include "storage/latch.h"
-#include "storage/lwlock.h"
 #include "storage/proc.h"
 
 #include "utils/builtins.h"
-#include "utils/guc.h"
-#include "utils/memutils.h"
 
 #include "pglogical_node.h"
 #include "pglogical_conflict.h"
+#include "pglogical_worker.h"
 #include "pglogical.h"
 
 PG_MODULE_MAGIC;
-
-volatile sig_atomic_t got_SIGTERM = false;
 
 static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{"error", PGLOGICAL_RESOLVE_ERROR, false},
@@ -51,52 +43,9 @@ static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{NULL, 0, false}
 };
 
-typedef struct PGLogicalManager {
-	/*
-	 * We identify manager workers by dboid. Even though PGPROC has databaseId
-	 * the worker might die before the databaseId is assigned.
-	 */
-	Oid		dboid;
-
-	/* Pointer to proc array. */
-	PGPROC *proc;
-} PGLogicalManager;
-
-static bool xacthook_signal_workers = false;
-
-typedef struct PGLogicalContext {
-	/* Write lock. */
-	LWLock	   *lock;
-
-	/* Supervisor process. */
-	PGPROC	   *supervisor;
-
-	/* Manager workers. */
-	int			total_managers;
-	PGLogicalManager  managers[FLEXIBLE_ARRAY_MEMBER];
-} PGLogicalContext;
-
-static PGLogicalContext *PGLogicalCtx = NULL;
-static PGLogicalManager *MyPGLogicalManager = NULL;
-static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
-
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
-static void signal_worker_xact_callback(XactEvent event, void *arg);
-static PGLogicalManager *pglogical_manager_find(Oid dboid);
 
-void
-handle_sigterm(SIGNAL_ARGS)
-{
-	int			save_errno = errno;
-
-	got_SIGTERM = true;
-
-	if (MyProc)
-		SetLatch(&MyProc->procLatch);
-
-	errno = save_errno;
-}
 
 /*
  * Ensure string is not longer than maxlen.
@@ -193,134 +142,6 @@ textarray_to_list(ArrayType *textarray)
 }
 
 /*
- * Register the manager bgworker for the given DB. The manager worker will then
- * start the apply workers.
- *
- * Called in postmaster context from _PG_init, and under backend from node join
- * funcions.
- */
-static void
-pglogical_manager_register(Oid dboid)
-{
-	BackgroundWorker	bgw;
-	BackgroundWorkerHandle *bgw_handle;
-	pid_t				pid;
-
-	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
-		BGWORKER_BACKEND_DATABASE_CONNECTION;
-	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
-	bgw.bgw_main = NULL;
-	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
-			 EXTENSION_NAME);
-	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
-			 "pglogical_manager_main");
-	bgw.bgw_restart_time = BGW_NEVER_RESTART;
-	bgw.bgw_notify_pid = MyProcPid;
-	snprintf(bgw.bgw_name, BGW_MAXLEN,
-			 "pglogical manager");
-	bgw.bgw_main_arg = ObjectIdGetDatum(dboid);
-
-	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
-				 errmsg("Registering worker failed, check prior log messages for details")));
-	}
-
-	/* TODO: handle crash? */
-	WaitForBackgroundWorkerStartup(bgw_handle, &pid);
-}
-
-/*
- * Attach the current master process to the PGLogicalCtx.
- *
- * Called during by master worker startup.
- */
-void
-pglogical_manager_attach(Oid dboid)
-{
-	int i;
-	int	emptyslot = -1;
-
-	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-
-	for (i = 0; i < PGLogicalCtx->total_managers; i++)
-	{
-		if (dboid == PGLogicalCtx->managers[i].dboid)
-		{
-			LWLockRelease(PGLogicalCtx->lock);
-
-			if (PGLogicalCtx->managers[i].proc != MyProc)
-				elog(ERROR, "PGLogical state shared memory corrupted");
-
-			return;
-		}
-
-		if (PGLogicalCtx->managers[i].dboid == InvalidOid && emptyslot < 0)
-			emptyslot = i;
-	}
-
-	/* TODO hint about max_worker_processes. */
-	if (emptyslot < 0)
-	{
-		LWLockRelease(PGLogicalCtx->lock);
-		elog(ERROR, "no free slot found for PGLogical worker");
-	}
-
-
-	MyPGLogicalManager = &PGLogicalCtx->managers[emptyslot];
-
-	/* Assign the slot to current proccess. */
-	MyPGLogicalManager->dboid = dboid;
-	MyPGLogicalManager->proc = MyProc;
-
-	LWLockRelease(PGLogicalCtx->lock);
-}
-
-/*
- * Find the manager worker for given database.
- */
-static PGLogicalManager *
-pglogical_manager_find(Oid dboid)
-{
-	int i;
-
-	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
-
-	for (i = 0; i < PGLogicalCtx->total_managers; i++)
-	{
-		if (dboid == PGLogicalCtx->managers[i].dboid)
-			return &PGLogicalCtx->managers[i];
-	}
-
-	return NULL;
-}
-
-/*
- * Detach the current master process from the PGLogicalCtx.
- *
- * Called during master worker exit.
- */
-void
-pglogical_manager_detach(bool signal_supervisor)
-{
-	/* Nothing to detach. */
-	if (MyPGLogicalManager == NULL)
-		return;
-
-	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-
-	Assert(MyPGLogicalManager->proc = MyProc);
-	MyPGLogicalManager->dboid = InvalidOid;
-
-	/* Signal the supervisor process. */
-	if (signal_supervisor && PGLogicalCtx->supervisor)
-		SetLatch(&PGLogicalCtx->supervisor->procLatch);
-
-	LWLockRelease(PGLogicalCtx->lock);
-}
-
-/*
  * Start the manager workers for every db which has a pglogical node.
  *
  * Note that we start workers that are not necessary here. We do this because
@@ -349,6 +170,7 @@ start_manager_workers(void)
 	{
 		Form_pg_database	pgdatabase = (Form_pg_database) GETSTRUCT(tup);
 		Oid					dboid = HeapTupleGetOid(tup);
+		PGLogicalWorker		worker;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -368,57 +190,15 @@ start_manager_workers(void)
 		/* No record found, try running new worker. */
 		elog(DEBUG1, "registering pglogical manager process for database %s",
 			 NameStr(pgdatabase->datname));
-		pglogical_manager_register(dboid);
+
+		memset(&worker, 0, sizeof(PGLogicalWorker));
+		worker.worker_type = PGLOGICAL_WORKER_MANAGER;
+		worker.dboid = dboid;
+		pglogical_worker_register(&worker);
 	}
 
 	heap_endscan(scan);
 	heap_close(rel, AccessShareLock);
-}
-
-static void
-signal_worker_xact_callback(XactEvent event, void *arg)
-{
-	switch (event)
-	{
-		case XACT_EVENT_COMMIT:
-			if (xacthook_signal_workers)
-			{
-				PGLogicalManager   *m;
-
-				xacthook_signal_workers = false;
-
-				LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-
-				m = pglogical_manager_find(MyDatabaseId);
-
-				if (m)
-				{
-					/* Signal the manager worker. */
-					SetLatch(&m->proc->procLatch);
-				}
-				else if (PGLogicalCtx->supervisor)
-				{
-					/* Signal the supervisor process. */
-					SetLatch(&PGLogicalCtx->supervisor->procLatch);
-				}
-
-				LWLockRelease(PGLogicalCtx->lock);
-			}
-			break;
-		default:
-			/* We're not interested in other tx events */
-			break;
-	}
-}
-
-void
-pglogical_connections_changed(void)
-{
-	if (!xacthook_signal_workers)
-	{
-		RegisterXactCallback(signal_worker_xact_callback, NULL);
-		xacthook_signal_workers = true;
-	}
 }
 
 /*
@@ -462,26 +242,6 @@ pglogical_supervisor_main(Datum main_arg)
 	proc_exit(0);
 }
 
-static void
-pglogical_shmem_startup(void)
-{
-	bool        found;
-
-	/* Init signaling context for supervisor proccess. */
-	PGLogicalCtx = ShmemInitStruct("pglogical_context",
-								   offsetof(PGLogicalContext, managers) +
-								   sizeof(PGLogicalManager) * max_worker_processes,
-								   &found);
-	if (!found)
-	{
-		PGLogicalCtx->lock = LWLockAssign();
-		PGLogicalCtx->supervisor = NULL;
-		PGLogicalCtx->total_managers = max_worker_processes;
-		memset(PGLogicalCtx->managers, 0,
-			   sizeof(PGLogicalManager) * max_worker_processes);
-	}
-}
-
 
 /*
  * Entry point for this module.
@@ -504,9 +264,8 @@ _PG_init(void)
 	if (IsBinaryUpgrade)
 		return;
 
-	/* Init hooks. */
-	prev_shmem_startup_hook = shmem_startup_hook;
-	shmem_startup_hook = pglogical_shmem_startup;
+	/* Init workers. */
+	pglogical_worker_shmem_init();
 
 	/* Run the supervisor. */
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
@@ -517,10 +276,10 @@ _PG_init(void)
 			 EXTENSION_NAME);
 	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 			 "pglogical_supervisor_main");
-	bgw.bgw_restart_time = 1;
-	bgw.bgw_notify_pid = 0;
 	snprintf(bgw.bgw_name, BGW_MAXLEN,
 			 "pglogical supervisor");
+	bgw.bgw_restart_time = 1;
+	bgw.bgw_notify_pid = 0;
 	bgw.bgw_main_arg = (Datum) 0;
 
 	RegisterBackgroundWorker(&bgw);

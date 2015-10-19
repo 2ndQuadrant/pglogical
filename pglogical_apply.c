@@ -16,39 +16,27 @@
 #include "libpq-fe.h"
 #include "pgstat.h"
 
-#include "access/hash.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
-#include "access/xlogdefs.h"
 
 #include "commands/dbcommands.h"
 
 #include "executor/executor.h"
 
-#include "lib/stringinfo.h"
-
 #include "libpq/pqformat.h"
 
 #include "mb/pg_wchar.h"
 
-#include "postmaster/bgworker.h"
-
 #include "replication/origin.h"
 
-#include "storage/dsm.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
 #include "storage/proc.h"
-#include "storage/shm_toc.h"
-#include "storage/spin.h"
 
 #include "tcop/pquery.h"
-#include "tcop/tcopprot.h"
 #include "tcop/utility.h"
 
 #include "utils/memutils.h"
-#include "utils/rel.h"
 #include "utils/snapmgr.h"
 
 #include "pglogical_conflict.h"
@@ -57,6 +45,7 @@
 #include "pglogical_queue.h"
 #include "pglogical_relcache.h"
 #include "pglogical_repset.h"
+#include "pglogical_worker.h"
 #include "pglogical.h"
 
 
@@ -67,10 +56,6 @@ static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
 static RepOriginId	remote_origin_id = InvalidRepOriginId;
 
 static Oid			QueueRelid = InvalidOid;
-
-PGLogicalApplyWorker	   *MyApplyWorker = NULL;
-static PGLogicalDBState	   *MyDBState;
-
 
 static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
 
@@ -803,6 +788,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 void
 pglogical_apply_main(Datum main_arg)
 {
+	int				slot = DatumGetInt32(main_arg);
 	PGconn		   *streamConn;
 	PGresult	   *res;
 	char		   *sqlstate;
@@ -811,13 +797,11 @@ pglogical_apply_main(Datum main_arg)
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
 	NameData		slot_name;
-	dsm_segment	   *seg;
-	shm_toc		   *toc;
-	int				applyworkernr = -1;
-	PGLogicalDBState	   *state;
-	PGLogicalApplyWorker   *apply;
 	PGLogicalConnection	   *conn;
 	PGLogicalNode		   *origin_node;
+
+	/* Setup shmem. */
+	pglogical_worker_attach(slot);
 
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
@@ -827,36 +811,11 @@ pglogical_apply_main(Datum main_arg)
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
 
-	seg = dsm_attach(DatumGetUInt32(main_arg));
-	if (seg == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("unable to map dynamic shared memory segment")));
-	toc = shm_toc_attach(PGLOGICAL_MASTER_TOC_MAGIC, dsm_segment_address(seg));
-	if (toc == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-			   errmsg("bad magic number in dynamic shared memory segment")));
-
-	state = shm_toc_lookup(toc, PGLOGICAL_MASTER_TOC_STATE);
-	apply = shm_toc_lookup(toc, PGLOGICAL_MASTER_TOC_APPLY);
-	SpinLockAcquire(&state->mutex);
-	if (state->apply_attached < state->apply_total)
-		applyworkernr = state->apply_attached++;
-	SpinLockRelease(&state->mutex);
-	if (applyworkernr < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("too many apply workers already attached")));
-
-	MyDBState = state;
-	MyApplyWorker = &apply[applyworkernr];
-
 	/* Connect to our database. */
-	BackgroundWorkerInitializeConnectionByOid(MyApplyWorker->dboid, InvalidOid);
+	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
 	StartTransactionCommand();
-	conn = get_node_connection(MyApplyWorker->connid);
+	conn = get_node_connection(MyPGLogicalWorker->worker.apply.connid);
 	origin_node = conn->origin;
 
 	elog(DEBUG1, "conneting to node %d (%s), dsn %s",
