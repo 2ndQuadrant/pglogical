@@ -267,6 +267,9 @@ _PG_init(void)
 	/* Init workers. */
 	pglogical_worker_shmem_init();
 
+	/* Init the command filter. */
+	pglogical_commandfilter_init();
+
 	/* Run the supervisor. */
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
