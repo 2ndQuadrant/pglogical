@@ -162,7 +162,7 @@ The configuration of the conflicts resolver is done via the
   manual action is needed for resolving, this is the default
 - `apply_remote` - always apply the change that's conflicting with local data
 - `keep_local` - keep the local version of the data and ignore the conflicting
-  change that is comming from remote node
+  change that is coming from remote node
 - `last_update_wins` - the version of data with newest commit timestamp will be
   be kept (this can be either local or remote version), this option requires
   the `track_commit_timestamp` to be enable on all nodes to work
