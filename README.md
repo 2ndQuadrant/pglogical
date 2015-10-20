@@ -2,10 +2,16 @@
 
 The pglogical module is a logical replication solution based on the
 `pglogical_output`. It should be installed on both sides of the replication
-connection, ideally same version should be installed on both sides but
-cross-version replication is supported for the purpose of upgrades. The
-cross-version replication support includes replicating across major versions of
-PostgreSQL (currently only n-1 version is supported).
+connection.
+
+Provider node must run PostgreSQL 9.4+
+Subscriber node must run PostgreSQL 9.5+
+
+Use cases supported are
+* Data transfer between a master and downstream nodes
+* Upgrades between major versions
+
+Long term replication across major versions is not a design target. It very probably works, but restrictions may be introduced and we don't guarantee it will work.
 
 Currently, only provider to subscriber replication is supported. But one subscriber can
 merge changes from several masters and detect conflict between changes with
