@@ -53,14 +53,16 @@ typedef struct RepSetTuple
 	bool		replicate_inserts;
 	bool		replicate_updates;
 	bool		replicate_deletes;
+	bool		replicate_truncate;
 } RepSetTuple;
 
-#define Natts_repsets					5
+#define Natts_repsets					6
 #define Anum_repsets_id					1
 #define Anum_repsets_name				2
 #define Anum_repsets_replicate_inserts	3
 #define Anum_repsets_replicate_updates	4
 #define Anum_repsets_replicate_deletes	5
+#define Anum_repsets_replicate_truncate	6
 
 #define Natts_repset_tables			2
 #define Anum_repset_tables_setid	1
@@ -107,6 +109,7 @@ get_replication_set(int setid)
 	repset->replicate_inserts = repsettup->replicate_inserts;
 	repset->replicate_updates = repsettup->replicate_updates;
 	repset->replicate_deletes = repsettup->replicate_deletes;
+	repset->replicate_truncate = repsettup->replicate_truncate;
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -162,6 +165,7 @@ get_replication_set_by_name(const char *setname, bool missing_ok)
 	repset->replicate_inserts = repsettup->replicate_inserts;
 	repset->replicate_updates = repsettup->replicate_updates;
 	repset->replicate_deletes = repsettup->replicate_deletes;
+	repset->replicate_truncate = repsettup->replicate_truncate;
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -250,6 +254,7 @@ get_replication_sets(List *replication_set_names)
 		repset->replicate_inserts = repsettup->replicate_inserts;
 		repset->replicate_updates = repsettup->replicate_updates;
 		repset->replicate_deletes = repsettup->replicate_deletes;
+		repset->replicate_truncate = repsettup->replicate_truncate;
 
 		replication_sets = lappend(replication_sets, repset);
 
@@ -285,6 +290,7 @@ get_repset_relation(Oid reloid, List *replication_sets)
 	entry->replicate_inserts = false;
 	entry->replicate_updates = false;
 	entry->replicate_deletes = false;
+	entry->replicate_truncate = false;
 
 	foreach(lc, replication_sets)
 	{
@@ -296,13 +302,15 @@ get_repset_relation(Oid reloid, List *replication_sets)
 			entry->replicate_updates = true;
 		if (repset->replicate_deletes)
 			entry->replicate_deletes = true;
+		if (repset->replicate_truncate)
+			entry->replicate_truncate = true;
 
 		/*
 		 * Now we now everything is replicated, no point in trying to check
 		 * more replication sets.
 		 */
 		if (entry->replicate_inserts && entry->replicate_updates &&
-			entry->replicate_deletes)
+			entry->replicate_deletes && entry->replicate_truncate)
 			break;
 	}
 
@@ -313,20 +321,22 @@ get_repset_relation(Oid reloid, List *replication_sets)
 
 bool
 relation_is_replicated(Relation rel, PGLogicalConnection *conn,
-					   enum ReorderBufferChangeType change)
+					   PGLogicalChangeType change_type)
 {
 	PGLogicalRepSetRelation *r;
 
 	r = get_repset_relation(RelationGetRelid(rel), conn->replication_sets);
 
-	switch (change)
+	switch (change_type)
 	{
-		case REORDER_BUFFER_CHANGE_INSERT:
+		case PGLogicalChangeInsert:
 			return r->replicate_inserts;
-		case REORDER_BUFFER_CHANGE_UPDATE:
+		case PGLogicalChangeUpdate:
 			return r->replicate_updates;
-		case REORDER_BUFFER_CHANGE_DELETE:
+		case PGLogicalChangeDelete:
 			return r->replicate_deletes;
+		case PGLogicalChangeTruncate:
+			return r->replicate_truncate;
 		default:
 			elog(ERROR, "should be unreachable");
 	}

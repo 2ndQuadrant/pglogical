@@ -92,37 +92,37 @@ pglogical_table_filter(PG_FUNCTION_ARGS)
 {
 	const char *remote_node_name = TextDatumGetCString(PG_GETARG_DATUM(0));
 	Oid			relid = PG_GETARG_OID(1);
-	char		change_type = PG_GETARG_CHAR(2);
+	char		change_type_in = PG_GETARG_CHAR(2);
 	PGLogicalNode  *remote_node = get_node_by_name(remote_node_name, false);
 	PGLogicalNode  *local_node = get_local_node(false);
 	PGLogicalConnection *conn = find_node_connection(local_node->id,
 													 remote_node->id,
 													 false);
 	Relation		rel;
-	enum ReorderBufferChangeType action;
+	PGLogicalChangeType	change_type;
 	bool			res;
 
 	if (relid == get_queue_table_oid())
 		PG_RETURN_BOOL(false);
 
-	switch (change_type)
+	switch (change_type_in)
 	{
 		case 'I':
-			action = REORDER_BUFFER_CHANGE_INSERT;
+			change_type = REORDER_BUFFER_CHANGE_INSERT;
 			break;
 		case 'U':
-			action = REORDER_BUFFER_CHANGE_UPDATE;
+			change_type = REORDER_BUFFER_CHANGE_UPDATE;
 			break;
 		case 'D':
-			action = REORDER_BUFFER_CHANGE_DELETE;
+			change_type = REORDER_BUFFER_CHANGE_DELETE;
 			break;
 		default:
-			elog(ERROR, "unknown change type %c", change_type);
-			action = 0;      /* silence compiler */
+			elog(ERROR, "unknown change type %c", change_type_in);
+			change_type = 0;      /* silence compiler */
 	}
 
 	rel = relation_open(relid, NoLock);
-	res = relation_is_replicated(rel, conn, action);
+	res = relation_is_replicated(rel, conn, change_type);
 	relation_close(rel, NoLock);
 
 	PG_RETURN_BOOL(!res);
@@ -286,6 +286,7 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 	repset.replicate_inserts = PG_GETARG_BOOL(1);
 	repset.replicate_updates = PG_GETARG_BOOL(2);
 	repset.replicate_deletes = PG_GETARG_BOOL(3);
+	repset.replicate_truncate = PG_GETARG_BOOL(4);
 
 	create_replication_set(&repset);
 
@@ -392,6 +393,9 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
  * pglogical_queue_trigger
  *
  * Trigger which queues the TRUNCATE command.
+ *
+ * XXX: There does not seem to be a way to support RESTART IDENTITY at the
+ * moment.
  */
 Datum
 pglogical_queue_truncate(PG_FUNCTION_ARGS)
@@ -400,7 +404,6 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	const char	   *funcname = "queue_truncate";
 	char		   *nspname;
 	char		   *relname;
-	StringInfoData	command;
 	StringInfoData	json;
 
 	/* Return if this function was called from apply process. */
@@ -425,15 +428,16 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	nspname = get_namespace_name(RelationGetNamespace(trigdata->tg_relation));
 	relname = RelationGetRelationName(trigdata->tg_relation);
 
-	initStringInfo(&command);
-	appendStringInfo(&command, "TRUNCATE TABLE ONLY %s.%s",
-					 quote_identifier(nspname), quote_identifier(relname));
-
+	/* It's easier to construct json manually than via Jsonb API... */
 	initStringInfo(&json);
-	escape_json(&json, command.data);
+	appendStringInfo(&json, "{\"schema_name\": ");
+	escape_json(&json, nspname);
+	appendStringInfo(&json, ",\"table_name\": ");
+	escape_json(&json, relname);
+	appendStringInfo(&json, "}");
 
 	/* Queue the truncate for replication. */
-	queue_command(GetUserId(), QUEUE_COMMAND_TYPE_SQL, json.data);
+	queue_command(GetUserId(), QUEUE_COMMAND_TYPE_TRUNCATE, json.data);
 
 	PG_RETURN_VOID();
 }

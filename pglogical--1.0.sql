@@ -45,11 +45,12 @@ CREATE TABLE pglogical.replication_sets (
     replicate_inserts boolean NOT NULL DEFAULT true,
     replicate_updates boolean NOT NULL DEFAULT true,
     replicate_deletes boolean NOT NULL DEFAULT true,
+    replicate_truncate boolean NOT NULL DEFAULT true,
 	UNIQUE (set_name)
 ) WITH (user_catalog_table=true);
 
-INSERT INTO pglogical.replication_sets VALUES (-1, 'default', true, true, true);
-INSERT INTO pglogical.replication_sets VALUES (-2, 'all', true, true, true);
+INSERT INTO pglogical.replication_sets VALUES (-1, 'default', true, true, true, true);
+INSERT INTO pglogical.replication_sets VALUES (-2, 'all', false, false, false, false);
 
 CREATE TABLE pglogical.replication_set_tables (
     set_id integer NOT NULL,
@@ -99,7 +100,7 @@ CREATE VIEW pglogical.tables AS
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
 	replicate_inserts boolean = true, replicate_updates boolean = true,
-	replicate_deletes boolean = true)
+	replicate_deletes boolean = true, replicate_truncate boolean = true)
 RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_replication_set';
 CREATE FUNCTION pglogical.drop_replication_set(set_name name)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';

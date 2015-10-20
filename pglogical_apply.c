@@ -19,13 +19,19 @@
 #include "access/htup_details.h"
 #include "access/xact.h"
 
+#include "catalog/namespace.h"
+
 #include "commands/dbcommands.h"
+#include "commands/tablecmds.h"
 
 #include "executor/executor.h"
 
 #include "libpq/pqformat.h"
 
 #include "mb/pg_wchar.h"
+
+#include "nodes/makefuncs.h"
+#include "nodes/parsenodes.h"
 
 #include "replication/origin.h"
 
@@ -36,6 +42,8 @@
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
 
+#include "utils/builtins.h"
+#include "utils/jsonb.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
@@ -336,7 +344,7 @@ handle_update(StringInfo s)
 		/*
 		 * Tuple found.
 		 *
-		 * TODO: handle conflicts.
+		 * Note this will fail if there are other conflicting unique indexes.
 		 */
 		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
 		simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
@@ -409,24 +417,175 @@ handle_delete(StringInfo s)
 }
 
 /*
- * Handles messages comming from the queue.
+ * Handle TRUNCATE message comming via queue table.
  *
- * Currently only SQL messages are supported.
+ * Note we do truncate filtering here in rhe downstream for performance
+ * reasons.
+ */
+static void
+handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
+{
+	JsonbIterator  *it;
+	JsonbValue		v;
+	int				r;
+	int				level = 0;
+	char		   *key = NULL;
+	char		  **parse_res = NULL;
+	char		   *nspname = NULL;
+	char		   *relname = NULL;
+	RangeVar	   *rv;
+	Oid				relid;
+	Relation		rel;
+	TruncateStmt   *truncate;
+	PGLogicalConnection	   *conn;
+
+	/* Parse and validate the json message. */
+	if (!JB_ROOT_IS_OBJECT(queued_message->message))
+		elog(ERROR, "malformed message in queued message tuple: root is not object");
+
+	it = JsonbIteratorInit(&queued_message->message->root);
+	while ((r = JsonbIteratorNext(&it, &v, false)) != WJB_DONE)
+	{
+		if (level == 0 && r != WJB_BEGIN_OBJECT)
+			elog(ERROR, "root element needs to be an object");
+		else if (level == 0 && r == WJB_BEGIN_OBJECT)
+		{
+			level++;
+		}
+		else if (level == 1 && r == WJB_KEY)
+		{
+			if (strncmp(v.val.string.val, "schema_name", v.val.string.len) == 0)
+				parse_res = &nspname;
+			else if (strncmp(v.val.string.val, "table_name", v.val.string.len) == 0)
+				parse_res = &relname;
+			else
+				elog(ERROR, "unexpected key: %s",
+					 pnstrdup(v.val.string.val, v.val.string.len));
+
+			key = v.val.string.val;
+		}
+		else if (level == 1 && r == WJB_VALUE)
+		{
+			if (!key)
+				elog(ERROR, "in wrong state when parsing key");
+
+			if (v.type != jbvString)
+				elog(ERROR, "unexpected type for key '%s': %u", key, v.type);
+
+			*parse_res = pnstrdup(v.val.string.val, v.val.string.len);
+		}
+		else if (level == 1 && r != WJB_END_OBJECT)
+		{
+			elog(ERROR, "unexpected content: %u at level %d", r, level);
+		}
+		else if (r == WJB_END_OBJECT)
+		{
+			level--;
+			parse_res = NULL;
+			key = NULL;
+		}
+		else
+			elog(ERROR, "unexpected content: %u at level %d", r, level);
+
+	}
+
+	/* Check if we got both schema and table names. */
+	if (!nspname)
+		elog(ERROR, "missing schema_name in TRUNCATE message");
+
+	if (!relname)
+		elog(ERROR, "missing table_name in TRUNCATE message");
+
+	/* If table doesn't exist locally, it can't be subscribed. */
+	rv = makeRangeVar(nspname, relname, -1);
+	relid = RangeVarGetRelid(rv, AccessExclusiveLock, true);
+	if (relid == InvalidOid)
+		return;
+
+	/* Load our connection info. */
+	conn = get_node_connection(MyPGLogicalWorker->worker.apply.connid);
+
+	/* Check if we are subscribed to the table changes. */
+	rel = heap_open(relid, AccessExclusiveLock);
+	if (!relation_is_replicated(rel, conn, PGLogicalChangeTruncate))
+	{
+		relation_close(rel, AccessExclusiveLock);
+		return;
+	}
+	relation_close(rel, AccessExclusiveLock);
+
+	/* Truncate the table. */
+	truncate = makeNode(TruncateStmt);
+	truncate->relations = list_make1(rv);
+	truncate->restart_seqs = false;
+	truncate->behavior = DROP_RESTRICT;
+
+	ExecuteTruncate(truncate);
+
+	CommandCounterIncrement();
+}
+
+/*
+ * Handle SQL message comming via queue table.
+ */
+static void
+handle_sql(QueuedMessage *queued_message, bool tx_just_started)
+{
+	JsonbIterator *it;
+	JsonbValue	v;
+	int			r;
+	char	   *sql;
+
+	/* Validate the json and extract the SQL string from it. */
+	if (!JB_ROOT_IS_SCALAR(queued_message->message))
+		elog(ERROR, "malformed message in queued message tuple: root is not scalar");
+
+	it = JsonbIteratorInit(&queued_message->message->root);
+	r = JsonbIteratorNext(&it, &v, false);
+	if (r != WJB_BEGIN_ARRAY)
+		elog(ERROR, "malformed message in queued message tuple, item type %d expected %d", r, WJB_BEGIN_ARRAY);
+
+	r = JsonbIteratorNext(&it, &v, false);
+	if (r != WJB_ELEM)
+		elog(ERROR, "malformed message in queued message tuple, item type %d expected %d", r, WJB_ELEM);
+
+	if (v.type != jbvString)
+		elog(ERROR, "malformed message in queued message tuple, expected value type %d got %d", jbvString, v.type);
+
+	sql = pnstrdup(v.val.string.val, v.val.string.len);
+
+	r = JsonbIteratorNext(&it, &v, false);
+	if (r != WJB_END_ARRAY)
+		elog(ERROR, "malformed message in queued message tuple, item type %d expected %d", r, WJB_END_ARRAY);
+
+	r = JsonbIteratorNext(&it, &v, false);
+	if (r != WJB_DONE)
+		elog(ERROR, "malformed message in queued message tuple, item type %d expected %d", r, WJB_DONE);
+
+	/* Run the extracted SQL. */
+	pglogical_execute_sql_command(sql, queued_message->role, tx_just_started);
+}
+
+/*
+ * Handles messages comming from the queue.
  */
 static void
 handle_queued_message(HeapTuple msgtup, bool tx_just_started)
 {
-	char		message_type;
-	char	   *command;
-	char	   *role;
+	QueuedMessage  *queued_message = queued_message_from_tuple(msgtup);
 
-	message_type = message_type_from_queued_tuple(msgtup);
-	if (message_type != QUEUE_COMMAND_TYPE_SQL)
-		elog(ERROR, "unknown message type '%c'", message_type);
-
-	command = sql_from_queued_tuple(msgtup, &role);
-
-	pglogical_execute_sql_command(command, role, tx_just_started);
+	switch (queued_message->message_type)
+	{
+		case QUEUE_COMMAND_TYPE_SQL:
+			handle_sql(queued_message, tx_just_started);
+			break;
+		case QUEUE_COMMAND_TYPE_TRUNCATE:
+			handle_truncate(queued_message, tx_just_started);
+			break;
+		default:
+			elog(ERROR, "unknown message type '%c'",
+				 queued_message->message_type);
+	}
 }
 
 

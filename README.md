@@ -122,7 +122,7 @@ The following functions are provided for managing the replication sets:
   - `replicate_updates` - specifies if `UPDATEs` are replicated, default true
   - `replicate_deletes` - specifies if `DELETEs` are replicated, default true
 
-- `pglogical.alter_replication_set(set_name name, replicate_inserts bool, replicate_updates bool, replicate_deletes bool)`
+- `pglogical.alter_replication_set(set_name name, replicate_inserts bool, replicate_updates bool, replicate_deletes bool, replicate_truncate bool)`
   This function change the parameters of the existing replication set.
 
   Parameters:
@@ -130,6 +130,7 @@ The following functions are provided for managing the replication sets:
   - `replicate_inserts` - specifies if `INSERTs` are replicated, default true
   - `replicate_updates` - specifies if `UPDATEs` are replicated, default true
   - `replicate_deletes` - specifies if `DELETEs` are replicated, default true
+  - `replicate_truncate` - specifies if `TRUNCATE` is replicated, default true
 
 - `pglogical.delete_replication_set(set_name text)`
   Removes the replication set.

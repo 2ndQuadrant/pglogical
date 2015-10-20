@@ -102,78 +102,44 @@ queue_command(Oid roleoid, char message_type, char *message)
 	heap_close(rel, RowExclusiveLock);
 }
 
-char
-message_type_from_queued_tuple(HeapTuple queue_tup)
-{
-	QueueTuple *q = (QueueTuple *) GETSTRUCT(queue_tup);
-
-	return q->message_type;
-}
-
 
 /*
- * Get individual values from the command queue tuple.
+ * Parse the tuple from the queue table into palloc'd QueuedMessage struct.
+ *
+ * The caller must have the queue table locked in at least AccessShare mode.
  */
-char *
-sql_from_queued_tuple(HeapTuple queue_tup, char **role)
+QueuedMessage *
+queued_message_from_tuple(HeapTuple queue_tup)
 {
 	QueueTuple *q = (QueueTuple *) GETSTRUCT(queue_tup);
 	RangeVar   *rv;
 	Relation	rel;
 	TupleDesc	tupDesc;
-	Datum		datum;
 	bool		isnull;
-	char	   *message;
-	char	   *res;
+	Datum		message;
 	Jsonb	   *data;
-	JsonbIterator *it;
-	JsonbValue	v;
-	int			r;
-
-	Assert(q->message_type == QUEUE_COMMAND_TYPE_SQL);
+	QueuedMessage *res;
 
 	/* Open relation to get the tuple descriptor. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_QUEUE, -1);
 	rel = heap_openrv(rv, NoLock);
 	tupDesc = RelationGetDescr(rel);
 
-	/* Parse the message. */
-	datum = heap_getattr(queue_tup, Anum_queue_message, tupDesc, &isnull);
+	/* Retriveve the message. */
+	message = heap_getattr(queue_tup, Anum_queue_message, tupDesc, &isnull);
 	if (isnull)
-		elog(ERROR, "null message in queued SQL message tuple");
+		elog(ERROR, "null message in queued message tuple");
 
-	message = DatumGetCString(DirectFunctionCall1(json_out, datum));
+	/* Parse the json inside the message into Jsonb object. */
 	data = DatumGetJsonb(
-		DirectFunctionCall1(jsonb_in, CStringGetDatum(message)));
+		DirectFunctionCall1(jsonb_in, DirectFunctionCall1(json_out, message)));
 
-	if (!JB_ROOT_IS_SCALAR(data))
-		elog(ERROR, "malformed message in queued SQL message tuple: root is not scalar");
+	res = (QueuedMessage *) palloc(sizeof(QueuedMessage));
+	res->message = data;
 
-	it = JsonbIteratorInit(&data->root);
-	r = JsonbIteratorNext(&it, &v, false);
-	if (r != WJB_BEGIN_ARRAY)
-		elog(ERROR, "malformed message in queued SQL message tuple, item type %d expected %d", r, WJB_BEGIN_ARRAY);
-
-	r = JsonbIteratorNext(&it, &v, false);
-	if (r != WJB_ELEM)
-		elog(ERROR, "malformed message in queued SQL message tuple, item type %d expected %d", r, WJB_ELEM);
-
-	if (v.type != jbvString)
-		elog(ERROR, "malformed message in queued SQL message tuple, expected value type %d got %d", jbvString, v.type);
-
-	res = pnstrdup(v.val.string.val, v.val.string.len);
-
-	r = JsonbIteratorNext(&it, &v, false);
-	if (r != WJB_END_ARRAY)
-		elog(ERROR, "malformed message in queued SQL message tuple, item type %d expected %d", r, WJB_END_ARRAY);
-
-	r = JsonbIteratorNext(&it, &v, false);
-	if (r != WJB_DONE)
-		elog(ERROR, "malformed message in queued SQL message tuple, item type %d expected %d", r, WJB_DONE);
-
-	/* Read role info if requested. */
-	if (role)
-		*role = pstrdup(NameStr(q->role));
+	res->queued_at = q->queued_at;
+	res->role = pstrdup(NameStr(q->role));
+	res->message_type = q->message_type;
 
 	/* Close the relation. */
 	heap_close(rel, NoLock);

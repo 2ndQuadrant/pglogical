@@ -13,12 +13,22 @@
 #ifndef PGLOGICAL_QUEUE_H
 #define PGLOGICAL_QUEUE_H
 
-#define QUEUE_COMMAND_TYPE_SQL	'Q'
+#include "utils/jsonb.h"
+
+#define QUEUE_COMMAND_TYPE_SQL		'Q'
+#define QUEUE_COMMAND_TYPE_TRUNCATE	'T'
+
+typedef struct QueuedMessage
+{
+	TimestampTz	queued_at;
+	char	   *role;
+	char		message_type;
+	Jsonb	   *message;
+} QueuedMessage;
 
 extern void queue_command(Oid roleoid, char message_type, char *message);
 
-extern char message_type_from_queued_tuple(HeapTuple queue_tup);
-extern char *sql_from_queued_tuple(HeapTuple queue_tup, char **role);
+extern QueuedMessage *queued_message_from_tuple(HeapTuple queue_tup);
 
 extern Oid get_queue_table_oid(void);
 
