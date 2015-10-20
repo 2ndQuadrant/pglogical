@@ -442,9 +442,29 @@ replication_set_add_table(int setid, Oid reloid)
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
-	tupDesc = RelationGetDescr(rel);
+
+	/* UNLOGGED and TEMP tables cannot be part of replication set. */
+	if (!RelationNeedsWAL(rel))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("UNLOGGED and TEMP tables cannot be replicated")));
+
+	/* Check of relation has replication index. */
+	if (rel->rd_indexvalid == 0)
+		RelationGetIndexList(rel);
+	if (!OidIsValid(rel->rd_replidindex) &&
+		(repset->replicate_updates || repset->replicate_deletes))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("table %s cannot be added to replication set %s "
+						"because it does not have a PRIMARY KEY and given "
+						"replication set is configured to replicate UPDATEs "
+						"and DELETEs",
+						RelationGetRelationName(rel), repset->name),
+				 errhint("Add a PRIMARY KEY to the table")));
 
 	/* Form a tuple. */
+	tupDesc = RelationGetDescr(rel);
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_repset_tables_setid - 1] = Int32GetDatum(repset->id);

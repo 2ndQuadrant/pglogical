@@ -84,9 +84,12 @@ CREATE VIEW pglogical.tables AS
 	 UNION
     SELECT rs.set_name, t.nspname, t.relname
 	  FROM user_tables t,
-		   pglogical.replication_sets rs
+		   pglogical.replication_sets rs,
+		   pg_catalog.pg_index i
      WHERE rs.set_id = -1
 	   AND t.oid NOT IN (SELECT set_relation FROM set_tables)
+	   AND i.indrelid = t.oid
+	   AND i.indisreplident
 	 UNION ALL
     SELECT rs.set_name, t.nspname, t.relname
 	  FROM user_tables t,
