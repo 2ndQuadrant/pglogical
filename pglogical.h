@@ -35,6 +35,4 @@ extern List *textarray_to_list(ArrayType *textarray);
 
 void pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel);
 
-void pglogical_commandfilter_init(void);
-
 #endif /* PGLOGICAL_H */
