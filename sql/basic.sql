@@ -11,6 +11,12 @@ $$);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
+\c postgres
+
+ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
+
+\c regression
+
 -- check basic insert replication
 INSERT INTO basic_dml(other, data, something)
 VALUES (5, 'foo', '1 minute'::interval),
