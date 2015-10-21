@@ -144,21 +144,10 @@ pglogical_create_node(PG_FUNCTION_ARGS)
 	if (PG_ARGISNULL(1))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("node role cannot be null")));
-
-	if (PG_ARGISNULL(2))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("node dsn cannot be null")));
 
 	node.name = NameStr(*PG_GETARG_NAME(0));
-	node.role = PG_GETARG_CHAR(1);
-	node.dsn = TextDatumGetCString(PG_GETARG_DATUM(2));
-
-	if (PG_ARGISNULL(3))
-		node.init_dsn = NULL;
-	else
-		node.init_dsn = TextDatumGetCString(PG_GETARG_DATUM(3));
+	node.dsn = TextDatumGetCString(PG_GETARG_DATUM(1));
 
 	node.id = InvalidOid;
 	node.status = NODE_STATUS_INIT;

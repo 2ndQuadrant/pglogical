@@ -17,10 +17,8 @@ typedef struct PGLogicalNode
 {
 	int			id;
 	const char *name;
-	char		role;
 	char		status;
 	const char *dsn;
-	const char *init_dsn;
 	bool		valid;
 } PGLogicalNode;
 
@@ -32,10 +30,6 @@ typedef struct PGLogicalNode
 #define NODE_STATUS_CATCHUP				'c'
 #define NODE_STATUS_CONNECT_BACK		'b'
 #define NODE_STATUS_READY				'r'
-
-#define NODE_ROLE_PUBLISHER		'p'
-#define NODE_ROLE_SUBSCRIBER	's'
-#define NODE_ROLE_FOWARDER		'f'
 
 typedef struct PGLogicalConnection
 {

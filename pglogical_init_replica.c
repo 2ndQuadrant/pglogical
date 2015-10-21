@@ -568,33 +568,7 @@ pglogical_init_replica(PGLogicalConnection *conn)
 
 	if (status == NODE_STATUS_CATCHUP)
 	{
-		switch (target->role)
-		{
-			case NODE_ROLE_SUBSCRIBER:
-				/* Nothing to do here for subscriber. */
-				break;
-			default:
-				/* Rest is not supported yet. */
-				elog(ERROR, "only subscriber node can be replication target");
-		}
-
-		set_node_status(target->id, NODE_STATUS_CONNECT_BACK);
-		status = NODE_STATUS_CONNECT_BACK;
-	}
-
-	if (status == NODE_STATUS_CONNECT_BACK)
-	{
 		PGconn	   *origin_conn;
-
-		switch (target->role)
-		{
-			case NODE_ROLE_SUBSCRIBER:
-				/* Nothing to do here for subscriber. */
-				break;
-			default:
-				/* Rest is not supported yet. */
-				elog(ERROR, "only subscriber node can be replication target");
-		}
 
 		status = NODE_STATUS_READY;
 		set_node_status(target->id, status);

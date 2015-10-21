@@ -1,11 +1,8 @@
 CREATE TABLE pglogical.nodes (
 	node_id integer NOT NULL PRIMARY KEY,
 	node_name name NOT NULL,
-	node_role "char" NOT NULL,
 	node_status "char" NOT NULL,
 	node_dsn text NOT NULL,
-	node_init_dsn text,
-	CHECK (node_role IN ('p', 's', 'f')),
 	CHECK (node_status IN ('i', 'c', 'r', 'k')),
 	UNIQUE (node_name)
 );
@@ -16,7 +13,7 @@ CREATE TABLE pglogical.local_node (
 
 CREATE UNIQUE INDEX local_node_onlyone ON pglogical.local_node ((true));
 
-CREATE FUNCTION pglogical.create_node(node_name name, node_role "char", node_dns text, node_init_dsn text = NULL)
+CREATE FUNCTION pglogical.create_node(node_name name, node_dns text)
 RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_node';
 CREATE FUNCTION pglogical.drop_node(node_name name)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_node';

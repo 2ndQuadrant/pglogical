@@ -46,17 +46,15 @@ typedef struct NodeTuple
 {
 	int32		node_id;
 	NameData	node_name;
-	char		node_role;
 	char		node_status;
 	text		node_dsn;
 } NodeTuple;
 
-#define Natts_nodes			5
+#define Natts_nodes			4
 #define Anum_nodes_id		1
 #define Anum_nodes_name		2
-#define Anum_nodes_role		3
-#define Anum_nodes_status	4
-#define Anum_nodes_dsn		5
+#define Anum_nodes_status	3
+#define Anum_nodes_dsn		4
 
 #define Natts_connections			4
 #define Anum_connections_id			1
@@ -99,13 +97,8 @@ create_node(PGLogicalNode *node)
 	values[Anum_nodes_id - 1] = Int32GetDatum(node->id);
 	namestrcpy(&node_name, node->name);
 	values[Anum_nodes_name - 1] = NameGetDatum(&node_name);
-	values[Anum_nodes_role - 1] = CharGetDatum(node->role);
 	values[Anum_nodes_status - 1] = CharGetDatum(node->status);
-
-	if (node->dsn != NULL)
-		values[Anum_nodes_dsn - 1] = CStringGetTextDatum(node->dsn);
-	else
-		nulls[Anum_nodes_dsn - 1] = true;
+	values[Anum_nodes_dsn - 1] = CStringGetTextDatum(node->dsn);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -205,7 +198,6 @@ get_node(int nodeid)
 	node = (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
 	node->id = nodetup->node_id;
 	node->name = pstrdup(NameStr(nodetup->node_name));
-	node->role = nodetup->node_role;
 	node->status = nodetup->node_status;
 	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_nodes_dsn,
 														desc, &isnull)));
@@ -264,7 +256,6 @@ get_node_by_name(const char *node_name, bool missing_ok)
 	node = (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
 	node->id = nodetup->node_id;
 	node->name = pstrdup(NameStr(nodetup->node_name));
-	node->role = nodetup->node_role;
 	node->status = nodetup->node_status;
 	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_nodes_dsn,
 														desc, &isnull)));
