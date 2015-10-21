@@ -68,7 +68,18 @@ typedef struct RepSetTuple
 #define Anum_repset_tables_setid	1
 #define Anum_repset_tables_reloid	2
 
+#define REPLICATION_SET_ID_ALL		-2
+
 static HTAB *RepSetRelationHash = NULL;
+
+static void
+check_for_reserved_replication_set(setid)
+{
+	if (setid == REPLICATION_SET_ID_ALL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("replication set 'all' is reserved and cannot be manipulated")));
+}
 
 /*
  * Read the replication set.
@@ -345,7 +356,6 @@ relation_is_replicated(Relation rel, PGLogicalConnection *conn,
 	return false;
 }
 
-
 /*
  * Add new tuple to the replication_sets catalog.
  */
@@ -359,6 +369,11 @@ create_replication_set(PGLogicalRepSet *repset)
 	Datum		values[Natts_repsets];
 	bool		nulls[Natts_repsets];
 	NameData	repset_name;
+
+	if (strlen(repset->name) == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("replication set name cannot be empty")));
 
 	if (get_node_by_name(repset->name, true) != NULL)
 		elog(ERROR, "replication set %s already exists", repset->name);
@@ -411,6 +426,8 @@ drop_replication_set(int setid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
+	check_for_reserved_replication_set(setid);
+
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
@@ -444,37 +461,46 @@ replication_set_add_table(int setid, Oid reloid)
 {
 	RangeVar   *rv;
 	Relation	rel;
+	Relation	targetrel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
 	Datum		values[Natts_repset_tables];
 	bool		nulls[Natts_repset_tables];
 	PGLogicalRepSet *repset = get_replication_set(setid);
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	check_for_reserved_replication_set(setid);
+
+	/* Validate the relation. */
+	targetrel = heap_open(reloid, AccessShareLock);
 
 	/* UNLOGGED and TEMP tables cannot be part of replication set. */
-	if (!RelationNeedsWAL(rel))
+	if (!RelationNeedsWAL(targetrel))
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("UNLOGGED and TEMP tables cannot be replicated")));
 
 	/* Check of relation has replication index. */
-	if (rel->rd_indexvalid == 0)
-		RelationGetIndexList(rel);
-	if (!OidIsValid(rel->rd_replidindex) &&
+	if (targetrel->rd_indexvalid == 0)
+		RelationGetIndexList(targetrel);
+	if (!OidIsValid(targetrel->rd_replidindex) &&
 		(repset->replicate_updates || repset->replicate_deletes))
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("table %s cannot be added to replication set %s "
-						"because it does not have a PRIMARY KEY and given "
-						"replication set is configured to replicate UPDATEs "
-						"and DELETEs",
-						RelationGetRelationName(rel), repset->name),
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("table %s cannot be added to replication set %s",
+						RelationGetRelationName(targetrel), repset->name),
+				 errdetail("table does not have PRIMARY KEY and given "
+						   "replication set is configured to replicate "
+						   "UPDATEs and/or DELETEs"),
 				 errhint("Add a PRIMARY KEY to the table")));
 
-	/* Form a tuple. */
+	heap_close(targetrel, NoLock);
+
+	/* Open the catalog. */
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_repset_tables_setid - 1] = Int32GetDatum(repset->id);
@@ -504,6 +530,8 @@ replication_set_remove_table(int setid, Oid reloid)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[2];
+
+	check_for_reserved_replication_set(setid);
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);

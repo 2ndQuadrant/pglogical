@@ -63,7 +63,7 @@ CREATE VIEW pglogical.tables AS
 		 WHERE s.set_id = t.set_id
     ),
 	user_tables AS (
-		SELECT r.oid, n.nspname, r.relname
+		SELECT r.oid, n.nspname, r.relname, r.relreplident
 		  FROM pg_catalog.pg_class r,
 		       pg_catalog.pg_namespace n
 		 WHERE r.relkind = 'r'
@@ -87,7 +87,8 @@ CREATE VIEW pglogical.tables AS
      WHERE rs.set_id = -1
 	   AND t.oid NOT IN (SELECT set_relation FROM set_tables)
 	   AND i.indrelid = t.oid
-	   AND i.indisreplident
+           /* Only tables with replica identity index can be in default replication set. */
+	   AND ((relreplident = 'd' AND i.indisprimary) OR (relreplident = 'i' AND i.indisreplident))
 	 UNION ALL
     SELECT rs.set_name, t.nspname, t.relname
 	  FROM user_tables t,

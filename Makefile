@@ -15,7 +15,7 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
-REGRESS = init basic extended toasted
+REGRESS = init basic extended toasted replication_set
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

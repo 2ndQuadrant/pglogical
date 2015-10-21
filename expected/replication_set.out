@@ -1,0 +1,123 @@
+/* First test whether a table's replication set can be properly manipulated */
+\c regression
+SELECT pglogical.replicate_ddl_command($$
+CREATE SCHEMA normalschema;
+CREATE SCHEMA "strange.schema-IS";
+CREATE TABLE public.test_publicschema(id serial primary key, data text);
+CREATE TABLE normalschema.test_normalschema(id serial primary key);
+CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
+CREATE TABLE public.test_nopkey(id int);
+CREATE UNLOGGED TABLE public.test_unlogged(id int primary key);
+$$);
+ replicate_ddl_command 
+-----------------------
+ 
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+ 
+(2 rows)
+
+-- show initial replication sets
+SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+ set_name |      nspname      |      relname       
+----------+-------------------+--------------------
+ all      | normalschema      | test_normalschema
+ all      | public            | test_nopkey
+ all      | public            | test_publicschema
+ all      | strange.schema-IS | test_strangeschema
+ default  | normalschema      | test_normalschema
+ default  | public            | test_publicschema
+ default  | strange.schema-IS | test_strangeschema
+(7 rows)
+
+-- not existing replication set
+SELECT * FROM pglogical.replication_set_add_table('nonexisting', 'test_publicschema');
+ERROR:  replication set nonexisting not found
+-- create some replication sets
+SELECT * FROM pglogical.create_replication_set('repset_replicate_all');
+ create_replication_set 
+------------------------
+             1746339162
+(1 row)
+
+SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_updates := false, replicate_deletes := false);
+ create_replication_set 
+------------------------
+              -43812400
+(1 row)
+
+SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_deletes := false, replicate_truncate := false);
+ create_replication_set 
+------------------------
+             2088548767
+(1 row)
+
+-- add tables
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_publicschema');
+ replication_set_add_table 
+---------------------------
+ 
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_instrunc', 'normalschema.test_normalschema');
+ replication_set_add_table 
+---------------------------
+ 
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', 'normalschema.test_normalschema');
+ replication_set_add_table 
+---------------------------
+ 
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', '"strange.schema-IS".test_strangeschema');
+ replication_set_add_table 
+---------------------------
+ 
+(1 row)
+
+-- should fail
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_unlogged');
+ERROR:  UNLOGGED and TEMP tables cannot be replicated
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_nopkey');
+ERROR:  table test_nopkey cannot be added to replication set repset_replicate_all
+DETAIL:  table does not have PRIMARY KEY and given replication set is configured to replicate UPDATEs and/or DELETEs
+HINT:  Add a PRIMARY KEY to the table
+-- success
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_instrunc', 'test_nopkey');
+ replication_set_add_table 
+---------------------------
+ 
+(1 row)
+
+-- fail again
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', 'test_nopkey');
+ERROR:  table test_nopkey cannot be added to replication set repset_replicate_insupd
+DETAIL:  table does not have PRIMARY KEY and given replication set is configured to replicate UPDATEs and/or DELETEs
+HINT:  Add a PRIMARY KEY to the table
+-- check the replication sets
+SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+         set_name          |      nspname      |      relname       
+---------------------------+-------------------+--------------------
+ all                       | normalschema      | test_normalschema
+ all                       | public            | test_nopkey
+ all                       | public            | test_publicschema
+ all                       | strange.schema-IS | test_strangeschema
+ repset_replicate_all      | public            | test_publicschema
+ repset_replicate_instrunc | normalschema      | test_normalschema
+ repset_replicate_instrunc | public            | test_nopkey
+ repset_replicate_insupd   | normalschema      | test_normalschema
+ repset_replicate_insupd   | strange.schema-IS | test_strangeschema
+(9 rows)
+
+-- make sure reserved names can't be set
+SELECT * FROM pglogical.replication_set_add_table('all', 'test_publicschema');
+ERROR:  replication set 'all' is reserved and cannot be manipulated
+--too short
+SELECT pglogical.create_replication_set('');
+ERROR:  replication set name cannot be empty
