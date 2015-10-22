@@ -66,8 +66,8 @@ enum {
 	PARAM_BINARY_FLOAT4BYVAL,
 	PARAM_BINARY_FLOAT8BYVAL,
 	PARAM_BINARY_INTEGER_DATETIMES,
+	PARAM_BINARY_WANT_INTERNAL_BASETYPES,
 	PARAM_BINARY_WANT_BINARY_BASETYPES,
-	PARAM_BINARY_WANT_SENDRECV_BASETYPES,
 	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
 	PARAM_PG_VERSION,
 	PARAM_FORWARD_CHANGESETS,
@@ -92,8 +92,8 @@ static OutputPluginParam param_lookup[] = {
 	{"binary.float4_byval", PARAM_BINARY_FLOAT4BYVAL},
 	{"binary.float8_byval", PARAM_BINARY_FLOAT8BYVAL},
 	{"binary.integer_datetimes", PARAM_BINARY_INTEGER_DATETIMES},
+	{"binary.want_internal_basetypes", PARAM_BINARY_WANT_INTERNAL_BASETYPES},
 	{"binary.want_binary_basetypes", PARAM_BINARY_WANT_BINARY_BASETYPES},
-	{"binary.want_sendrecv_basetypes", PARAM_BINARY_WANT_SENDRECV_BASETYPES},
 	{"binary.basetypes_major_version", PARAM_BINARY_BASETYPES_MAJOR_VERSION},
 	{"pg_version", PARAM_PG_VERSION},
 	{"forward_changesets", PARAM_FORWARD_CHANGESETS},
@@ -216,18 +216,18 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				data->client_forward_changesets = DatumGetBool(val);
 				break;
 
+			case PARAM_BINARY_WANT_INTERNAL_BASETYPES:
+				/* check if we want to use internal data representation */
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_want_internal_basetypes_set = true;
+				data->client_want_internal_basetypes = DatumGetBool(val);
+				break;
+
 			case PARAM_BINARY_WANT_BINARY_BASETYPES:
 				/* check if we want to use binary data representation */
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
 				data->client_want_binary_basetypes_set = true;
 				data->client_want_binary_basetypes = DatumGetBool(val);
-				break;
-
-			case PARAM_BINARY_WANT_SENDRECV_BASETYPES:
-				/* check if we want to use sendrecv data representation */
-				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
-				data->client_want_sendrecv_basetypes_set = true;
-				data->client_want_sendrecv_basetypes = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_BASETYPES_MAJOR_VERSION:
@@ -497,10 +497,10 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 			data->forward_changeset_origins);
 
 	/* binary options enabled */
+	append_startup_msg_b(&si, "binary.internal_basetypes",
+			data->allow_internal_basetypes);
 	append_startup_msg_b(&si, "binary.binary_basetypes",
-			data->allow_binary_protocol);
-	append_startup_msg_b(&si, "binary.sendrecv_basetypes",
-			data->allow_sendrecv_protocol);
+			data->allow_binary_basetypes);
 
 	/* Binary format characteristics of server */
 	append_startup_msg_i(&si, "binary.basetypes_major_version", PG_VERSION_NUM/100);
@@ -513,7 +513,7 @@ prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
 	append_startup_msg_b(&si, "binary.float8_byval", server_float8_byval());
 	append_startup_msg_b(&si, "binary.integer_datetimes", server_integer_datetimes());
 	/* We don't know how to send in anything except our host's format */
-	append_startup_msg_i(&si, "binary.sendrecv_pg_version",
+	append_startup_msg_i(&si, "binary.binary_pg_version",
 			PG_VERSION_NUM/100);
 
 

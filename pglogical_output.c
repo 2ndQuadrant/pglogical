@@ -225,8 +225,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
-	data->allow_binary_protocol = false;
-	data->allow_sendrecv_protocol = false;
+	data->allow_internal_basetypes = false;
+	data->allow_binary_basetypes = false;
 
 	ctx->output_plugin_private = data;
 
@@ -285,16 +285,16 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 	GetDatabaseEncodingName(), data->client_expected_encoding)));
 		}
 
-		if (data->client_want_binary_basetypes)
+		if (data->client_want_internal_basetypes)
 		{
-			data->allow_binary_protocol =
+			data->allow_internal_basetypes =
 				check_binary_compatibility(data);
 		}
 
-		if (data->client_want_sendrecv_basetypes &&
+		if (data->client_want_binary_basetypes &&
 			data->client_binary_basetypes_major_version == PG_VERSION_NUM / 100)
 		{
-			data->allow_sendrecv_protocol = true;
+			data->allow_binary_basetypes = true;
 		}
 
 		/*

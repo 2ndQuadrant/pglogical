@@ -40,7 +40,7 @@ class BinaryModeTest(PGLogicalOutputTest):
                 'binary.sizeof_datum', 'binary.sizeof_int',
                 'binary.sizeof_long', 'binary.float4_byval',
                 'binary.float8_byval', 'binary.integer_datetimes',
-                'binary.binary_basetypes', 'binary.sendrecv_basetypes',
+                'binary.internal_basetypes', 'binary.binary_basetypes',
                 'binary.basetypes_major_version']
         for pn in expected_params:
             self.assertTrue(pn in params, msg="Expected startup msg param binary.basetypes_major_version absent")
@@ -50,8 +50,8 @@ class BinaryModeTest(PGLogicalOutputTest):
                 msg="pg_version_num/100 <> binary.basetypes_major_version")
 
         # We didn't ask for it, so binary and send/recv must be disabled
+        self.assertEquals(params['binary.internal_basetypes'], 'f')
         self.assertEquals(params['binary.binary_basetypes'], 'f')
-        self.assertEquals(params['binary.sendrecv_basetypes'], 'f')
 
         # Read and discard the fields of our dummy tx
         messages.expect_begin()
@@ -81,8 +81,8 @@ class BinaryModeTest(PGLogicalOutputTest):
         self.conn.commit()
 
         messages = self.get_changes({
+            'binary.want_internal_basetypes': 't',
             'binary.want_binary_basetypes': 't',
-            'binary.want_sendrecv_basetypes': 't',
             'binary.basetypes_major_version': str(major_version),
             'binary.bigendian' : params['binary.bigendian'],
             'binary.sizeof_datum' : params['binary.sizeof_datum'],
@@ -96,9 +96,9 @@ class BinaryModeTest(PGLogicalOutputTest):
         # Decode the startup message
         (m, params) = messages.expect_startup()
         # Binary mode should be enabled since we sent the params the server wants
-        self.assertEquals(params['binary.binary_basetypes'], 't')
+        self.assertEquals(params['binary.internal_basetypes'], 't')
         # send/recv mode is implied by binary mode
-        self.assertEquals(params['binary.sendrecv_basetypes'], 't')
+        self.assertEquals(params['binary.binary_basetypes'], 't')
 
         # Decode the transaction we sent
         messages.expect_begin()
@@ -134,9 +134,9 @@ class BinaryModeTest(PGLogicalOutputTest):
 
         messages = self.get_changes({
             # Request binary even though we know we won't get it
-            'binary.want_binary_basetypes': 't',
+            'binary.want_internal_basetypes': 't',
             # and expect to fall back to send/recv
-            'binary.want_sendrecv_basetypes': 't',
+            'binary.want_binary_basetypes': 't',
             'binary.basetypes_major_version': str(major_version),
             'binary.bigendian' : params['binary.bigendian'],
             'binary.sizeof_datum' : params['binary.sizeof_datum'],
@@ -150,10 +150,10 @@ class BinaryModeTest(PGLogicalOutputTest):
         # Decode the startup message
         (m, params) = messages.expect_startup()
         # Binary mode should be disabled because we aren't compatible
-        self.assertEquals(params['binary.binary_basetypes'], 'f')
+        self.assertEquals(params['binary.internal_basetypes'], 'f')
         # send/recv mode should be on, since we're compatible with the same
         # major version.
-        self.assertEquals(params['binary.sendrecv_basetypes'], 't')
+        self.assertEquals(params['binary.binary_basetypes'], 't')
 
         # Decode the transaction we sent
         messages.expect_begin()

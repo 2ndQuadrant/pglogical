@@ -53,8 +53,8 @@ static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 								   Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
-								  bool allow_binary_protocol,
-								  bool allow_sendrecv_protocol);
+								  bool allow_internal_basetypes,
+								  bool allow_binary_basetypes);
 
 /*
  * Write relation description to the output stream.
@@ -360,8 +360,8 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 		typclass = (Form_pg_type) GETSTRUCT(typtup);
 
 		transfer_type = decide_datum_transfer(att, typclass,
-											  data->allow_binary_protocol,
-											  data->allow_sendrecv_protocol);
+											  data->allow_internal_basetypes,
+											  data->allow_binary_basetypes);
 
 		switch (transfer_type)
 		{
@@ -453,13 +453,13 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
  */
 static char
 decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
-					  bool allow_binary_protocol,
-					  bool allow_sendrecv_protocol)
+					  bool allow_internal_basetypes,
+					  bool allow_binary_basetypes)
 {
 	/*
 	 * Use the binary protocol, if allowed, for builtin & plain datatypes.
 	 */
-	if (allow_binary_protocol &&
+	if (allow_internal_basetypes &&
 		typclass->typtype == 'b' &&
 		att->atttypid < FirstNormalObjectId &&
 		typclass->typelem == InvalidOid)
@@ -472,7 +472,7 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 	 * XXX: we can't use send/recv for array or composite types for now due to
 	 * the embedded oids.
 	 */
-	else if (allow_sendrecv_protocol &&
+	else if (allow_binary_basetypes &&
 			 OidIsValid(typclass->typreceive) &&
 			 (att->atttypid < FirstNormalObjectId || typclass->typtype != 'c') &&
 			 (att->atttypid < FirstNormalObjectId || typclass->typelem == InvalidOid))

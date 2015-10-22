@@ -48,8 +48,8 @@ class BasicTest(PGLogicalOutputTest):
 
         anybool = ['t', 'f']
         self.assertIn(params['binary.bigendian'], anybool)
+        self.assertIn(params['binary.internal_basetypes'], anybool)
         self.assertIn(params['binary.binary_basetypes'], anybool)
-        self.assertIn(params['binary.sendrecv_basetypes'], anybool)
         self.assertIn(params['binary.float4_byval'], anybool)
         self.assertIn(params['binary.float8_byval'], anybool)
         self.assertIn(params['binary.integer_datetimes'], anybool)

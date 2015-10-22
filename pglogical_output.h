@@ -42,8 +42,8 @@ typedef struct PGLogicalOutputData
 	MemoryContext context;
 
 	/* protocol */
-	bool	allow_binary_protocol;
-	bool	allow_sendrecv_protocol;
+	bool	allow_internal_basetypes;
+	bool	allow_binary_basetypes;
 	bool	forward_changesets;
 	bool	forward_changeset_origins;
 
@@ -59,10 +59,10 @@ typedef struct PGLogicalOutputData
 	uint32	client_min_proto_version;
 	const char *client_expected_encoding;
 	uint32  client_binary_basetypes_major_version;
+	bool	client_want_internal_basetypes_set;
+	bool	client_want_internal_basetypes;
 	bool	client_want_binary_basetypes_set;
 	bool	client_want_binary_basetypes;
-	bool	client_want_sendrecv_basetypes_set;
-	bool	client_want_sendrecv_basetypes;
 	bool	client_binary_bigendian_set;
 	bool	client_binary_bigendian;
 	uint32	client_binary_sizeofdatum;
