@@ -209,10 +209,10 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         # is off, but on 9.5+ the data from it is omitted.
         #
         # An origin message will be received only if on 9.5+.
-        messages.expect_begin()
-        if expect_origins:
-            messages.expect_origin()
         if expect_forwarding:
+            messages.expect_begin()
+            if expect_origins:
+                messages.expect_origin()
             # 9.4 forwards unconditionally
             m = messages.expect_row_meta()
             m = messages.expect_insert()
@@ -222,12 +222,6 @@ class ReplicationOriginTest(PGLogicalOutputTest):
             m = messages.expect_delete()
             m = messages.expect_row_meta()
             m = messages.expect_update()
-        messages.expect_commit()
-
-        # Consume the tx issued by reset_replication_session_origin
-        if self.is95plus:
-            # Empty tx for origin reset
-            messages.expect_begin()
             messages.expect_commit()
 
         # The second locally originated tx modifies the remotely
