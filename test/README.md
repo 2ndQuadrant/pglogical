@@ -24,6 +24,13 @@ To run these tests:
 
         PGPORT=5142 make
 
+RUNNING JUST ONE TEST
+---
+
+To run just one test, specify the class-qualified method name.
+
+    PGPORT=5142 python test/test_filter.py FilterTest.test_filter
+
 WALSENDER VS SQL MODE
 ---
 

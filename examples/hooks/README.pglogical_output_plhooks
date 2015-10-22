@@ -1,0 +1,162 @@
+pglogical_output_plhooks is an example module for pglogical_output, showing how
+hooks can be implemented.
+
+It provides C wrappers to allow hooks to be written in any supported PL,
+such as PL/PgSQL.
+
+No effort is made to be efficient. To avoid the need to set up cache
+invalidation handling function calls are done via oid each time, with no
+FmgrInfo caching.  Also, memory contexts are reset rather freely. If you
+want efficiency, write your hook in C.
+
+(Catalog timetravel is another reason not to write hooks in PLs; see below).
+
+Simple pointless example
+===
+
+To compile, just "make".
+
+(If you're compiling against a PostgreSQL that doesn't have pglogical_output
+installed, from within the pglogical source tree, you can use instead use
+`make INTREE=1`)
+
+To use it:
+
+    CREATE EXTENSION pglogical_output_plhooks IN SCHEMA public;
+
+in the target database.
+
+Then create at least one hook procedure, of the supported hooks listed below.
+For the sake of this example we'll use some of the toy examples provided in the
+extension:
+
+* startup function: pglo_plhooks_demo_startup
+* row filter: pglo_plhooks_demo_row_filter
+* txn filter: pglo_plhooks_demo_txn_filter
+* shutdown function: pglo_plhooks_demo_shutdown
+
+Now add some arguments to your pglogical_output client's logical decoding setup
+parameters to specify the hook setup function and to tell
+pglogical_output_plhooks about one or more of the hooks you wish it to run. For
+example you might add the following parameters:
+
+	hooks.setup_function, public.pglo_plhooks_setup_fn,
+	pglo_plhooks.startup_hook, pglo_plhooks_demo_startup,
+	pglo_plhooks.row_filter_hook, pglo_plhooks_demo_row_filter,
+	pglo_plhooks.txn_filter_hook, pglo_plhooks_demo_txn_filter,
+	pglo_plhooks.shutdown_hook, pglo_plhooks_demo_shutdown,
+	pglo_plhooks.client_hook_arg, 'whatever-you-want'
+
+to configure the extension to load its hooks, then configure all the demo hooks.
+
+Why the preference for C hooks?
+===
+
+Speed. The row filter hook is called for *every single row* replicated.
+
+If a hook raises an ERROR then replication will probably stop. You won't be
+able to fix it either, because when you change the hook definition the new
+definition won't be visible in the catalogs at the current replay position due
+to catalog time travel. The old definition that raises an error will keep being
+used. You'll need to remove the problem hook from your logical decoding startup
+parameters, which will disable use the hook entirely, until replay proceeds
+past the point you fixed the problem with the hook function.
+
+Similarly, if you try to add use of a newly defined hook on an existing
+replication slot that hasn't replayed past the point you defined the hook yet,
+you'll get an error complaining that the hook function doesn't exist. Even
+though it clearly does when you look at it in psql. The reason is the same: in
+the time traveled catalogs it really doesn't exist. You have to replay past the
+point the hook was created then enable it. In this case the
+pglogical_output_plhooks startup hook will actually see your functions, but
+fail when it tries to call them during decoding since they'll appear to have
+vanished.
+
+If you write your hooks in C you can redefine them rather more easily, since
+the function definition is not subject to catalog timetravel. More importantly,
+it'll probably be a lot faster. The plhooks code has to do a lot of translation
+to pass information to the PL functions and more to get results back; it also
+has to do a lot of memory allocations and a memory context reset after each
+call. That all adds up.
+
+(You could actually write C functions to be called by this extension, but
+that'd be crazy.)
+
+Available hooks
+===
+
+The four hooks provided by pglogical_output are exposed by the module. See the
+pglogical_output documentation for details on what each hook does and when it
+runs.
+
+A function for each hook must have *exactly* the specified parameters and
+return value, or you'll get an error.
+
+None of the functions may return NULL. If they do you'll get an error.
+
+If you specified `pglo_plhooks.client_hook_arg` in the startup parameters it is
+passed as `client_hook_arg` to all hooks. If not specified the empty string is
+passed.
+
+You can find some toy examples in `pglogical_output_plhooks--1.0.sql`.
+
+
+
+Startup hook
+---
+
+Configured with `pglo_plhooks.startup_hook` startup parameter. Runs when
+logical decoding starts.
+
+Signature *must* be:
+
+    CREATE FUNCTION whatever_funcname(startup_params text[], client_hook_arg text)
+    RETURNS text[]
+
+startup_params is an array of the startup params passed to the pglogical output
+plugin, as alternating key/value elements in text representation.
+
+client_hook_arg is also passed.
+
+The return value is an array of alternating key/value elements forming a set
+of parameters you wish to add to the startup reply message sent by pglogical
+on decoding start. It must not be null; return `ARRAY[]::text[]` if you don't
+want to add any params.
+
+Transaction filter
+---
+
+Called only on 9.5+; ignored on 9.4.
+
+The arguments are the replication origin identifier and the client hook param.
+
+The return value is true to keep the transaction, false to discard it.
+
+Signature:
+
+	CREATE FUNCTION whatevername(origin_id int, client_hook_arg text)
+	RETURNS boolean
+
+Row filter
+--
+
+Called for each row. Return true to replicate the row, false to discard it.
+
+Arguments are the oid of the affected relation, and the change type: 'I'nsert,
+'U'pdate or 'D'elete. There is no way to access the change data - columns changed,
+new values, etc.
+
+Signature:
+
+	CREATE FUNCTION whatevername(affected_rel regclass, change_type "char", client_hook_arg text)
+	RETURNS boolean
+
+Shutdown hook
+--
+
+Pretty uninteresting, but included for completeness.
+
+Signature:
+
+	CREATE FUNCTION whatevername(client_hook_arg text)
+	RETURNS void

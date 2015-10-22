@@ -12,10 +12,11 @@
  */
 #include "postgres.h"
 
-#include "pglogical_compat.h"
+#include "pglogical_output/compat.h"
 #include "pglogical_config.h"
 #include "pglogical_output.h"
 #include "pglogical_proto.h"
+#include "pglogical_hooks.h"
 
 #include "access/hash.h"
 #include "access/sysattr.h"
@@ -55,7 +56,7 @@ extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 /* These must be available to pg_dlsym() */
 static void pg_decode_startup(LogicalDecodingContext * ctx,
 							  OutputPluginOptions *opt, bool is_init);
-//static void pg_decode_shutdown(LogicalDecodingContext * ctx);
+static void pg_decode_shutdown(LogicalDecodingContext * ctx);
 static void pg_decode_begin_txn(LogicalDecodingContext *ctx,
 					ReorderBufferTXN *txn);
 static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
@@ -72,28 +73,6 @@ static bool pg_decode_origin_filter(LogicalDecodingContext *ctx,
 static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
 
-/* hooks */
-static Oid get_table_filter_function_id(HookFuncName *funcname, bool validate);
-static void hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue);
-static inline bool pg_decode_table_filter(PGLogicalOutputData *data,
-						Relation rel,
-						enum ReorderBufferChangeType change);
-
-typedef struct HookCacheEntry {
-	HookFuncName	name;	/* schema-qualified name of hook function. Hash key. */
-	Oid				funcoid; /* oid in pg_proc of function */
-	FmgrInfo		flinfo;  /* fmgrinfo for direct calls to the function */
-} HookCacheEntry;
-
-/*
- * Per issue #2, we need a hash table that invalidation callbacks can
- * access because they survive past the logical decoding context and
- * therefore past our local PGLogicalOutputData's lifetime.
- */
-static HTAB *HookCache = NULL;
-
-static MemoryContext HookCacheMemoryContext;
-
 static bool startup_message_sent = false;
 
 /* specify output plugin callbacks */
@@ -109,50 +88,7 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 #ifdef HAVE_REPLICATION_ORIGINS
 	cb->filter_by_origin_cb = pg_decode_origin_filter;
 #endif
-	cb->shutdown_cb = NULL;
-}
-
-static void
-init_hook_cache(void)
-{
-	HASHCTL	ctl;
-	int hash_flags = HASH_ELEM | HASH_CONTEXT;
-
-	if (HookCache != NULL)
-		return;
-
-	/* Make sure we've initialized CacheMemoryContext. */
-	if (CacheMemoryContext == NULL)
-		CreateCacheMemoryContext();
-
-	MemSet(&ctl, 0, sizeof(ctl));
-	ctl.keysize = sizeof(HookFuncName);
-	ctl.entrysize = sizeof(HookCacheEntry);
-	/* safe to allocate to CacheMemoryContext since it's never reset */
-	ctl.hcxt = CacheMemoryContext;
-
-#if PG_VERSION_NUM/100 == 904
-	ctl.hash = tag_hash;
-	hash_flags |= HASH_FUNCTION;
-#else
-	hash_flags |= HASH_BLOBS;
-#endif
-	HookCache = hash_create("pglogical hook cache", 32, &ctl, hash_flags);
-
-	Assert(HookCache != NULL);
-
-	/*
-	 * The hook cache allocation set contains the FmgrInfo entries. It does
-	 * *not* contain the hash its self, which must survive cache invalidations.
-	 */
-	HookCacheMemoryContext = AllocSetContextCreate(CacheMemoryContext,
-												   "pglogical output hook cache",
-												   ALLOCSET_DEFAULT_MINSIZE,
-												   ALLOCSET_DEFAULT_INITSIZE,
-												   ALLOCSET_DEFAULT_MAXSIZE);
-
-	/* Watch for invalidation events. */
-	CacheRegisterSyscacheCallback(PROCOID, hook_cache_callback, (Datum)0);
+	cb->shutdown_cb = pg_decode_shutdown;
 }
 
 static bool
@@ -236,8 +172,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	 * output of individual fields.
 	 */
 	opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
-
-	init_hook_cache();
 
 	/*
 	 * This is replication start and not slot initialization.
@@ -333,18 +267,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			data->forward_changeset_origins = false;
 		}
 
-		/* Hooks */
-		if (data->table_filter != NULL)
+		if (data->hooks_setup_funcname != NIL)
 		{
-			/*
-			 * Validate the function but don't store the FmgrInfo
-			 *
-			 * The function might not be valid once we
-			 * catalog-timetravel to the point we start replaying the
-			 * slot at, and the relcache is going to get invalidated
-			 * anyway. So we need to look it up on first use.
-			 */
-			(void) get_table_filter_function_id(data->table_filter, true);
+
+			data->hooks_mctxt = AllocSetContextCreate(ctx->context,
+					"pglogical_output hooks context",
+					ALLOCSET_SMALL_MINSIZE,
+					ALLOCSET_SMALL_INITSIZE,
+					ALLOCSET_SMALL_MAXSIZE);
+
+			load_hooks(data);
+			call_startup_hook(data, ctx->output_plugin_options);
 		}
 	}
 }
@@ -417,7 +350,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	data = ctx->output_plugin_private;
 
 	/* First check the table filter */
-	if (pg_decode_table_filter(data, relation, change->action))
+	if (!call_row_filter_hook(data, txn, relation, change))
 		return;
 
 	/* Avoid leaking memory by using and resetting our own context */
@@ -478,224 +411,15 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 
+	if (!call_txn_filter_hook(data, origin_id))
+		return true;
+
 	if (!data->forward_changesets && origin_id != InvalidRepOriginId)
 		return true;
 
 	return false;
 }
 #endif
-
-/*
- * Decide if the individual change should be filtered out.
- */
-static inline bool
-pg_decode_table_filter(PGLogicalOutputData *data, Relation rel,
-						enum ReorderBufferChangeType change)
-{
-	/* Call hook if provided. */
-	if (data->table_filter)
-	{
-		Datum	res;
-		char	change_type;
-		HookCacheEntry *hook;
-
-		/* Find cached function info */
-		hook = (HookCacheEntry*) hash_search(HookCache,
-											 (void *) data->table_filter,
-											 HASH_FIND, NULL);
-
-		if (hook == NULL)
-		{
-			Oid		funcoid =
-				get_table_filter_function_id(data->table_filter, false);
-
-			/*
-			 * Not found, this can be historical snapshot and we can't do
-			 * validation one way or the other so we act as if the hook
-			 * was not provided. We know the hook exists in up-to-date
-			 * snapshots since we found it during init, it just doesn't
-			 * exist in this timetraveled snapshot yet. We'll keep
-			 * looking until we find it.
-			 *
-			 * We really only need to check once per tx decoded, but
-			 * there seems little point.
-			 */
-			if (!OidIsValid(funcoid))
-				return false;
-
-			/* Update the cache and continue */
-			hook = (HookCacheEntry*) hash_search(HookCache,
-												 (void *) data->table_filter,
-											     HASH_ENTER, NULL);
-
-			hook->funcoid = funcoid;
-
-			/*
-			 * Prepare a FmgrInfo to cache so we can call the function
-			 * more efficiently, avoiding the need to OidFunctionCall3
-			 * each time.
-			 *
-			 * Must be allocated in the cache context so that it doesn't
-			 * get purged before the cache entry containing the struct
-			 * its self.
-			 *
-			 * We create a sub-context under CacheMemoryContext so that
-			 * we can flush that context when we get a cache invalidation.
-			 */
-			fmgr_info_cxt(funcoid, &hook->flinfo, HookCacheMemoryContext);
-		}
-
-		Assert(hook != NULL);
-		Assert(OidIsValid(hook->funcoid));
-
-		switch (change)
-		{
-			case REORDER_BUFFER_CHANGE_INSERT:
-				change_type = 'I';
-				break;
-			case REORDER_BUFFER_CHANGE_UPDATE:
-				change_type = 'U';
-				break;
-			case REORDER_BUFFER_CHANGE_DELETE:
-				change_type = 'D';
-				break;
-			default:
-				elog(ERROR, "unknown change type %d", change);
-				change_type = '0';	/* silence compiler */
-		}
-
-		res = FunctionCall3(&hook->flinfo,
-							CStringGetTextDatum(data->table_filter_arg),
-							ObjectIdGetDatum(RelationGetRelid(rel)),
-							CharGetDatum(change_type));
-
-		return DatumGetBool(res);
-	}
-
-	/* Default action is to always replicate the change, so don't filter. */
-	return false;
-}
-
-/*
- * Hook oid cache invalidation, for when a hook function
- * gets replaced.
- *
- * Currently we flush everything, even if the hashvalue is
- * nonzero so only one entry is being invalidated. Hook
- * function lookups are cheap enough and pg_proc isn't
- * going to be constantly churning.
- */
-static void
-hook_cache_callback(Datum arg, int cacheid, uint32 hashvalue)
-{
-	HASH_SEQ_STATUS status;
-	HookCacheEntry *hentry;
-
-	Assert(cacheid == PROCOID);
-
-	hash_seq_init(&status, HookCache);
-
-	/*
-	 * Remove every entry from the hash. This won't free heap-allocated memory
-	 * in the cache entries, such as the FmgrInfo entries.
-	 */
-	while ((hentry = (HookCacheEntry*) hash_seq_search(&status)) != NULL)
-	{
-		if (hash_search(HookCache,
-						(void *) &hentry->name,
-						HASH_REMOVE, NULL) == NULL)
-			elog(ERROR, "pglogical HookCacheEntry hash table corrupted");
-	}
-
-	/*
-	 * The cache hash is now flushed and we no longer have references to
-	 * the FmgrInfo entries. We can flush the memory context that contains
-	 * them.
-	 *
-	 * There's no function to free a FmgrInfo's individual parts so we have
-	 * to reset the context.
-	 */
-	MemoryContextReset(HookCacheMemoryContext);
-}
-
-/*
- * Returns Oid of the function specified in funcname.
- *
- * Error is thrown if validate is true and function doesn't exist or doen't
- * return correct datatype or is volatile. When validate is false InvalidOid
- * will be returned instead of error.
- *
- * TODO check ACL
- */
-static Oid
-get_table_filter_function_id(HookFuncName *funcname, bool validate)
-{
-	Oid			funcid;
-	Oid			funcargtypes[3];
-	List		*key;
-	bool		tx_started = false;
-
-	if (!IsTransactionState())
-	{
-		StartTransactionCommand();
-		tx_started = true;
-	}
-
-	funcargtypes[0] = TEXTOID;	/* identifier of this node */
-	funcargtypes[1] = OIDOID;	/* relation */
-	funcargtypes[2] = CHAROID;	/* change type */
-
-	/*
-	 * We require that filter function names be schema-qualified
-	 * so this is always a 2-list. No catalog name is permitted.
-	 */
-	key = list_make2(makeString(funcname->schema),
-					 makeString(funcname->function));
-
-	/* find the the function */
-	funcid = LookupFuncName(key, 3, funcargtypes, !validate);
-
-	if (!OidIsValid(funcid))
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_UNDEFINED_FUNCTION),
-					 errmsg("function %s not found",
-							NameListToString(key))));
-		else
-			return InvalidOid;
-	}
-
-	/* Validate that the function returns boolean */
-	if (get_func_rettype(funcid) != BOOLOID)
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("function %s must return type \"boolean\"",
-							NameListToString(key))));
-		else
-			return InvalidOid;
-	}
-
-	if (func_volatile(funcid) == PROVOLATILE_VOLATILE)
-	{
-		if (validate)
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("function %s must not be VOLATILE",
-							NameListToString(key))));
-		else
-			return InvalidOid;
-	}
-
-	list_free(key);
-
-	if (tx_started)
-		CommitTransactionCommand();
-
-	return funcid;
-}
 
 static void
 send_startup_message(LogicalDecodingContext *ctx,
@@ -708,6 +432,13 @@ send_startup_message(LogicalDecodingContext *ctx,
 
 	prepare_startup_message(data, &msg, &len);
 
+	/*
+	 * We could free the extra_startup_params DefElem list here, but it's
+	 * pretty harmless to just ignore it, since it's in the decoding memory
+	 * context anyway, and we don't know if it's safe to free the defnames or
+	 * not.
+	 */
+
 	OutputPluginPrepareWrite(ctx, last_message);
 	write_startup_message(ctx->out, msg, len);
 	OutputPluginWrite(ctx, last_message);
@@ -715,4 +446,17 @@ send_startup_message(LogicalDecodingContext *ctx,
 	pfree(msg);
 
 	startup_message_sent = true;
+}
+
+static void pg_decode_shutdown(LogicalDecodingContext * ctx)
+{
+	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
+
+	call_shutdown_hook(data);
+
+	if (data->hooks_mctxt != NULL)
+	{
+		MemoryContextDelete(data->hooks_mctxt);
+		data->hooks_mctxt = NULL;
+	}
 }

@@ -1,0 +1,7 @@
+/*
+ * This directory contains the public header files for the pglogical_output
+ * extension. It is installed into the PostgreSQL source tree when the extension
+ * is installed.
+ *
+ * These headers are not part of the PostgreSQL project its self.
+ */

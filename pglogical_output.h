@@ -20,6 +20,8 @@
 
 #include "storage/lock.h"
 
+#include "pglogical_output/hooks.h"
+
 #define PG_LOGICAL_PROTO_VERSION_NUM 1
 #define PG_LOGICAL_PROTO_MIN_VERSION_NUM 1
 
@@ -78,8 +80,12 @@ typedef struct PGLogicalOutputData
 	bool	client_forward_changesets;
 
 	/* hooks */
-	HookFuncName	*table_filter;		/* Table filter hook function, if any */
-	const char	*table_filter_arg;	/* Node identity, etc; hook arg */
+	List *hooks_setup_funcname;
+	struct PGLogicalHooks hooks;
+	MemoryContext hooks_mctxt;
+
+	/* DefElem<String> list populated by startup hook */
+	List *extra_startup_params;
 } PGLogicalOutputData;
 
 typedef struct PGLogicalTupleData

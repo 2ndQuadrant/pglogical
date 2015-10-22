@@ -183,3 +183,147 @@ Disconnection works just like any normal client; you use your client library's
 usual method for closing the connection. No special action is required before
 disconnection, though it's usually a good idea to send a final standby status
 message just before you disconnect.
+
+# Hooks
+
+`pglogical_output` exposes a number of extension points where applications can
+modify or override its behaviour.
+
+All hooks are called in their own memory context, which lasts for the duration
+of the logical decoding session. They may switch to longer lived contexts if
+needed, but are then responsible for their own cleanup.
+
+## Hook setup function
+
+The downstream must specify the fully-qualified name of a SQL-callable function
+on the server as the value of the `hooks.setup_function` client parameter.
+The SQL signature of this function is
+
+    CREATE OR REPLACE FUNCTION funcname(hooks internal, memory_context internal)
+    RETURNS void STABLE
+    LANGUAGE c AS 'MODULE_PATHNAME';
+
+Permissions are checked. This function must be callable by the user that the
+output plugin is running as.
+
+The function receives a pointer to a newly allocated structure of hook function
+pointers to populate as its first argument. The function must not free the
+argument.
+
+If the hooks need a private data area to store information across calls, the
+setup function should get the `MemoryContext` pointer from the 2nd argument,
+then `MemoryContextAlloc` a struct for the data in that memory context and
+store the pointer to it in `hooks->hooks_private_data`. This will then be
+accessible on future calls to hook functions. It need not be manually freed, as
+the memory context used for logical decoding will free it when it's freed.
+Don't put anything in it that needs manual cleanup.
+
+Each hook has its own C signature (defined below) and the pointers must be
+directly to the functions. Hooks that the client does not wish to set must be
+left null.
+
+An example is provided in `examples/hooks` and the argument structs are defined
+in `pglogical_output/hooks.h`, which is installed into the PostgreSQL source
+tree when the extension is installed.
+
+## Startup hook
+
+The startup hook is called when logical decoding starts.
+
+This hook can inspect the parameters passed by the client to the output
+plugin as in_params. These parameters *must not* be modified.
+
+It can add new parameters to the set to be returned to the client in the
+startup parameters message, by appending to List out_params, which is
+initially NIL. Each element must be a `DefElem` with the param name
+as the `defname` and a `String` value as the arg, as created with
+`makeDefElem(...)`. It and its contents must be allocated in the
+logical decoding memory context.
+
+For walsender based decoding the startup hook is called only once, and
+cleanup might not be called at the end of the session.
+
+Multiple decoding sessions, and thus multiple startup hook calls, may happen
+in a session if the SQL interface for logical decoding is being used. In
+that case it's guaranteed that the cleanup hook will be called between each
+startup.
+
+When successfully enabled, the output parameter `hooks.startup_hook_enabled` is
+set to true in the startup reply message.
+
+## Transaction filter hook
+
+The transaction filter hook can exclude entire transactions from being decoded
+and replicated based on the node they originated from.
+
+It is passed a `const TxFilterHookArgs *` containing:
+
+* The hook argument supplied by the client, if any
+* The `RepOriginId` that this transaction originated from
+
+and must return boolean, where true retains the transaction for sending to the
+client and false discards it. (Note that this is the reverse sense of the low
+level logical decoding transaction filter hook).
+
+The hook function must *not* free the argument struct or modify its contents.
+
+The transaction filter hook is only called on PostgreSQL 9.5 and above. It
+is ignored on 9.4.
+
+Note that individual changes within a transaction may have different origins to
+the transaction as a whole; see "Origin filtering" for more details. If a
+transaction is filtered out, all changes are filtered out even if their origins
+differ from that of the transaction as a whole.
+
+When successfully enabled, the output parameter
+`hooks.transaction_filter_enabled` is set to true in the startup reply message.
+
+## Row filter hook
+
+The row filter hook is called for each row. It is passed information about the
+table, the transaction origin, and the row origin.
+
+It is passed a `const RowFilterHookArgs*` containing:
+
+* The hook argument supplied by the client, if any
+* The `Relation` the change affects
+* The change type - 'I'nsert, 'U'pdate or 'D'elete
+
+It can return true to retain this row change, sending it to the client, or
+false to discard it.
+
+The function *must not* free the argument struct or modify its contents.
+
+Note that it is more efficient to exclude whole transactions with the
+transaction filter hook rather than filtering out individual rows.
+
+When successfully enabled, the output parameter
+`hooks.row_filter_enabled` is set to true in the startup reply message.
+
+## Shutdown hook
+
+The shutdown hook is called when a decoding session ends. You can't rely on
+this hook being invoked reliably, since a replication-protocol walsender-based
+session might just terminate. It's mostly useful for cleanup to handle repeated
+invocations under the SQL interface to logical decoding.
+
+You don't need a hook to free memory you allocated, unless you explicitly
+switched to a longer lived memory context like TopMemoryContext. Memory allocated
+in the hook context will be automatically when the decoding session shuts down.
+
+## Hook example
+
+... TODO ...
+
+## Writing hooks in procedural languages
+
+You can write hooks in PL/PgSQL, etc, too.
+
+There's a default hook setup callback `pglogical_output_default_hooks` that
+returns a set of hook functions which call PostgreSQL PL functions and return
+the results. They act as C-to-PL wrappers. The PostgreSQL PL functions to call
+for each hook are found by <XXX how? we don't want to use the hook arg, since
+we want it free to use in the hooks themselves. a new param read by startup
+hook?>
+
+... TODO examples ....

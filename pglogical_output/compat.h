@@ -6,6 +6,9 @@
 /* 9.4 lacks replication origins */
 #if PG_VERSION_NUM >= 90500
 #define HAVE_REPLICATION_ORIGINS
+#else
+/* To allow the same signature on hooks in 9.4 */
+typedef uint16 RepOriginId;
 #endif
 
 /* 9.4 lacks PG_UINT32_MAX */
