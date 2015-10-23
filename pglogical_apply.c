@@ -1022,8 +1022,8 @@ pglogical_apply_main(Datum main_arg)
 	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
 
 	/* Binary protocol compatibility. */
+	appendStringInfo(&command, ", \"binary.want_internal_basetypes\" '1'");
 	appendStringInfo(&command, ", \"binary.want_binary_basetypes\" '1'");
-	appendStringInfo(&command, ", \"binary.want_sendrecv_basetypes\" '1'");
 	appendStringInfo(&command, ", \"binary.basetypes_major_version\" '%u'", PG_VERSION_NUM/100);
 	appendStringInfo(&command, ", \"binary.sizeof_datum\" '%zu'", sizeof(Datum));
 	appendStringInfo(&command, ", \"binary.sizeof_int\" '%zu'", sizeof(int));
