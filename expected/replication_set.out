@@ -44,13 +44,13 @@ SELECT * FROM pglogical.create_replication_set('repset_replicate_all');
              1746339162
 (1 row)
 
-SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_updates := false, replicate_deletes := false);
+SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_update := false, replicate_delete := false);
  create_replication_set 
 ------------------------
               -43812400
 (1 row)
 
-SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_deletes := false, replicate_truncate := false);
+SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_delete := false, replicate_truncate := false);
  create_replication_set 
 ------------------------
              2088548767

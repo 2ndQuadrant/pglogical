@@ -1,4 +1,4 @@
-CREATE TABLE pglogical.nodes (
+CREATE TABLE pglogical.node (
 	node_id integer NOT NULL PRIMARY KEY,
 	node_name name NOT NULL,
 	node_status "char" NOT NULL,
@@ -8,8 +8,12 @@ CREATE TABLE pglogical.nodes (
 );
 
 CREATE TABLE pglogical.local_node (
-	node_id integer
+	node_id integer NOT NULL REFERENCES pglogical.node(node_id),
+	node_local_dsn text
 );
+COMMENT ON TABLE pglogical.local_node IS 'Holds information about which node is local to the current server/database';
+COMMENT ON COLUMN pglogical.local_node.node_id IS 'Id of the node in the pglogical.nodes table which is considered local';
+COMMENT ON COLUMN pglogical.local_node.node_id IS 'Loopback connection string';
 
 CREATE UNIQUE INDEX local_node_onlyone ON pglogical.local_node ((true));
 
@@ -22,7 +26,7 @@ CREATE FUNCTION pglogical.wait_for_node_ready()
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_node_ready';
 
 
-CREATE TABLE pglogical.connections (
+CREATE TABLE pglogical.connection (
 	conn_id integer NOT NULL PRIMARY KEY,
 	conn_origin_id integer NOT NULL,
 	conn_target_id integer NOT NULL,
@@ -36,20 +40,20 @@ CREATE FUNCTION pglogical.drop_connection(origin name, target name)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_connection';
 
 
-CREATE TABLE pglogical.replication_sets (
+CREATE TABLE pglogical.replication_set (
 	set_id integer NOT NULL PRIMARY KEY,
     set_name name NOT NULL,
-    replicate_inserts boolean NOT NULL DEFAULT true,
-    replicate_updates boolean NOT NULL DEFAULT true,
-    replicate_deletes boolean NOT NULL DEFAULT true,
+    replicate_insert boolean NOT NULL DEFAULT true,
+    replicate_update boolean NOT NULL DEFAULT true,
+    replicate_delete boolean NOT NULL DEFAULT true,
     replicate_truncate boolean NOT NULL DEFAULT true,
 	UNIQUE (set_name)
 ) WITH (user_catalog_table=true);
 
-INSERT INTO pglogical.replication_sets VALUES (-1, 'default', true, true, true, true);
-INSERT INTO pglogical.replication_sets VALUES (-2, 'all', false, false, false, false);
+INSERT INTO pglogical.replication_set VALUES (-1, 'default', true, true, true, true);
+INSERT INTO pglogical.replication_set VALUES (-2, 'all', false, false, false, false);
 
-CREATE TABLE pglogical.replication_set_tables (
+CREATE TABLE pglogical.replication_set_table (
     set_id integer NOT NULL,
 	set_relation regclass NOT NULL,
 	PRIMARY KEY(set_id, set_relation)
@@ -58,8 +62,8 @@ CREATE TABLE pglogical.replication_set_tables (
 CREATE VIEW pglogical.tables AS
 	WITH set_tables AS (
 		SELECT s.set_name, t.set_relation
-		  FROM pglogical.replication_set_tables t,
-			   pglogical.replication_sets s
+		  FROM pglogical.replication_set_table t,
+			   pglogical.replication_set s
 		 WHERE s.set_id = t.set_id
     ),
 	user_tables AS (
@@ -82,7 +86,7 @@ CREATE VIEW pglogical.tables AS
 	 UNION
     SELECT rs.set_name, t.nspname, t.relname
 	  FROM user_tables t,
-		   pglogical.replication_sets rs,
+		   pglogical.replication_set rs,
 		   pg_catalog.pg_index i
      WHERE rs.set_id = -1
 	   AND t.oid NOT IN (SELECT set_relation FROM set_tables)
@@ -92,13 +96,13 @@ CREATE VIEW pglogical.tables AS
 	 UNION ALL
     SELECT rs.set_name, t.nspname, t.relname
 	  FROM user_tables t,
-		   pglogical.replication_sets rs
+		   pglogical.replication_set rs
      WHERE rs.set_id = -2;
 
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
-	replicate_inserts boolean = true, replicate_updates boolean = true,
-	replicate_deletes boolean = true, replicate_truncate boolean = true)
+	replicate_insert boolean = true, replicate_update boolean = true,
+	replicate_delete boolean = true, replicate_truncate boolean = true)
 RETURNS int STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_replication_set';
 CREATE FUNCTION pglogical.drop_replication_set(set_name name)
 RETURNS void STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';

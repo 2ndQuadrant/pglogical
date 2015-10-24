@@ -21,8 +21,8 @@ SELECT * FROM pglogical.replication_set_add_table('nonexisting', 'test_publicsch
 
 -- create some replication sets
 SELECT * FROM pglogical.create_replication_set('repset_replicate_all');
-SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_updates := false, replicate_deletes := false);
-SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_deletes := false, replicate_truncate := false);
+SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_update := false, replicate_delete := false);
+SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_delete := false, replicate_truncate := false);
 
 -- add tables
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_publicschema');

@@ -39,8 +39,8 @@
 #include "pglogical.h"
 
 #define CATALOG_LOCAL_NODE	"local_node"
-#define CATALOG_NODES		"nodes"
-#define CATALOG_CONNECTIONS	"connections"
+#define CATALOG_NODE		"node"
+#define CATALOG_CONNECTION	"connection"
 
 typedef struct NodeTuple
 {
@@ -50,23 +50,23 @@ typedef struct NodeTuple
 	text		node_dsn;
 } NodeTuple;
 
-#define Natts_nodes			4
-#define Anum_nodes_id		1
-#define Anum_nodes_name		2
-#define Anum_nodes_status	3
-#define Anum_nodes_dsn		4
+#define Natts_node			4
+#define Anum_node_id		1
+#define Anum_node_name		2
+#define Anum_node_status	3
+#define Anum_node_dsn		4
 
-#define Natts_connections			4
-#define Anum_connections_id			1
-#define Anum_connections_origin_id	2
-#define Anum_connections_target_id	3
-#define Anum_connections_replication_sets	4
+#define Natts_connection			4
+#define Anum_connection_id			1
+#define Anum_connection_origin_id	2
+#define Anum_connection_target_id	3
+#define Anum_connection_replication_sets	4
 
-#define Anum_connections_local_node	1
+#define Anum_connection_local_node	1
 
 
 /*
- * Add new tuple to the nodes catalog.
+ * Add new tuple to the node catalog.
  */
 void
 create_node(PGLogicalNode *node)
@@ -75,8 +75,8 @@ create_node(PGLogicalNode *node)
 	Relation	rel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
-	Datum		values[Natts_nodes];
-	bool		nulls[Natts_nodes];
+	Datum		values[Natts_node];
+	bool		nulls[Natts_node];
 	NameData	node_name;
 
 	if (get_node_by_name(node->name, true) != NULL)
@@ -87,18 +87,18 @@ create_node(PGLogicalNode *node)
 		node->id = DatumGetInt32(hash_any((const unsigned char *) node->name,
 										  strlen(node->name)));
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_nodes_id - 1] = Int32GetDatum(node->id);
+	values[Anum_node_id - 1] = Int32GetDatum(node->id);
 	namestrcpy(&node_name, node->name);
-	values[Anum_nodes_name - 1] = NameGetDatum(&node_name);
-	values[Anum_nodes_status - 1] = CharGetDatum(node->status);
-	values[Anum_nodes_dsn - 1] = CStringGetTextDatum(node->dsn);
+	values[Anum_node_name - 1] = NameGetDatum(&node_name);
+	values[Anum_node_status - 1] = CharGetDatum(node->status);
+	values[Anum_node_dsn - 1] = CStringGetTextDatum(node->dsn);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -118,7 +118,7 @@ create_node(PGLogicalNode *node)
 void alter_node(PGLogicalNode *node);
 
 /*
- * Delete the tuple from nodes catalog.
+ * Delete the tuple from node catalog.
  */
 void
 drop_node(int nodeid)
@@ -129,12 +129,12 @@ drop_node(int nodeid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_nodes_id,
+				Anum_node_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -154,12 +154,6 @@ drop_node(int nodeid)
 	pglogical_connections_changed();
 }
 
-PGLogicalNode **
-get_nodes(void)
-{
-	return NULL;
-}
-
 /*
  * Load the info for specific node.
  */
@@ -176,12 +170,12 @@ get_node(int nodeid)
 	ScanKeyData		key[1];
 	bool			isnull;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_nodes_id,
+				Anum_node_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -199,7 +193,7 @@ get_node(int nodeid)
 	node->id = nodetup->node_id;
 	node->name = pstrdup(NameStr(nodetup->node_name));
 	node->status = nodetup->node_status;
-	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_nodes_dsn,
+	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_node_dsn,
 														desc, &isnull)));
 	node->valid = true;
 
@@ -225,12 +219,12 @@ get_node_by_name(const char *node_name, bool missing_ok)
 	ScanKeyData		key[1];
 	bool			isnull;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_nodes_name,
+				Anum_node_name,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(node_name));
 
@@ -257,7 +251,7 @@ get_node_by_name(const char *node_name, bool missing_ok)
 	node->id = nodetup->node_id;
 	node->name = pstrdup(NameStr(nodetup->node_name));
 	node->status = nodetup->node_status;
-	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_nodes_dsn,
+	node->dsn = pstrdup(TextDatumGetCString(fastgetattr(tuple, Anum_node_dsn,
 														desc, &isnull)));
 	node->valid = true;
 
@@ -305,7 +299,7 @@ get_local_node(bool missing_ok)
 
 	desc = RelationGetDescr(rel);
 
-	nodeid = DatumGetInt32(fastgetattr(tuple, Anum_nodes_id, desc, &isnull));
+	nodeid = DatumGetInt32(fastgetattr(tuple, Anum_node_id, desc, &isnull));
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -333,12 +327,12 @@ set_node_status(int nodeid, char status)
 		StartTransactionCommand();
 	}
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Find the node tuple */
 	ScanKeyInit(&key[0],
-				Anum_nodes_id,
+				Anum_node_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(nodeid));
 
@@ -360,7 +354,7 @@ set_node_status(int nodeid, char status)
 
 		heap_deform_tuple(tuple, tupDesc, values, nulls);
 
-		values[Anum_nodes_status - 1] = CharGetDatum(status);
+		values[Anum_node_status - 1] = CharGetDatum(status);
 
 		newtuple = heap_form_tuple(RelationGetDescr(rel),
 								   values, nulls);
@@ -402,12 +396,12 @@ get_node_connections(int32 nodeid, bool is_origin)
 	if (searchnode == NULL)
 		return NULL;
 
-	searchcolumn = is_origin ? Anum_connections_origin_id :
-		Anum_connections_target_id;
-	othercolumn = is_origin ? Anum_connections_target_id :
-		Anum_connections_origin_id;
+	searchcolumn = is_origin ? Anum_connection_origin_id :
+		Anum_connection_target_id;
+	othercolumn = is_origin ? Anum_connection_target_id :
+		Anum_connection_origin_id;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	desc = RelationGetDescr(rel);
 
@@ -434,7 +428,7 @@ get_node_connections(int32 nodeid, bool is_origin)
 
 		/* Build connection/ */
 		conn = (PGLogicalConnection *) palloc(sizeof(PGLogicalConnection));
-		conn->id = Int32GetDatum(heap_getattr(tuple, Anum_connections_id,
+		conn->id = Int32GetDatum(heap_getattr(tuple, Anum_connection_id,
 											  desc, &isnull));
 
 		if (is_origin)
@@ -449,7 +443,7 @@ get_node_connections(int32 nodeid, bool is_origin)
 		}
 
 		/* Get replication sets */
-		d = heap_getattr(tuple, Anum_connections_replication_sets, desc,
+		d = heap_getattr(tuple, Anum_connection_replication_sets, desc,
 						 &isnull);
 		if (isnull)
 			conn->replication_sets = NIL;
@@ -496,18 +490,18 @@ find_node_connection(int originid, int targetid, bool missing_ok)
 	Datum			d;
 	List		   *repset_names;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	desc = RelationGetDescr(rel);
 
 	/* Search for connection record. */
 	ScanKeyInit(&key[0],
-				Anum_connections_origin_id,
+				Anum_connection_origin_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(originid));
 
 	ScanKeyInit(&key[1],
-				Anum_connections_target_id,
+				Anum_connection_target_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(targetid));
 
@@ -530,7 +524,7 @@ find_node_connection(int originid, int targetid, bool missing_ok)
 	conn = (PGLogicalConnection *) palloc(sizeof(PGLogicalConnection));
 
 	/* Get node id. */
-	d = heap_getattr(tuple, Anum_connections_id, desc, &isnull);
+	d = heap_getattr(tuple, Anum_connection_id, desc, &isnull);
 	conn->id = DatumGetInt32(d);
 
 	/* Get origin and target nodes. */
@@ -538,7 +532,7 @@ find_node_connection(int originid, int targetid, bool missing_ok)
 	conn->target = get_node(targetid);
 
 	/* Get replication sets. */
-	d = heap_getattr(tuple, Anum_connections_replication_sets, desc, &isnull);
+	d = heap_getattr(tuple, Anum_connection_replication_sets, desc, &isnull);
 	if (isnull)
 		conn->replication_sets = NIL;
 	else
@@ -567,13 +561,13 @@ get_node_connection(int connid)
 	Datum			d;
 	List		   *repset_names;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	desc = RelationGetDescr(rel);
 
 	/* Search for connection record. */
 	ScanKeyInit(&key[0],
-				Anum_connections_id,
+				Anum_connection_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(connid));
 
@@ -588,15 +582,15 @@ get_node_connection(int connid)
 	conn->id = connid;
 
 	/* Get origin node */
-	d = heap_getattr(tuple, Anum_connections_origin_id, desc, &isnull);
+	d = heap_getattr(tuple, Anum_connection_origin_id, desc, &isnull);
 	conn->origin = get_node(DatumGetInt32(d));
 
 	/* Get target node */
-	d = heap_getattr(tuple, Anum_connections_target_id, desc, &isnull);
+	d = heap_getattr(tuple, Anum_connection_target_id, desc, &isnull);
 	conn->target = get_node(DatumGetInt32(d));
 
 	/* Get replication sets */
-	d = heap_getattr(tuple, Anum_connections_replication_sets, desc, &isnull);
+	d = heap_getattr(tuple, Anum_connection_replication_sets, desc, &isnull);
 	if (isnull)
 		conn->replication_sets = NIL;
 	else
@@ -621,26 +615,26 @@ create_node_connection(int originid, int targetid, List *replication_sets)
 	Relation	rel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
-	Datum		values[Natts_connections];
-	bool		nulls[Natts_connections];
+	Datum		values[Natts_connection];
+	bool		nulls[Natts_connection];
 	int			connid = originid ^ targetid;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_connections_id - 1] = Int32GetDatum(connid);
-	values[Anum_connections_origin_id - 1] = Int32GetDatum(originid);
-	values[Anum_connections_target_id - 1] = Int32GetDatum(targetid);
+	values[Anum_connection_id - 1] = Int32GetDatum(connid);
+	values[Anum_connection_origin_id - 1] = Int32GetDatum(originid);
+	values[Anum_connection_target_id - 1] = Int32GetDatum(targetid);
 
 	if (list_length(replication_sets) > 0)
-		values[Anum_connections_replication_sets - 1] =
+		values[Anum_connection_replication_sets - 1] =
 			PointerGetDatum(strlist_to_textarray(replication_sets));
 	else
-		nulls[Anum_connections_replication_sets - 1] = true;
+		nulls[Anum_connection_replication_sets - 1] = true;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -659,7 +653,7 @@ create_node_connection(int originid, int targetid, List *replication_sets)
 	return connid;
 }
 
-/* Remove the tuple from the connections catalog. */
+/* Remove the tuple from the connection catalog. */
 void
 drop_node_connection(int connid)
 {
@@ -669,12 +663,12 @@ drop_node_connection(int connid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTIONS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_CONNECTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for connection record. */
 	ScanKeyInit(&key[0],
-				Anum_connections_id,
+				Anum_connection_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(connid));
 

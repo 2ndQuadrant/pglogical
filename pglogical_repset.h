@@ -19,9 +19,9 @@ typedef struct PGLogicalRepSet
 {
 	int			id;
 	const char *name;
-	bool		replicate_inserts;
-	bool		replicate_updates;
-	bool		replicate_deletes;
+	bool		replicate_insert;
+	bool		replicate_update;
+	bool		replicate_delete;
 	bool		replicate_truncate;
 } PGLogicalRepSet;
 
@@ -32,9 +32,9 @@ typedef struct PGLogicalRepSetRelation
 
 	bool			isvalid;			/* is this entry valid? */
 
-	bool			replicate_inserts;	/* should inserts be replicated? */
-	bool			replicate_updates;	/* should updates be replicated? */
-	bool			replicate_deletes;	/* should deletes be replicated? */
+	bool			replicate_insert;	/* should insert be replicated? */
+	bool			replicate_update;	/* should update be replicated? */
+	bool			replicate_delete;	/* should delete be replicated? */
 	bool			replicate_truncate; /* should truncate be replicated? */
 } PGLogicalRepSetRelation;
 

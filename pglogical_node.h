@@ -44,7 +44,6 @@ extern void create_node(PGLogicalNode *node);
 extern void alter_node(PGLogicalNode *node);
 extern void drop_node(int nodeid);
 
-extern PGLogicalNode **get_nodes(void);
 extern PGLogicalNode *get_node(int nodeid);
 extern PGLogicalNode *get_local_node(bool missing_ok);
 extern PGLogicalNode *get_node_by_name(const char *node_name, bool missing_ok);

@@ -272,9 +272,9 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 
 	repset.name = NameStr(*PG_GETARG_NAME(0));
 
-	repset.replicate_inserts = PG_GETARG_BOOL(1);
-	repset.replicate_updates = PG_GETARG_BOOL(2);
-	repset.replicate_deletes = PG_GETARG_BOOL(3);
+	repset.replicate_insert = PG_GETARG_BOOL(1);
+	repset.replicate_update = PG_GETARG_BOOL(2);
+	repset.replicate_delete = PG_GETARG_BOOL(3);
 	repset.replicate_truncate = PG_GETARG_BOOL(4);
 
 	create_replication_set(&repset);

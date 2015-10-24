@@ -43,30 +43,30 @@
 #include "pglogical_repset.h"
 #include "pglogical.h"
 
-#define CATALOG_REPSETS			"replication_sets"
-#define CATALOG_REPSET_TABLES	"replication_set_tables"
+#define CATALOG_REPSET			"replication_set"
+#define CATALOG_REPSET_TABLE	"replication_set_table"
 
 typedef struct RepSetTuple
 {
 	int32		id;
 	NameData	name;
-	bool		replicate_inserts;
-	bool		replicate_updates;
-	bool		replicate_deletes;
+	bool		replicate_insert;
+	bool		replicate_update;
+	bool		replicate_delete;
 	bool		replicate_truncate;
 } RepSetTuple;
 
-#define Natts_repsets					6
-#define Anum_repsets_id					1
-#define Anum_repsets_name				2
-#define Anum_repsets_replicate_inserts	3
-#define Anum_repsets_replicate_updates	4
-#define Anum_repsets_replicate_deletes	5
-#define Anum_repsets_replicate_truncate	6
+#define Natts_repset					6
+#define Anum_repset_id					1
+#define Anum_repset_name				2
+#define Anum_repset_replicate_insert	3
+#define Anum_repset_replicate_update	4
+#define Anum_repset_replicate_delete	5
+#define Anum_repset_replicate_truncate	6
 
-#define Natts_repset_tables			2
-#define Anum_repset_tables_setid	1
-#define Anum_repset_tables_reloid	2
+#define Natts_repset_table			2
+#define Anum_repset_table_setid	1
+#define Anum_repset_table_reloid	2
 
 #define REPLICATION_SET_ID_ALL		-2
 
@@ -95,12 +95,12 @@ get_replication_set(int setid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
-				Anum_repsets_id,
+				Anum_repset_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(setid));
 
@@ -117,9 +117,9 @@ get_replication_set(int setid)
 	repset->id = setid;
 
 	repset->name = pstrdup(NameStr(repsettup->name));
-	repset->replicate_inserts = repsettup->replicate_inserts;
-	repset->replicate_updates = repsettup->replicate_updates;
-	repset->replicate_deletes = repsettup->replicate_deletes;
+	repset->replicate_insert = repsettup->replicate_insert;
+	repset->replicate_update = repsettup->replicate_update;
+	repset->replicate_delete = repsettup->replicate_delete;
 	repset->replicate_truncate = repsettup->replicate_truncate;
 
 	systable_endscan(scan);
@@ -142,12 +142,12 @@ get_replication_set_by_name(const char *setname, bool missing_ok)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
-				Anum_repsets_name,
+				Anum_repset_name,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(setname));
 
@@ -173,9 +173,9 @@ get_replication_set_by_name(const char *setname, bool missing_ok)
 
 	repset->id = repsettup->id;
 	repset->name = pstrdup(NameStr(repsettup->name));
-	repset->replicate_inserts = repsettup->replicate_inserts;
-	repset->replicate_updates = repsettup->replicate_updates;
-	repset->replicate_deletes = repsettup->replicate_deletes;
+	repset->replicate_insert = repsettup->replicate_insert;
+	repset->replicate_update = repsettup->replicate_update;
+	repset->replicate_delete = repsettup->replicate_delete;
 	repset->replicate_truncate = repsettup->replicate_truncate;
 
 	systable_endscan(scan);
@@ -231,7 +231,7 @@ get_replication_sets(List *replication_set_names)
 	ListCell	   *lc;
 	List		   *replication_sets = NIL;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	foreach(lc, replication_set_names)
@@ -245,7 +245,7 @@ get_replication_sets(List *replication_set_names)
 
 		/* Search for repset record. */
 		ScanKeyInit(&key[0],
-					Anum_repsets_name,
+					Anum_repset_name,
 					BTEqualStrategyNumber, F_NAMEEQ,
 					NameGetDatum(setname));
 
@@ -262,9 +262,9 @@ get_replication_sets(List *replication_set_names)
 		repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
 		repset->id = repsettup->id;
 		repset->name = pstrdup(NameStr(repsettup->name));
-		repset->replicate_inserts = repsettup->replicate_inserts;
-		repset->replicate_updates = repsettup->replicate_updates;
-		repset->replicate_deletes = repsettup->replicate_deletes;
+		repset->replicate_insert = repsettup->replicate_insert;
+		repset->replicate_update = repsettup->replicate_update;
+		repset->replicate_delete = repsettup->replicate_delete;
 		repset->replicate_truncate = repsettup->replicate_truncate;
 
 		replication_sets = lappend(replication_sets, repset);
@@ -298,21 +298,21 @@ get_repset_relation(Oid reloid, List *replication_sets)
 
 	/* Fill the entry */
 	entry->reloid = reloid;
-	entry->replicate_inserts = false;
-	entry->replicate_updates = false;
-	entry->replicate_deletes = false;
+	entry->replicate_insert = false;
+	entry->replicate_update = false;
+	entry->replicate_delete = false;
 	entry->replicate_truncate = false;
 
 	foreach(lc, replication_sets)
 	{
 		PGLogicalRepSet	   *repset = lfirst(lc);
 
-		if (repset->replicate_inserts)
-			entry->replicate_inserts = true;
-		if (repset->replicate_updates)
-			entry->replicate_updates = true;
-		if (repset->replicate_deletes)
-			entry->replicate_deletes = true;
+		if (repset->replicate_insert)
+			entry->replicate_insert = true;
+		if (repset->replicate_update)
+			entry->replicate_update = true;
+		if (repset->replicate_delete)
+			entry->replicate_delete = true;
 		if (repset->replicate_truncate)
 			entry->replicate_truncate = true;
 
@@ -320,8 +320,8 @@ get_repset_relation(Oid reloid, List *replication_sets)
 		 * Now we now everything is replicated, no point in trying to check
 		 * more replication sets.
 		 */
-		if (entry->replicate_inserts && entry->replicate_updates &&
-			entry->replicate_deletes && entry->replicate_truncate)
+		if (entry->replicate_insert && entry->replicate_update &&
+			entry->replicate_delete && entry->replicate_truncate)
 			break;
 	}
 
@@ -341,11 +341,11 @@ relation_is_replicated(Relation rel, PGLogicalConnection *conn,
 	switch (change_type)
 	{
 		case PGLogicalChangeInsert:
-			return r->replicate_inserts;
+			return r->replicate_insert;
 		case PGLogicalChangeUpdate:
-			return r->replicate_updates;
+			return r->replicate_update;
 		case PGLogicalChangeDelete:
-			return r->replicate_deletes;
+			return r->replicate_delete;
 		case PGLogicalChangeTruncate:
 			return r->replicate_truncate;
 		default:
@@ -366,8 +366,8 @@ create_replication_set(PGLogicalRepSet *repset)
 	Relation	rel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
-	Datum		values[Natts_repsets];
-	bool		nulls[Natts_repsets];
+	Datum		values[Natts_repset];
+	bool		nulls[Natts_repset];
 	NameData	repset_name;
 
 	if (strlen(repset->name) == 0)
@@ -383,22 +383,24 @@ create_replication_set(PGLogicalRepSet *repset)
 		repset->id = DatumGetInt32(hash_any((const unsigned char *) repset->name,
 											strlen(repset->name)));
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_repsets_id - 1] = Int32GetDatum(repset->id);
+	values[Anum_repset_id - 1] = Int32GetDatum(repset->id);
 	namestrcpy(&repset_name, repset->name);
-	values[Anum_repsets_name - 1] = NameGetDatum(&repset_name);
-	values[Anum_repsets_replicate_inserts - 1] =
-		BoolGetDatum(repset->replicate_inserts);
-	values[Anum_repsets_replicate_updates - 1] =
-		BoolGetDatum(repset->replicate_updates);
-	values[Anum_repsets_replicate_deletes - 1] =
-		BoolGetDatum(repset->replicate_deletes);
+	values[Anum_repset_name - 1] = NameGetDatum(&repset_name);
+	values[Anum_repset_replicate_insert - 1] =
+		BoolGetDatum(repset->replicate_insert);
+	values[Anum_repset_replicate_update - 1] =
+		BoolGetDatum(repset->replicate_update);
+	values[Anum_repset_replicate_delete - 1] =
+		BoolGetDatum(repset->replicate_delete);
+	values[Anum_repset_replicate_truncate - 1] =
+		BoolGetDatum(repset->replicate_truncate);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -428,12 +430,12 @@ drop_replication_set(int setid)
 
 	check_for_reserved_replication_set(setid);
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSETS, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
-				Anum_repsets_id,
+				Anum_repset_id,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(setid));
 
@@ -464,8 +466,8 @@ replication_set_add_table(int setid, Oid reloid)
 	Relation	targetrel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
-	Datum		values[Natts_repset_tables];
-	bool		nulls[Natts_repset_tables];
+	Datum		values[Natts_repset_table];
+	bool		nulls[Natts_repset_table];
 	PGLogicalRepSet *repset = get_replication_set(setid);
 
 	check_for_reserved_replication_set(setid);
@@ -483,7 +485,7 @@ replication_set_add_table(int setid, Oid reloid)
 	if (targetrel->rd_indexvalid == 0)
 		RelationGetIndexList(targetrel);
 	if (!OidIsValid(targetrel->rd_replidindex) &&
-		(repset->replicate_updates || repset->replicate_deletes))
+		(repset->replicate_update || repset->replicate_delete))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("table %s cannot be added to replication set %s",
@@ -496,15 +498,15 @@ replication_set_add_table(int setid, Oid reloid)
 	heap_close(targetrel, NoLock);
 
 	/* Open the catalog. */
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_repset_tables_setid - 1] = Int32GetDatum(repset->id);
-	values[Anum_repset_tables_reloid - 1] = reloid;
+	values[Anum_repset_table_setid - 1] = Int32GetDatum(repset->id);
+	values[Anum_repset_table_reloid - 1] = reloid;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -533,16 +535,16 @@ replication_set_remove_table(int setid, Oid reloid)
 
 	check_for_reserved_replication_set(setid);
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLES, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for the record. */
 	ScanKeyInit(&key[0],
-				Anum_repset_tables_setid,
+				Anum_repset_table_setid,
 				BTEqualStrategyNumber, F_INT4EQ,
 				Int32GetDatum(setid));
 	ScanKeyInit(&key[1],
-				Anum_repset_tables_reloid,
+				Anum_repset_table_reloid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				Int32GetDatum(reloid));
 
