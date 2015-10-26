@@ -24,18 +24,14 @@ GRANT ALL ON SCHEMA public TO nonsuper;
 \c regression
 CREATE EXTENSION pglogical;
 
-INSERT INTO pglogical.local_node SELECT pglogical.create_node('node_reg', 'dbname=regression');
-SELECT pglogical.create_node('node_pg', 'dbname=postgres');
-SELECT pglogical.create_connection('node_reg', 'node_pg');
+SELECT * FROM pglogical.create_provider('test_provider');
 
 \c postgres
 CREATE EXTENSION pglogical;
 
-SELECT pglogical.create_node('node_reg', 'dbname=regression');
-INSERT INTO pglogical.local_node SELECT pglogical.create_node('node_pg', 'dbname=postgres');
-SELECT pglogical.create_connection('node_reg', 'node_pg');
+SELECT * FROM pglogical.create_subscriber('test_subscriber', 'test_provider', 'dbname=regression');
 
-SELECT pglogical.wait_for_node_ready();
+SELECT pglogical.wait_for_subscriber_ready('test_subscriber');
 
 -- Make sure we see the slot and active connection
 \c regression

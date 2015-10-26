@@ -39,33 +39,26 @@ void pglogical_manager_main(Datum main_arg);
 static void
 manage_apply_workers(void)
 {
-	PGLogicalNode  *node;
-	List	   *conns;
+	List	   *subscribers;
 	ListCell   *lc;
 
 	StartTransactionCommand();
 
-	node = get_local_node(true);
+	subscribers = get_subscribers();
 
-	/* No local node, exit. */
-	if (!node)
+	/* No subscribers, exit. */
+	if (list_length(subscribers) == 0)
 		proc_exit(0);
 
-	conns = get_node_publishers(node->id);
-
-	/* No connections (this should probably be error). */
-	if (list_length(conns) == 0)
-		proc_exit(0);
-
-	/* Register apply worker for each connection. */
-	foreach (lc, conns)
+	/* Register apply worker for each subscriber. */
+	foreach (lc, subscribers)
 	{
-		PGLogicalConnection	   *conn = (PGLogicalConnection *) lfirst(lc);
+		PGLogicalSubscriber	   *sub = (PGLogicalSubscriber *) lfirst(lc);
 		PGLogicalWorker			worker;
 
 		/* Skip already registered workers. */
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-		if (pglogical_apply_find(MyPGLogicalWorker->dboid, conn->id))
+		if (pglogical_apply_find(MyPGLogicalWorker->dboid, sub->id))
 		{
 			LWLockRelease(PGLogicalCtx->lock);
 			continue;
@@ -75,7 +68,7 @@ manage_apply_workers(void)
 		memset(&worker, 0, sizeof(PGLogicalWorker));
 		worker.worker_type = PGLOGICAL_WORKER_APPLY;
 		worker.dboid = MyPGLogicalWorker->dboid;
-		worker.worker.apply.connid = conn->id;
+		worker.worker.apply.subscriberid = sub->id;
 
 		pglogical_worker_register(&worker);
 	}
@@ -92,8 +85,8 @@ pglogical_manager_main(Datum main_arg)
 {
 	int			slot = DatumGetInt32(main_arg);
 	Oid			extoid;
-	List	   *conns;
-	PGLogicalNode  *node;
+	List	   *subscribers;
+	ListCell   *lc;
 	MemoryContext	saved_ctx;
 
 	/* Setup shmem. */
@@ -116,27 +109,22 @@ pglogical_manager_main(Datum main_arg)
 
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 
-	/* Fetch local node info. */
-	node = get_local_node(true);
+	subscribers = get_subscribers();
 
-	/* No local node, exit. */
-	if (!node)
-		proc_exit(0);
-
-	conns = get_node_publishers(node->id);
-
-	/* No connections (this should probably be error). */
-	if (list_length(conns) == 0)
+	/* No subscribers, exit. */
+	if (list_length(subscribers) == 0)
 		proc_exit(0);
 
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
-	/* If this is newly created node, initialize it. */
-	if (node->status != NODE_STATUS_READY)
+	/* TODO: check that there is only one subscriber with node status != 'r' */
+	foreach (lc, subscribers)
 	{
-		PGLogicalConnection *c = linitial(conns);
-		pglogical_init_replica(c);
+		PGLogicalSubscriber	   *sub = (PGLogicalSubscriber *) lfirst(lc);
+
+		if (sub->status != SUBSCRIBER_STATUS_READY)
+			pglogical_init_replica(sub);
 	}
 
 	/* Setup shared state between the manager and apply processes. */

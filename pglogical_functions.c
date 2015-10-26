@@ -56,11 +56,11 @@ PG_FUNCTION_INFO_V1(pglogical_origin_filter);
 PG_FUNCTION_INFO_V1(pglogical_table_filter);
 
 /* Node management. */
-PG_FUNCTION_INFO_V1(pglogical_create_node);
-PG_FUNCTION_INFO_V1(pglogical_drop_node);
-PG_FUNCTION_INFO_V1(pglogical_wait_for_node_ready);
-PG_FUNCTION_INFO_V1(pglogical_create_connection);
-PG_FUNCTION_INFO_V1(pglogical_drop_connection);
+PG_FUNCTION_INFO_V1(pglogical_create_provider);
+PG_FUNCTION_INFO_V1(pglogical_drop_provider);
+PG_FUNCTION_INFO_V1(pglogical_create_subscriber);
+PG_FUNCTION_INFO_V1(pglogical_drop_subscriber);
+PG_FUNCTION_INFO_V1(pglogical_wait_for_subscriber_ready);
 
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
@@ -90,19 +90,18 @@ pglogical_origin_filter(PG_FUNCTION_ARGS)
 Datum
 pglogical_table_filter(PG_FUNCTION_ARGS)
 {
-	const char *remote_node_name = TextDatumGetCString(PG_GETARG_DATUM(0));
+	char	   *replication_set_names = TextDatumGetCString(PG_GETARG_DATUM(0));
 	Oid			relid = PG_GETARG_OID(1);
 	char		change_type_in = PG_GETARG_CHAR(2);
-	PGLogicalNode  *remote_node = get_node_by_name(remote_node_name, false);
-	PGLogicalNode  *local_node = get_local_node(false);
-	PGLogicalConnection *conn = find_node_connection(local_node->id,
-													 remote_node->id,
-													 false);
-	Relation		rel;
+	List	   *replication_sets;
+	Relation	rel;
 	PGLogicalChangeType	change_type;
-	bool			res;
+	bool		res;
 
 	if (relid == get_queue_table_oid())
+		PG_RETURN_BOOL(false);
+
+	if (!SplitIdentifierString(replication_set_names, ',', &replication_sets))
 		PG_RETURN_BOOL(false);
 
 	switch (change_type_in)
@@ -122,74 +121,103 @@ pglogical_table_filter(PG_FUNCTION_ARGS)
 	}
 
 	rel = relation_open(relid, NoLock);
-	res = relation_is_replicated(rel, conn, change_type);
+	res = relation_is_replicated(rel, replication_sets, change_type);
 	relation_close(rel, NoLock);
 
 	PG_RETURN_BOOL(!res);
 }
 
 /*
- * Create new node record and insert it into catalog.
+ * Create new provider
  */
 Datum
-pglogical_create_node(PG_FUNCTION_ARGS)
+pglogical_create_provider(PG_FUNCTION_ARGS)
 {
-	PGLogicalNode	node;
+	PGLogicalProvider	provider;
 
-	if (PG_ARGISNULL(0))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("node name cannot be null")));
+	provider.id = InvalidOid;
+	provider.name = NameStr(*PG_GETARG_NAME(0));
 
-	if (PG_ARGISNULL(1))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("node dsn cannot be null")));
+	create_provider(&provider);
 
-	node.name = NameStr(*PG_GETARG_NAME(0));
-	node.dsn = TextDatumGetCString(PG_GETARG_DATUM(1));
-
-	node.id = InvalidOid;
-	node.status = NODE_STATUS_INIT;
-
-	create_node(&node);
-
-	/* TODO: run the init. */
-
-	PG_RETURN_INT32(node.id);
+	PG_RETURN_OID(provider.id);
 }
 
 /*
  * Drop the named node.
  */
 Datum
-pglogical_drop_node(PG_FUNCTION_ARGS)
+pglogical_drop_provider(PG_FUNCTION_ARGS)
 {
-	PGLogicalNode  *node;
+	PGLogicalProvider  *provider;
 
-	node = get_node_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	provider = get_provider_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 
-	drop_node(node->id);
+	drop_provider(provider->id);
 
-	/* TODO: notify the workers. */
+	pglogical_connections_changed();
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Connect two existing nodes.
+ *
+ * TODO: handle different sync modes correctly.
+ */
+Datum
+pglogical_create_subscriber(PG_FUNCTION_ARGS)
+{
+	PGLogicalSubscriber		sub;
+//	bool			sync_schema = PG_GET_BOOL(4);
+//	bool			sync_data = PG_GET_BOOL(5);
+
+	sub.name = NameStr(*PG_GETARG_NAME(0));
+	sub.provider_name = NameStr(*PG_GETARG_NAME(1));
+	sub.provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(2));
+	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(3));
+
+	sub.status = SUBSCRIBER_STATUS_INIT;
+
+	create_subscriber(&sub);
+
+	pglogical_connections_changed();
+
+	PG_RETURN_OID(sub.id);
+}
+
+/*
+ * Remove subscriber.
+ */
+Datum
+pglogical_drop_subscriber(PG_FUNCTION_ARGS)
+{
+	PGLogicalSubscriber	   *sub;
+
+	sub = get_subscriber_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	drop_subscriber(sub->id);
+
+	pglogical_connections_changed();
+
+	PG_RETURN_BOOL(true);
 }
 
 /*
  * Wait until local node is ready.
  */
 Datum
-pglogical_wait_for_node_ready(PG_FUNCTION_ARGS)
+pglogical_wait_for_subscriber_ready(PG_FUNCTION_ARGS)
 {
+	char	   *sub_name = NameStr(*PG_GETARG_NAME(0));
+
 	for (;;)
 	{
-		PGLogicalNode  *node = get_local_node(false);
+		PGLogicalSubscriber *sub = get_subscriber_by_name(sub_name, false);
 
-		if (node->status == NODE_STATUS_READY)
+		if (sub->status == SUBSCRIBER_STATUS_READY)
 			break;
 
-		pfree(node);
+		pfree(sub);
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -199,65 +227,7 @@ pglogical_wait_for_node_ready(PG_FUNCTION_ARGS)
         ResetLatch(&MyProc->procLatch);
 	}
 
-	PG_RETURN_VOID();
-}
-
-/*
- * Connect two existing nodes.
- */
-Datum
-pglogical_create_connection(PG_FUNCTION_ARGS)
-{
-	PGLogicalNode  *origin;
-	PGLogicalNode  *target;
-	List		   *replication_sets;
-	int				connid;
-
-	if (PG_ARGISNULL(0))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("origin name cannot be null")));
-
-	if (PG_ARGISNULL(1))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("target name cannot be null")));
-
-	origin = get_node_by_name(NameStr(*PG_GETARG_NAME(0)), false);
-	target = get_node_by_name(NameStr(*PG_GETARG_NAME(1)), false);
-
-	if (PG_ARGISNULL(2))
-		replication_sets = NIL;
-	else
-		replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(2));
-
-	connid = create_node_connection(origin->id, target->id, replication_sets);
-
-	/* TODO: notify the workers. */
-
-	PG_RETURN_INT32(connid);
-}
-
-/*
- * Remove connection between two nodes.
- */
-Datum
-pglogical_drop_connection(PG_FUNCTION_ARGS)
-{
-	PGLogicalNode  *origin;
-	PGLogicalNode  *target;
-	PGLogicalConnection *conn;
-
-	origin = get_node_by_name(NameStr(*PG_GETARG_NAME(0)), false);
-	target = get_node_by_name(NameStr(*PG_GETARG_NAME(1)), false);
-
-	conn = find_node_connection(origin->id, target->id, false);
-
-	drop_node_connection(conn->id);
-
-	/* TODO: notify the workers. */
-
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
 }
 
 /*
@@ -279,7 +249,7 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 
 	create_replication_set(&repset);
 
-	PG_RETURN_INT32(repset.id);
+	PG_RETURN_OID(repset.id);
 }
 
 /*
@@ -294,7 +264,7 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 
 	drop_replication_set(repset->id);
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
 }
 
 /*
@@ -318,7 +288,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	/* Cleanup. */
 	heap_close(rel, NoLock);
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
 }
 
 /*
@@ -339,7 +309,7 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 
 	replication_set_remove_table(repset->id, reloid);
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
 }
 
 /*
@@ -375,7 +345,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId(), false),
 								  false);
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
 }
 
 /*

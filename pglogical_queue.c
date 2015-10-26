@@ -46,15 +46,17 @@
 
 #define CATALOG_QUEUE	"queue"
 
-#define Natts_queue				4
-#define Anum_queue_queued_at	1
-#define Anum_queue_role			2
-#define Anum_queue_message_type	3
-#define Anum_queue_message		4
+#define Natts_queue					5
+#define Anum_queue_queued_at		1
+#define Anum_queue_provider_name	2
+#define Anum_queue_role				3
+#define Anum_queue_message_type		4
+#define Anum_queue_message			5
 
 typedef struct QueueTuple
 {
 	TimestampTz	queued_at;
+	NameData	provider_name;
 	NameData	role;
 	char		message_type;
 /*	json		message;*/
@@ -83,6 +85,9 @@ queue_command(Oid roleoid, char message_type, char *message)
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_queue_queued_at - 1] = TimestampTzGetDatum(ts);
+	/* TODO */
+	values[Anum_queue_provider_name - 1] =
+		DirectFunctionCall1(namein, CStringGetDatum(role));
 	values[Anum_queue_role - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(role));
 	values[Anum_queue_message_type - 1] = CharGetDatum(message_type);

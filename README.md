@@ -45,8 +45,7 @@ Next the `pglogical` extension has to be installed on all nodes:
 Now create the provider node:
 
     SELECT pglogical.create_provider(
-        node_name := 'node1',
-        node_dsn := 'host=hostname1 port=5432 dbname=db'
+        provider_name := 'provider1',
     );
 
 Optionally you can also create replication sets and add tables to them (see
@@ -55,57 +54,61 @@ Optionally you can also create replication sets and add tables to them (see
 Once the provider node is setup, subscribers can be subscribed to it:
 
 	SELECT pglogical.create_subscriber(
-		node_name := 'node1',
-        node_dsn := 'host=hostname2 port=5432 dbname=db',
-        init_from_dsn := 'host=hostname1 port=5432 dbname=db' # should be same as node_dsn of the provider
+		subscriber_name := 'subscriber1',
+        provider_name := 'provider1',
+        provider_dsn := 'host=providerhost port=5432 dbname=db'
 	);
 
 ### Node management
 
 Nodes can be added and removed dynamically using the SQL interfaces.
 
-- `pglogical.create_provider(node_name name, node_dsn text)`
+- `pglogical.create_provider(provider_name name)`
   Creates a provider node.
 
   Parameters:
-  - `node_name` - name of the new node, must be unique
-  - `node_dsn` - connection string used both for connections by other nodes as
-    well as back connections on the same node, must be accessible as both
-    standard connection and replication connection mode
+  - `provider_name` - name of the new provider, currently only one provider
+    is allowed per database
 
-- `pglogical.create_subscriber(node_name name, node_dsn text, init_from_dsn
-  text, replication_sets name[], synchronize pglogical.synchronization_type)`
+- `pglogical.create_subscriber(subscriner_name name, provider_name name,
+  provider_dsn text, replication_sets name[], synchronize_schema boolean
+  synchronize_data boolean)`
   Creates a subsriber node.
 
   Parameters:
-  - `node_name` - name of the new node, must be unique
-  - `node_dsn` - connection string used both for connections by other nodes as
-    well as back connections on the same node, only standard connection will be
-    used
-  - `init_from_dsn` - connection string to a node which will be used for
-    initializing this node (usually the provider node)
+  - `subscriner_name` - name of the subscriber, must be unique
+  - `provider_name` - name of the provider to which this subscriber will be
+     connected
+  - `provider_dsn` - connection string to a provider node
   - `replication_sets` - array of replication sets to subscribe to, these must
     already exist, default is "default"
-  - `synchronize` - specifies what to synchronize during initialization, can be
-    one of "full", which means synchronize structure and data or "none" which
-    means the initial syncrhonization should be skipped
+  - `synchronize_schema` - specifies is to synchronize schema from provider to
+    the subscriber, default true
+  - `synchronize_data` - specifies is to synchronize data from provider to
+    the subscriber, default true
 
-- `pglogical.drop_node(node_name name)`
-  Disconnect and drop existing node, can be any type of node.
+- `pglogical.drop_provider(provider_name name)`
+  Removes the provider and disconnect all subscrbers from it.
 
   Parameters:
-  - `node_name` - name of the existing node
+  - `subscriber_name` - name of the existing provider
+
+- `pglogical.drop_subscriber(subscriber_name name)`
+  Disconnects the subsriber and removes it from the catalog.
+
+  Parameters:
+  - `subscriber_name` - name of the existing subscriber
 
 ### Replication sets
 
 Replication sets provide a mechanism to control which tables in the database
 will be replicated and which actions on those tables will be replicated.
 
-Each replicated set can specify individually if `INSERTs`, `UPDATEs` and
-`DELETEs` on the set are replicated. Every table can be in multiple replication
-sets and every node can subscribe to multiple replication sets as well. The
-resulting set of tables and actions replicated is the union of the sets the
-table is in.
+Each replicated set can specify individually if `INSERTs`, `UPDATEs`,
+`DELETEs` and `TRUNCATEs` on the set are replicated. Every table can be in
+multiple replication sets and every subscriber can subscribe to multiple
+replication sets as well. The resulting set of tables and actions replicated
+is the union of the sets the table is in.
 
 There are two preexisting replication sets named "all" and "default". The "all"
 replication set contains every user table in the database and every table that
@@ -113,23 +116,24 @@ has not been added to specific replication set will be in the "default" set.
 
 The following functions are provided for managing the replication sets:
 
-- `pglogical.create_replication_set(set_name name, replicate_inserts bool, replicate_updates bool, replicate_deletes bool)`
+- `pglogical.create_replication_set(set_name name, replicate_insert bool, replicate_update bool, replicate_delete bool, replicate_truncate bool)`
   This function creates new replication set.
 
   Parameters:
   - `set_name` - name of the set, must be unique
-  - `replicate_inserts` - specifies if `INSERTs` are replicated, default true
-  - `replicate_updates` - specifies if `UPDATEs` are replicated, default true
-  - `replicate_deletes` - specifies if `DELETEs` are replicated, default true
+  - `replicate_insert` - specifies if `INSERT` is replicated, default true
+  - `replicate_update` - specifies if `UPDATE` is replicated, default true
+  - `replicate_delete` - specifies if `DELETE` is replicated, default true
+  - `replicate_truncate` - specifies if `TRUNCATE` is replicated, default true
 
 - `pglogical.alter_replication_set(set_name name, replicate_inserts bool, replicate_updates bool, replicate_deletes bool, replicate_truncate bool)`
   This function change the parameters of the existing replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
-  - `replicate_inserts` - specifies if `INSERTs` are replicated, default true
-  - `replicate_updates` - specifies if `UPDATEs` are replicated, default true
-  - `replicate_deletes` - specifies if `DELETEs` are replicated, default true
+  - `replicate_insert` - specifies if `INSERT` is replicated, default true
+  - `replicate_update` - specifies if `UPDATE` is replicated, default true
+  - `replicate_delete` - specifies if `DELETE` is replicated, default true
   - `replicate_truncate` - specifies if `TRUNCATE` is replicated, default true
 
 - `pglogical.delete_replication_set(set_name text)`

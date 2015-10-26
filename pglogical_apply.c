@@ -435,9 +435,7 @@ handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
 	char		   *relname = NULL;
 	RangeVar	   *rv;
 	Oid				relid;
-	Relation		rel;
 	TruncateStmt   *truncate;
-	PGLogicalConnection	   *conn;
 
 	/* Parse and validate the json message. */
 	if (!JB_ROOT_IS_OBJECT(queued_message->message))
@@ -496,23 +494,15 @@ handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
 	if (!relname)
 		elog(ERROR, "missing table_name in TRUNCATE message");
 
-	/* If table doesn't exist locally, it can't be subscribed. */
+	/*
+	 * If table doesn't exist locally, it can't be subscribed.
+	 *
+	 * TODO: error?
+	 */
 	rv = makeRangeVar(nspname, relname, -1);
 	relid = RangeVarGetRelid(rv, AccessExclusiveLock, true);
 	if (relid == InvalidOid)
 		return;
-
-	/* Load our connection info. */
-	conn = get_node_connection(MyPGLogicalWorker->worker.apply.connid);
-
-	/* Check if we are subscribed to the table changes. */
-	rel = heap_open(relid, AccessExclusiveLock);
-	if (!relation_is_replicated(rel, conn, PGLogicalChangeTruncate))
-	{
-		relation_close(rel, AccessExclusiveLock);
-		return;
-	}
-	relation_close(rel, AccessExclusiveLock);
 
 	/* Truncate the table. */
 	truncate = makeNode(TruncateStmt);
@@ -956,8 +946,7 @@ pglogical_apply_main(Datum main_arg)
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
 	NameData		slot_name;
-	PGLogicalConnection	   *conn;
-	PGLogicalNode		   *origin_node;
+	PGLogicalSubscriber	   *sub;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
@@ -974,15 +963,15 @@ pglogical_apply_main(Datum main_arg)
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
 	StartTransactionCommand();
-	conn = get_node_connection(MyPGLogicalWorker->worker.apply.connid);
-	origin_node = conn->origin;
+	sub = get_subscriber(MyPGLogicalWorker->worker.apply.subscriberid);
 
-	elog(DEBUG1, "conneting to node %d (%s), dsn %s",
-		 origin_node->id, origin_node->name, origin_node->dsn);
+	elog(DEBUG1, "starting apply for subscriber %s", sub->name);
+	elog(DEBUG1, "conneting to provider %s, dsn %s",
+		 sub->provider_name, sub->provider_dsn);
 
 	initStringInfo(&conninfo_repl);
 	appendStringInfo(&conninfo_repl, "%s replication=database fallback_application_name='%s_apply'",
-					 origin_node->dsn, origin_node->name);
+					 sub->provider_dsn, sub->name);
 
 	/*
 	 * Cache tne queue relation id.
@@ -1002,7 +991,7 @@ pglogical_apply_main(Datum main_arg)
 
 	/* Setup the origin and get the starting position for the replication. */
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  conn->origin, conn->target);
+				  sub->provider_name, sub->name);
 
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
@@ -1057,16 +1046,7 @@ pglogical_apply_main(Datum main_arg)
 #endif
 					 );
 
-	/* Table filter hook (replication set handling). */
-	appendStringInfo(&command, ", \"hooks.origin_filter\" 'pglogical.origin_filter'");
-	/* Currently we forward all changes. */
-	appendStringInfo(&command, ", \"hooks.origin_filter_arg\" '%s'",
-					 REPLICATION_ORIGIN_ALL);
-
-	/* Table filter hook (replication set handling). */
-	appendStringInfo(&command, ", \"hooks.table_filter\" 'pglogical.table_filter'");
-	appendStringInfo(&command, ", \"hooks.table_filter_arg\" '%s'",
-					 conn->target->name); /* No need to escape, it's Name. */
+	/* TODO:HOOKS */
 
 	appendStringInfoChar(&command, ')');
 

@@ -28,8 +28,8 @@
 #define REPLICATION_ORIGIN_ALL "all"
 
 extern void gen_slot_name(Name slot_name, char *dbname,
-						  PGLogicalNode *origin_node,
-						  PGLogicalNode *target_node);
+						  const char *provider_name,
+						  const char *subscriber_name);
 extern Oid pglogical_generate_id(void);
 extern List *textarray_to_list(ArrayType *textarray);
 

@@ -115,7 +115,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 				 "pglogical_apply_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
 				 "pglogical apply %d:%d", worker->dboid,
-				 worker->worker.apply.connid);
+				 worker->worker.apply.subscriberid);
 	}
 
 	bgw.bgw_restart_time = BGW_NEVER_RESTART;
@@ -217,7 +217,7 @@ pglogical_manager_find(Oid dboid)
  * Find the manager worker for given database.
  */
 PGLogicalWorker *
-pglogical_apply_find(Oid dboid, int connid)
+pglogical_apply_find(Oid dboid, Oid subscriberid)
 {
 	int i;
 
@@ -227,7 +227,7 @@ pglogical_apply_find(Oid dboid, int connid)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
 			dboid == PGLogicalCtx->workers[i].dboid &&
-			connid == PGLogicalCtx->workers[i].worker.apply.connid)
+			subscriberid == PGLogicalCtx->workers[i].worker.apply.subscriberid)
 			return &PGLogicalCtx->workers[i];
 	}
 

@@ -13,52 +13,41 @@
 #ifndef PGLOGICAL_NODE_H
 #define PGLOGICAL_NODE_H
 
-typedef struct PGLogicalNode
+typedef struct PGLogicalProvider
 {
-	int			id;
+	Oid			id;
+	const char *name;
+} PGLogicalProvider;
+
+typedef struct PGLogicalSubscriber
+{
+	Oid			id;
 	const char *name;
 	char		status;
-	const char *dsn;
-	bool		valid;
-} PGLogicalNode;
+	const char *provider_name;
+	const char *provider_dsn;
+	List	   *replication_sets;
+} PGLogicalSubscriber;
 
-#define NODE_STATUS_INIT				'i'
-#define NODE_STATUS_SYNC_SCHEMA			's'
-#define NODE_STATUS_SYNC_DATA			'd'
-#define NODE_STATUS_SYNC_CONSTRAINTS	'o'
-#define NODE_STATUS_SLOTS				'l'
-#define NODE_STATUS_CATCHUP				'c'
-#define NODE_STATUS_CONNECT_BACK		'b'
-#define NODE_STATUS_READY				'r'
+#define SUBSCRIBER_STATUS_INIT				'i'
+#define SUBSCRIBER_STATUS_SYNC_SCHEMA		's'
+#define SUBSCRIBER_STATUS_SYNC_DATA			'd'
+#define SUBSCRIBER_STATUS_SYNC_CONSTRAINTS	'o'
+#define SUBSCRIBER_STATUS_SLOTS				'l'
+#define SUBSCRIBER_STATUS_CATCHUP			'c'
+#define SUBSCRIBER_STATUS_READY				'r'
 
-typedef struct PGLogicalConnection
-{
-	int				id;
-	PGLogicalNode  *origin;
-	PGLogicalNode  *target;
-	List		   *replication_sets;
-	bool			default_set;
-} PGLogicalConnection;
+extern void create_provider(PGLogicalProvider *provider);
+extern void drop_provider(Oid providerid);
 
-extern void create_node(PGLogicalNode *node);
-extern void alter_node(PGLogicalNode *node);
-extern void drop_node(int nodeid);
+extern void create_subscriber(PGLogicalSubscriber *subscriber);
+extern void drop_subscriber(Oid subscriberid);
 
-extern PGLogicalNode *get_node(int nodeid);
-extern PGLogicalNode *get_local_node(bool missing_ok);
-extern PGLogicalNode *get_node_by_name(const char *node_name, bool missing_ok);
-extern void set_node_status(int nodeid, char status);
-
-extern List *get_node_subscribers(int nodeid);
-extern List *get_node_publishers(int nodeid);
-
-extern int get_node_connectionid(int originid, int targetid);
-extern PGLogicalConnection *get_node_connection(int connid);
-extern PGLogicalConnection *find_node_connection(int originid, int targetid,
-												 bool missing_ok);
-extern int32 create_node_connection(int originid, int targetid,
-									List *replication_sets);
-extern void drop_node_connection(int connid);
+extern PGLogicalProvider *get_provider(Oid providerid);
+extern PGLogicalProvider *get_provider_by_name(const char *name, bool missing_ok);
+extern PGLogicalSubscriber *get_subscriber(Oid subscriberid);
+extern List *get_subscribers(void);
+extern PGLogicalSubscriber *get_subscriber_by_name(const char *name, bool missing_ok);
+extern void set_subscriber_status(int subscriberid, char status);
 
 #endif /* PGLOGICAL_NODE_H */
-

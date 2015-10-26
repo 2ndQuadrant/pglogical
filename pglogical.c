@@ -79,14 +79,14 @@ shorten_hash(const char *str, int maxlen)
  * Generate slot name (used also for origin identifier)
  */
 void
-gen_slot_name(Name slot_name, char *dbname, PGLogicalNode *origin_node,
-			  PGLogicalNode *target_node)
+gen_slot_name(Name slot_name, char *dbname, const char *provider_name,
+			  const char *subscriber_name)
 {
 	snprintf(NameStr(*slot_name), NAMEDATALEN,
 			 "pgl_%s_%s_%s",
 			 shorten_hash(dbname, 16),
-			 shorten_hash(origin_node->name, 16),
-			 shorten_hash(target_node->name, 16));
+			 shorten_hash(provider_name, 16),
+			 shorten_hash(subscriber_name, 16));
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 }
 

@@ -86,7 +86,7 @@ find_other_exec_version(const char *argv0, const char *target,
 }
 
 static void
-dump_structure(PGLogicalConnection *conn, const char *snapshot)
+dump_structure(PGLogicalSubscriber *sub, const char *snapshot)
 {
 	char		pg_dump[MAXPGPATH];
 	uint32		version;
@@ -94,18 +94,18 @@ dump_structure(PGLogicalConnection *conn, const char *snapshot)
 	StringInfoData	command;
 
 	if (find_other_exec_version(my_exec_path, "pg_dump", &version, pg_dump))
-		elog(ERROR, "bdr node init failed to find pg_dump relative to binary %s",
+		elog(ERROR, "pglogical subscriber init failed to find pg_dump relative to binary %s",
 			 my_exec_path);
 
 	if (version / 100 != PG_VERSION_NUM / 100)
-		elog(ERROR, "bdr node init found pg_dump with wrong major version %d.%d, expected %d.%d",
+		elog(ERROR, "pglogical subscriber init found pg_dump with wrong major version %d.%d, expected %d.%d",
 			 version / 100 / 100, version / 100 % 100,
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
 	appendStringInfo(&command, "%s --snapshot=\"%s\" -N %s -F c -f \"%s\" \"%s\"",
 					 pg_dump, snapshot, EXTENSION_NAME, "/tmp/pglogical.dump",
-					 conn->origin->dsn);
+					 sub->provider_dsn);
 
 	res = system(command.data);
 	if (res != 0)
@@ -115,8 +115,9 @@ dump_structure(PGLogicalConnection *conn, const char *snapshot)
 						command.data)));
 }
 
+/* TODO: switch to SPI */
 static void
-restore_structure(PGLogicalConnection *conn, const char *section)
+restore_structure(PGLogicalSubscriber *sub, const char *section)
 {
 	char		pg_restore[MAXPGPATH];
 	uint32		version;
@@ -124,18 +125,18 @@ restore_structure(PGLogicalConnection *conn, const char *section)
 	StringInfoData	command;
 
 	if (find_other_exec_version(my_exec_path, "pg_restore", &version, pg_restore))
-		elog(ERROR, "bdr node init failed to find pg_restore relative to binary %s",
+		elog(ERROR, "pglogical subscriber init failed to find pg_restore relative to binary %s",
 			 my_exec_path);
 
 	if (version / 100 != PG_VERSION_NUM / 100)
-		elog(ERROR, "bdr node init found pg_restore with wrong major version %d.%d, expected %d.%d",
+		elog(ERROR, "pglogical subscriber init found pg_restore with wrong major version %d.%d, expected %d.%d",
 			 version / 100 / 100, version / 100 % 100,
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
 	appendStringInfo(&command,
 					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
-					 pg_restore, section, conn->target->dsn,
+					 pg_restore, section, "dbname=postgres",
 					 "/tmp/pglogical.dump");
 
 	res = system(command.data);
@@ -379,7 +380,7 @@ get_copy_tables(PGconn *origin_conn, List *replication_sets)
  * replicated tables.
  */
 static void
-copy_node_data(PGLogicalConnection *conn, const char *snapshot)
+copy_node_data(PGLogicalSubscriber *sub, const char *snapshot)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
@@ -388,14 +389,15 @@ copy_node_data(PGLogicalConnection *conn, const char *snapshot)
 	PGresult   *res;
 
 	/* Connect to origin node. */
-	origin_conn = pg_connect(conn->origin->dsn, EXTENSION_NAME "_init");
+	origin_conn = pg_connect(sub->provider_dsn, EXTENSION_NAME "_init");
 	start_copy_origin_tx(origin_conn, snapshot);
 
 	/* Get tables to copy from origin node. */
-	tables = get_copy_tables(origin_conn, conn->replication_sets);
+	tables = get_copy_tables(origin_conn, sub->replication_sets);
 
 	/* Connect to target node. */
-	target_conn = pg_connect(conn->target->dsn, EXTENSION_NAME "_init");
+	/* TODO: make work */
+	target_conn = pg_connect("dbname=postgres", EXTENSION_NAME "_init");
 	start_copy_target_tx(target_conn, snapshot);
 
 	/* Copy every table. */
@@ -478,56 +480,42 @@ ensure_replication_origin(Name slot_name)
 	return origin;
 }
 
-/*
- * Create slots on other publishing nodes.
- *
- * TODO
- */
-static int
-make_other_slots(PGLogicalNode *target)
-{
-	return 0;
-}
-
 void
-pglogical_init_replica(PGLogicalConnection *conn)
+pglogical_init_replica(PGLogicalSubscriber *sub)
 {
-	PGLogicalNode *target = conn->target;
 	XLogRecPtr	lsn;
 	char		status;
 
-	status = target->status;
+	status = sub->status;
 
 	switch (status)
 	{
 		/* We can recover from crashes during these. */
-		case NODE_STATUS_INIT:
-		case NODE_STATUS_SLOTS:
-		case NODE_STATUS_CATCHUP:
-		case NODE_STATUS_CONNECT_BACK:
+		case SUBSCRIBER_STATUS_INIT:
+		case SUBSCRIBER_STATUS_CATCHUP:
 			break;
 		default:
 			elog(ERROR,
-				 "node %s initialization failed during nonrecoverable step (%c), please try the setup again",
-				 target->name, status);
+				 "subscriber %s initialization failed during nonrecoverable step (%c), please try the setup again",
+				 sub->name, status);
 			break;
 	}
 
-	if (status == NODE_STATUS_INIT)
+	if (status == SUBSCRIBER_STATUS_INIT)
 	{
 		PGconn	   *origin_conn_repl;
 		RepOriginId	originid;
 		char	   *snapshot;
 		NameData	slot_name;
 
-		elog(INFO, "initializing node");
+		elog(INFO, "initializing subscriber");
 
 		StartTransactionCommand();
 
 		gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-					  conn->origin, target);
+					  sub->provider_name, sub->name);
 
-		origin_conn_repl = pg_connect_replica(conn->origin->dsn,
+		origin_conn_repl = pg_connect_replica(sub->provider_dsn,
 											  EXTENSION_NAME "_snapshot");
 
 		snapshot = ensure_replication_slot_snapshot(origin_conn_repl, &slot_name,
@@ -537,45 +525,32 @@ pglogical_init_replica(PGLogicalConnection *conn)
 
 		CommitTransactionCommand();
 
-		set_node_status(target->id, NODE_STATUS_SYNC_SCHEMA);
-		status = NODE_STATUS_SYNC_SCHEMA;
+		set_subscriber_status(sub->id, SUBSCRIBER_STATUS_SYNC_SCHEMA);
+		status = SUBSCRIBER_STATUS_SYNC_SCHEMA;
 
 		elog(INFO, "synchronizing schemas");
 
 		/* Dump structure to temp storage. */
-		dump_structure(conn, snapshot);
+		dump_structure(sub, snapshot);
 
 		/* Restore base pre-data structure (types, tables, etc). */
-		restore_structure(conn, "pre-data");
+		restore_structure(sub, "pre-data");
 
 		/* Copy data. */
-		copy_node_data(conn, snapshot);
+		copy_node_data(sub, snapshot);
 
 		/* Restore post-data structure (indexes, constraints, etc). */
-		restore_structure(conn, "post-data");
+		restore_structure(sub, "post-data");
 
-		set_node_status(target->id, NODE_STATUS_SLOTS);
-		status = NODE_STATUS_SLOTS;
+		set_subscriber_status(sub->id, SUBSCRIBER_STATUS_CATCHUP);
+		status = SUBSCRIBER_STATUS_CATCHUP;
 	}
 
-	if (status == NODE_STATUS_SLOTS)
+	if (status == SUBSCRIBER_STATUS_CATCHUP)
 	{
-		make_other_slots(target);
-
-		set_node_status(target->id, NODE_STATUS_CATCHUP);
-		status = NODE_STATUS_CATCHUP;
-	}
-
-	if (status == NODE_STATUS_CATCHUP)
-	{
-		PGconn	   *origin_conn;
-
-		status = NODE_STATUS_READY;
-		set_node_status(target->id, status);
-
-		origin_conn = pg_connect(conn->origin->dsn, EXTENSION_NAME "_init");
-		set_remote_node_status(origin_conn, target->name, status);
-		PQfinish(origin_conn);
+		/* Nothing to do here yet. */
+		status = SUBSCRIBER_STATUS_READY;
+		set_subscriber_status(sub->id, status);
 
 		elog(INFO, "finished init_replica, ready to enter normal replication");
 	}

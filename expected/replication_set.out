@@ -11,7 +11,7 @@ CREATE UNLOGGED TABLE public.test_unlogged(id int primary key);
 $$);
  replicate_ddl_command 
 -----------------------
- 
+ t
 (1 row)
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
@@ -47,7 +47,7 @@ SELECT * FROM pglogical.create_replication_set('repset_replicate_all');
 SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_update := false, replicate_delete := false);
  create_replication_set 
 ------------------------
-              -43812400
+             4251154896
 (1 row)
 
 SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_delete := false, replicate_truncate := false);
@@ -60,25 +60,25 @@ SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replic
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_publicschema');
  replication_set_add_table 
 ---------------------------
- 
+ t
 (1 row)
 
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_instrunc', 'normalschema.test_normalschema');
  replication_set_add_table 
 ---------------------------
- 
+ t
 (1 row)
 
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', 'normalschema.test_normalschema');
  replication_set_add_table 
 ---------------------------
- 
+ t
 (1 row)
 
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', '"strange.schema-IS".test_strangeschema');
  replication_set_add_table 
 ---------------------------
- 
+ t
 (1 row)
 
 -- should fail
@@ -92,7 +92,7 @@ HINT:  Add a PRIMARY KEY to the table
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_instrunc', 'test_nopkey');
  replication_set_add_table 
 ---------------------------
- 
+ t
 (1 row)
 
 -- fail again

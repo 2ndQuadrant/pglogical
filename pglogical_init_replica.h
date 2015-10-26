@@ -13,7 +13,7 @@
 #ifndef PGLOGICAL_INIT_REPLICA_H
 #define PGLOGICAL_INIT_REPLICA_H
 
-extern void pglogical_init_replica(PGLogicalConnection *conn);
+extern void pglogical_init_replica(PGLogicalSubscriber *sub);
 
 #endif /* PGLOGICAL_INIT_REPLICA_H */
 

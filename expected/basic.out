@@ -10,7 +10,7 @@ SELECT pglogical.replicate_ddl_command($$
 $$);
  replicate_ddl_command 
 -----------------------
- 
+ t
 (1 row)
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
@@ -182,6 +182,6 @@ SELECT pglogical.replicate_ddl_command($$
 $$);
  replicate_ddl_command 
 -----------------------
- 
+ t
 (1 row)
 

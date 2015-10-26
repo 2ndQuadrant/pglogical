@@ -33,7 +33,7 @@ typedef struct PGLogicalWorker {
 	{
 		struct
 		{
-			int     connid;	/* Connection id for apply worker. */
+			Oid     subscriberid;	/* Subscriber id for apply worker. */
 		} apply;
 	} worker;
 
@@ -67,6 +67,6 @@ extern void pglogical_worker_attach(int slot);
 extern void pglogical_worker_detach(bool signal_supervisor);
 
 extern PGLogicalWorker *pglogical_manager_find(Oid dboid);
-extern PGLogicalWorker *pglogical_apply_find(Oid dboid, int connid);
+extern PGLogicalWorker *pglogical_apply_find(Oid dboid, Oid subscriberid);
 
 #endif /* PGLOGICAL_WORKER_H */

@@ -318,8 +318,8 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
  * Resolve conflict based on commit timestamp.
  */
 static bool
-conflict_resolve_by_timestamp(RepOriginId local_node_id,
-							  RepOriginId remote_node_id,
+conflict_resolve_by_timestamp(RepOriginId local_origin_id,
+							  RepOriginId remote_origin_id,
 							  TimestampTz local_ts,
 							  TimestampTz remote_ts,
 							  bool last_update_wins,

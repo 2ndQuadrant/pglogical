@@ -48,7 +48,7 @@
 
 typedef struct RepSetTuple
 {
-	int32		id;
+	Oid			id;
 	NameData	name;
 	bool		replicate_insert;
 	bool		replicate_update;
@@ -101,8 +101,8 @@ get_replication_set(int setid)
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
 				Anum_repset_id,
-				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum(setid));
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(setid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
@@ -331,12 +331,12 @@ get_repset_relation(Oid reloid, List *replication_sets)
 }
 
 bool
-relation_is_replicated(Relation rel, PGLogicalConnection *conn,
+relation_is_replicated(Relation rel, List *replication_sets,
 					   PGLogicalChangeType change_type)
 {
 	PGLogicalRepSetRelation *r;
 
-	r = get_repset_relation(RelationGetRelid(rel), conn->replication_sets);
+	r = get_repset_relation(RelationGetRelid(rel), replication_sets);
 
 	switch (change_type)
 	{
@@ -375,13 +375,13 @@ create_replication_set(PGLogicalRepSet *repset)
 				(errcode(ERRCODE_INVALID_NAME),
 				 errmsg("replication set name cannot be empty")));
 
-	if (get_node_by_name(repset->name, true) != NULL)
+	if (get_replication_set_by_name(repset->name, true) != NULL)
 		elog(ERROR, "replication set %s already exists", repset->name);
 
 	/* Generate new id unless one was already specified. */
 	if (repset->id == InvalidOid)
-		repset->id = DatumGetInt32(hash_any((const unsigned char *) repset->name,
-											strlen(repset->name)));
+		repset->id = DatumGetUInt32(hash_any((const unsigned char *) repset->name,
+											 strlen(repset->name)));
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -390,7 +390,7 @@ create_replication_set(PGLogicalRepSet *repset)
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_repset_id - 1] = Int32GetDatum(repset->id);
+	values[Anum_repset_id - 1] = ObjectIdGetDatum(repset->id);
 	namestrcpy(&repset_name, repset->name);
 	values[Anum_repset_name - 1] = NameGetDatum(&repset_name);
 	values[Anum_repset_replicate_insert - 1] =
@@ -436,8 +436,8 @@ drop_replication_set(int setid)
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
 				Anum_repset_id,
-				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum(setid));
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(setid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
@@ -505,7 +505,7 @@ replication_set_add_table(int setid, Oid reloid)
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_repset_table_setid - 1] = Int32GetDatum(repset->id);
+	values[Anum_repset_table_setid - 1] = ObjectIdGetDatum(repset->id);
 	values[Anum_repset_table_reloid - 1] = reloid;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
@@ -541,12 +541,12 @@ replication_set_remove_table(int setid, Oid reloid)
 	/* Search for the record. */
 	ScanKeyInit(&key[0],
 				Anum_repset_table_setid,
-				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum(setid));
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(setid));
 	ScanKeyInit(&key[1],
 				Anum_repset_table_reloid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				Int32GetDatum(reloid));
+				ObjectIdGetDatum(reloid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
