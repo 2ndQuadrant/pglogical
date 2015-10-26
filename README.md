@@ -77,9 +77,11 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 
   Parameters:
   - `subscriner_name` - name of the subscriber, must be unique
+  - `local_dsn` - connection string to the subscriber, this is used for initial
+    syncrhonization and administration tasks
   - `provider_name` - name of the provider to which this subscriber will be
      connected
-  - `provider_dsn` - connection string to a provider node
+  - `provider_dsn` - connection string to a provider
   - `replication_sets` - array of replication sets to subscribe to, these must
     already exist, default is "default"
   - `synchronize_schema` - specifies is to synchronize schema from provider to
