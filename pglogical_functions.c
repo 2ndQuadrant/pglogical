@@ -169,13 +169,15 @@ Datum
 pglogical_create_subscriber(PG_FUNCTION_ARGS)
 {
 	PGLogicalSubscriber		sub;
-//	bool			sync_schema = PG_GET_BOOL(4);
-//	bool			sync_data = PG_GET_BOOL(5);
+//	bool			sync_schema = PG_GET_BOOL(5);
+//	bool			sync_data = PG_GET_BOOL(6);
 
+	sub.id = InvalidOid;
 	sub.name = NameStr(*PG_GETARG_NAME(0));
-	sub.provider_name = NameStr(*PG_GETARG_NAME(1));
-	sub.provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(2));
-	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(3));
+	sub.local_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	sub.provider_name = NameStr(*PG_GETARG_NAME(2));
+	sub.provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(3));
+	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(4));
 
 	sub.status = SUBSCRIBER_STATUS_INIT;
 

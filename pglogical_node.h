@@ -26,6 +26,7 @@ typedef struct PGLogicalSubscriber
 	char		status;
 	const char *provider_name;
 	const char *provider_dsn;
+	const char *local_dsn;
 	List	   *replication_sets;
 } PGLogicalSubscriber;
 

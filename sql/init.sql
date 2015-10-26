@@ -29,7 +29,7 @@ SELECT * FROM pglogical.create_provider('test_provider');
 \c postgres
 CREATE EXTENSION pglogical;
 
-SELECT * FROM pglogical.create_subscriber('test_subscriber', 'test_provider', 'dbname=regression');
+SELECT * FROM pglogical.create_subscriber('test_subscriber', 'dbname=postgres', 'test_provider', 'dbname=regression');
 
 SELECT pglogical.wait_for_subscriber_ready('test_subscriber');
 

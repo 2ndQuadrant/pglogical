@@ -136,7 +136,7 @@ restore_structure(PGLogicalSubscriber *sub, const char *section)
 	initStringInfo(&command);
 	appendStringInfo(&command,
 					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
-					 pg_restore, section, "dbname=postgres",
+					 pg_restore, section, sub->local_dsn,
 					 "/tmp/pglogical.dump");
 
 	res = system(command.data);
@@ -247,6 +247,11 @@ start_copy_target_tx(PGconn *conn, const char *snapshot)
 	PQclear(res);
 }
 
+/*
+ * COPY table.
+ *
+ * TODO: move to separate worker and use COPY API instead of libpq connection.
+ */
 static void
 copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				const char *schemaname, const char *relname)
@@ -397,7 +402,7 @@ copy_node_data(PGLogicalSubscriber *sub, const char *snapshot)
 
 	/* Connect to target node. */
 	/* TODO: make work */
-	target_conn = pg_connect("dbname=postgres", EXTENSION_NAME "_init");
+	target_conn = pg_connect(sub->local_dsn, EXTENSION_NAME "_init");
 	start_copy_target_tx(target_conn, snapshot);
 
 	/* Copy every table. */

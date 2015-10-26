@@ -16,12 +16,13 @@ CREATE TABLE pglogical.subscriber (
 	subscriber_status "char" NOT NULL,
 	subscriber_provider_name name NOT NULL,
 	subscriber_provider_dsn text NOT NULL,
+	subscriber_local_dsn text NOT NULL,
 	subscriber_replication_sets text[],
 	CHECK (subscriber_status IN ('i', 's', 'd', 'c', 'u', 'r')),
 	UNIQUE (subscriber_name)
 );
 
-CREATE FUNCTION pglogical.create_subscriber(subscriber_name name, provider_name name, provider_dsn text,
+CREATE FUNCTION pglogical.create_subscriber(subscriber_name name, local_dsn text, provider_name name, provider_dsn text,
 	replication_sets text[] = '{default}', synchronize_schema boolean = true, syncrhonize_data boolean = true)
 RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscriber';
 

@@ -48,15 +48,17 @@ typedef struct SubscriberTuple
 	char		subscriber_status;
 	NameData	subscriber_provider_name;
 	text		subscriber_provider_dsn;
+	text		subscriber_local_dsn;
 } SubscriberTuple;
 
-#define Natts_subscriber					6
+#define Natts_subscriber					7
 #define Anum_subscriber_id					1
 #define Anum_subscriber_name				2
 #define Anum_subscriber_status				3
 #define Anum_subscriber_provider_name		4
 #define Anum_subscriber_provider_dsn		5
-#define Anum_subscriber_replication_sets	6
+#define Anum_subscriber_local_dsn			6
+#define Anum_subscriber_replication_sets	7
 
 typedef struct ProviderTuple
 {
@@ -284,10 +286,12 @@ create_subscriber(PGLogicalSubscriber *subscriber)
 	values[Anum_subscriber_name - 1] = NameGetDatum(&subscriber_name);
 	values[Anum_subscriber_status - 1] = CharGetDatum(subscriber->status);
 	namestrcpy(&subscriber_provider_name, subscriber->provider_name);
-	values[Anum_subscriber_provider_dsn - 1] =
+	values[Anum_subscriber_provider_name - 1] =
 		NameGetDatum(&subscriber_provider_name);
 	values[Anum_subscriber_provider_dsn - 1] =
 		CStringGetTextDatum(subscriber->provider_dsn);
+	values[Anum_subscriber_local_dsn - 1] =
+		CStringGetTextDatum(subscriber->local_dsn);
 
 	if (list_length(subscriber->replication_sets) > 0)
 		values[Anum_subscriber_replication_sets - 1] =
@@ -389,9 +393,13 @@ get_subscriber(Oid subscriberid)
 	sub->status = subtup->subscriber_status;
 	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
 	sub->provider_dsn =
-		pstrdup(TextDatumGetCString(fastgetattr(tuple,
-												Anum_subscriber_provider_dsn,
-												desc, &isnull)));
+		pstrdup(TextDatumGetCString(heap_getattr(tuple,
+												 Anum_subscriber_provider_dsn,
+												 desc, &isnull)));
+	sub->local_dsn =
+		pstrdup(TextDatumGetCString(heap_getattr(tuple,
+												 Anum_subscriber_local_dsn,
+												 desc, &isnull)));
 	/* Get replication sets. */
 	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
 	if (isnull)
@@ -460,9 +468,14 @@ get_subscriber_by_name(const char *name, bool missing_ok)
 	sub->status = subtup->subscriber_status;
 	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
 	sub->provider_dsn =
-		pstrdup(TextDatumGetCString(fastgetattr(tuple,
-												Anum_subscriber_provider_dsn,
-												desc, &isnull)));
+		pstrdup(TextDatumGetCString(heap_getattr(tuple,
+												 Anum_subscriber_provider_dsn,
+												 desc, &isnull)));
+	sub->local_dsn =
+		pstrdup(TextDatumGetCString(heap_getattr(tuple,
+												 Anum_subscriber_local_dsn,
+												 desc, &isnull)));
+
 	/* Get replication sets. */
 	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
 	if (isnull)
@@ -514,9 +527,14 @@ get_subscribers(void)
 		sub->status = subtup->subscriber_status;
 		sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
 		sub->provider_dsn =
-			pstrdup(TextDatumGetCString(fastgetattr(tuple,
-													Anum_subscriber_provider_dsn,
-													desc, &isnull)));
+			pstrdup(TextDatumGetCString(heap_getattr(tuple,
+													 Anum_subscriber_provider_dsn,
+													 desc, &isnull)));
+		sub->local_dsn =
+			pstrdup(TextDatumGetCString(heap_getattr(tuple,
+													 Anum_subscriber_local_dsn,
+													 desc, &isnull)));
+
 		/* Get replication sets. */
 		d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
 		if (isnull)
