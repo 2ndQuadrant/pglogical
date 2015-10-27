@@ -72,7 +72,7 @@ class ReplicationMessage(object):
             elif typ == 'u':
                 cols.append(UnchangedField())
             else:
-                assert typ in ('b','s','t') #typ should be 'b'inary, 's'end/recv, 't'ext
+                assert typ in ('i','b','t') #typ should be 'i'nternal-binary, 'b'inary, 't'ext
                 datalen = struct.unpack("!I", msg.read(4))[0]
                 cols.append(msg.read(datalen))
 

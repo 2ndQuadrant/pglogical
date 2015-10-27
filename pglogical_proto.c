@@ -365,8 +365,8 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 		switch (transfer_type)
 		{
-			case 'b':
-				pq_sendbyte(out, 'b');	/* binary data follows */
+			case 'i':
+				pq_sendbyte(out, 'i');	/* internal-format binary data follows */
 
 				/* pass by value */
 				if (att->attbyval)
@@ -411,12 +411,12 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 				break;
 
-			case 's':
+			case 'b':
 				{
 					bytea	   *outputbytes;
 					int			len;
 
-					pq_sendbyte(out, 's');	/* 'send' data follows */
+					pq_sendbyte(out, 'b');	/* binary send/recv data follows */
 
 					outputbytes = OidSendFunctionCall(typclass->typsend,
 													  values[i]);
@@ -464,7 +464,7 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 		att->atttypid < FirstNormalObjectId &&
 		typclass->typelem == InvalidOid)
 	{
-		return 'b';
+		return 'i';
 	}
 	/*
 	 * Use send/recv, if allowed, if the type is plain or builtin.
@@ -477,7 +477,7 @@ decide_datum_transfer(Form_pg_attribute att, Form_pg_type typclass,
 			 (att->atttypid < FirstNormalObjectId || typclass->typtype != 'c') &&
 			 (att->atttypid < FirstNormalObjectId || typclass->typelem == InvalidOid))
 	{
-		return 's';
+		return 'b';
 	}
 
 	return 't';
