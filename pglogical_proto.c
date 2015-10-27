@@ -276,7 +276,7 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 			case 'u': /* unchanged column */
 				tuple->values[attid] = 0xfbadbeef; /* make bad usage more obvious */
 				break;
-			case 'b': /* binary format */
+			case 'i': /* internal binary format */
 				tuple->nulls[attid] = false;
 				tuple->changed[attid] = true;
 
@@ -289,7 +289,7 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 				else
 					tuple->values[attid] = PointerGetDatum(data);
 				break;
-			case 's': /* send/recv format */
+			case 'b': /* binary send/recv format */
 				{
 					Oid typreceive;
 					Oid typioparam;
