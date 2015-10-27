@@ -497,6 +497,7 @@ pglogical_init_replica(PGLogicalSubscriber *sub)
 	{
 		/* We can recover from crashes during these. */
 		case SUBSCRIBER_STATUS_INIT:
+		case SUBSCRIBER_STATUS_SYNC_SCHEMA:
 		case SUBSCRIBER_STATUS_CATCHUP:
 			break;
 		default:
@@ -530,8 +531,8 @@ pglogical_init_replica(PGLogicalSubscriber *sub)
 
 		CommitTransactionCommand();
 
-		set_subscriber_status(sub->id, SUBSCRIBER_STATUS_SYNC_SCHEMA);
 		status = SUBSCRIBER_STATUS_SYNC_SCHEMA;
+		set_subscriber_status(sub->id, status);
 
 		elog(INFO, "synchronizing schemas");
 
@@ -547,8 +548,8 @@ pglogical_init_replica(PGLogicalSubscriber *sub)
 		/* Restore post-data structure (indexes, constraints, etc). */
 		restore_structure(sub, "post-data");
 
-		set_subscriber_status(sub->id, SUBSCRIBER_STATUS_CATCHUP);
 		status = SUBSCRIBER_STATUS_CATCHUP;
+		set_subscriber_status(sub->id, status);
 	}
 
 	if (status == SUBSCRIBER_STATUS_CATCHUP)
