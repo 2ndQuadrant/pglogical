@@ -330,6 +330,27 @@ get_repset_relation(Oid reloid, List *replication_sets)
 	return entry;
 }
 
+PGLogicalChangeType
+to_pglogical_changetype(enum ReorderBufferChangeType change)
+{
+	/*
+	 * Protect against changes in reorderbuffer change type definition or
+	 * pglogical change type definition.
+	 */
+	switch (change)
+	{
+		case REORDER_BUFFER_CHANGE_INSERT:
+			return PGLogicalChangeInsert;
+		case REORDER_BUFFER_CHANGE_UPDATE:
+			return PGLogicalChangeUpdate;
+		case REORDER_BUFFER_CHANGE_DELETE:
+			return PGLogicalChangeDelete;
+		default:
+			elog(ERROR, "Unhandled reorder buffer change type %d", change);
+			return 0; /* shut compiler up */
+	}
+}
+
 bool
 relation_is_replicated(Relation rel, List *replication_sets,
 					   PGLogicalChangeType change_type)

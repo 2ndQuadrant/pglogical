@@ -62,5 +62,8 @@ extern void drop_replication_set(int setid);
 extern void replication_set_add_table(int setid, Oid reloid);
 extern void replication_set_remove_table(int setid, Oid reloid);
 
+extern PGLogicalChangeType to_pglogical_changetype(
+		enum ReorderBufferChangeType change);
+
 #endif /* PGLOGICAL_REPSET_H */
 

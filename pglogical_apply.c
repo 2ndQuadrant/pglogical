@@ -934,6 +934,37 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		error_context_stack = errcallback.previous;
 }
 
+/*
+ * Given a List of PGLogicalRepSet, return the names of the
+ * sets as a comma-separated list, quoting identifiers
+ * if needed.
+ *
+ * This is essentially the reverse of SplitIdentifierString
+ * but with a PGLogicalRepSet input.
+ *
+ * The caller should free the result.
+ */
+static char*
+repsets_to_identifierstr(List *repsets)
+{
+	ListCell *lc;
+	StringInfoData repsetnames;
+	bool first = true;
+
+	initStringInfo(&repsetnames);
+
+	foreach (lc, repsets)
+	{
+		PGLogicalRepSet *rs;
+		if (!first)
+			appendStringInfoChar(&repsetnames, ',');
+		rs = (PGLogicalRepSet*)lfirst(lc);
+		appendStringInfoString(&repsetnames, quote_identifier(rs->name));
+	}
+
+	return repsetnames.data;
+}
+
 void
 pglogical_apply_main(Datum main_arg)
 {
@@ -947,6 +978,7 @@ pglogical_apply_main(Datum main_arg)
 	XLogRecPtr		origin_startpos;
 	NameData		slot_name;
 	PGLogicalSubscriber	   *sub;
+	char		   *repsets;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
@@ -1046,7 +1078,17 @@ pglogical_apply_main(Datum main_arg)
 #endif
 					 );
 
-	/* TODO:HOOKS */
+	appendStringInfoString(&command, ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
+
+	/* TODO: Allow forwarding mode control. Currently hardcoded. */
+	appendStringInfo(&command, ", \"pglogical.forward_origin\" '%s'", "all");
+
+	/* Send the replication set names we want to the upstream */
+	appendStringInfoString(&command, ", \"pglogical.replication_set_names\" ");
+	repsets = repsets_to_identifierstr(sub->replication_sets);
+	appendStringInfoString(&command, quote_literal_cstr(repsets));
+	pfree(repsets);
+	repsets=NULL;
 
 	appendStringInfoChar(&command, ')');
 

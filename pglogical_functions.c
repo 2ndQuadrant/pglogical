@@ -51,10 +51,6 @@
 
 #include "pglogical.h"
 
-/* Filter hooks for output plugin. */
-PG_FUNCTION_INFO_V1(pglogical_origin_filter);
-PG_FUNCTION_INFO_V1(pglogical_table_filter);
-
 /* Node management. */
 PG_FUNCTION_INFO_V1(pglogical_create_provider);
 PG_FUNCTION_INFO_V1(pglogical_drop_provider);
@@ -72,60 +68,6 @@ PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
 PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
 PG_FUNCTION_INFO_V1(pglogical_queue_truncate);
 PG_FUNCTION_INFO_V1(pglogical_truncate_trigger_add);
-
-/*
- * Filter based on origin, currently we only support all or nothing only.
- */
-Datum
-pglogical_origin_filter(PG_FUNCTION_ARGS)
-{
-	const char *forward_origin = TextDatumGetCString(PG_GETARG_DATUM(0));
-
-	PG_RETURN_BOOL(strcmp(forward_origin, REPLICATION_ORIGIN_ALL) != 0);
-}
-
-/*
- * Filter based on change_type on a relation.
- */
-Datum
-pglogical_table_filter(PG_FUNCTION_ARGS)
-{
-	char	   *replication_set_names = TextDatumGetCString(PG_GETARG_DATUM(0));
-	Oid			relid = PG_GETARG_OID(1);
-	char		change_type_in = PG_GETARG_CHAR(2);
-	List	   *replication_sets;
-	Relation	rel;
-	PGLogicalChangeType	change_type;
-	bool		res;
-
-	if (relid == get_queue_table_oid())
-		PG_RETURN_BOOL(false);
-
-	if (!SplitIdentifierString(replication_set_names, ',', &replication_sets))
-		PG_RETURN_BOOL(false);
-
-	switch (change_type_in)
-	{
-		case 'I':
-			change_type = REORDER_BUFFER_CHANGE_INSERT;
-			break;
-		case 'U':
-			change_type = REORDER_BUFFER_CHANGE_UPDATE;
-			break;
-		case 'D':
-			change_type = REORDER_BUFFER_CHANGE_DELETE;
-			break;
-		default:
-			elog(ERROR, "unknown change type %c", change_type_in);
-			change_type = 0;      /* silence compiler */
-	}
-
-	rel = relation_open(relid, NoLock);
-	res = relation_is_replicated(rel, replication_sets, change_type);
-	relation_close(rel, NoLock);
-
-	PG_RETURN_BOOL(!res);
-}
 
 /*
  * Create new provider

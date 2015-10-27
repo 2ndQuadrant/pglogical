@@ -125,4 +125,6 @@ ON ddl_command_end
 WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
 EXECUTE PROCEDURE pglogical.truncate_trigger_add();
 
-
+CREATE FUNCTION pglogical.pglogical_hooks_setup(internal)
+RETURNS void
+STABLE LANGUAGE c AS 'MODULE_PATHNAME';
