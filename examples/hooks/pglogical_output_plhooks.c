@@ -53,8 +53,9 @@ void
 pglo_plhooks_startup(struct PGLogicalStartupHookArgs *startup_args)
 {
 	PLHPrivate *private;
-	bool tx_started;
-	MemoryContext hooks_context = CurrentMemoryContext;
+
+	/* pglogical_output promises to call us in a tx */
+	Assert(IsTransactionState());
 
 	/* Allocated in hook memory context, scoped to the logical decoding session: */
 	startup_args->private_data = private = (PLHPrivate*)palloc(sizeof(PLHPrivate));
@@ -65,13 +66,6 @@ pglo_plhooks_startup(struct PGLogicalStartupHookArgs *startup_args)
 	private->txn_filter_hook = InvalidOid;
 	/* client_arg is the empty string when not specified to simplify function calls */
 	private->client_arg = "";
-
-	if (!IsTransactionState())
-	{
-		tx_started = true;
-		StartTransactionCommand();
-		MemoryContextSwitchTo(hooks_context);
-	}
 
 	read_parameters(private, startup_args->in_params);
 
@@ -84,12 +78,6 @@ pglo_plhooks_startup(struct PGLogicalStartupHookArgs *startup_args)
 
 	if (private->startup_hook != InvalidOid)
 		exec_user_startup_hook(private, startup_args->in_params, &startup_args->out_params);
-
-	if (tx_started)
-	{
-		MemoryContextSwitchTo(TopTransactionContext);
-		CommitTransactionCommand();
-	}
 }
 
 void

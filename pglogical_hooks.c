@@ -122,15 +122,26 @@ call_startup_hook(PGLogicalOutputData *data, List *plugin_params)
 
 	if (data->hooks.startup_hook != NULL)
 	{
+		bool tx_started = false;
+
 		args.private_data = data->hooks.hooks_private_data;
 		args.in_params = plugin_params;
 		args.out_params = NIL;
 
 		elog(DEBUG3, "calling pglogical startup hook");
 
+		if (!IsTransactionState())
+		{
+			tx_started = true;
+			StartTransactionCommand();
+		}
+
 		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
 		(void) (*data->hooks.startup_hook)(&args);
 		MemoryContextSwitchTo(old_ctxt);
+
+		if (tx_started)
+			CommitTransactionCommand();
 
 		data->extra_startup_params = args.out_params;
 		/* The startup hook might change the private data seg */
