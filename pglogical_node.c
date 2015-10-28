@@ -156,6 +156,17 @@ drop_provider(Oid providerid)
 	pglogical_connections_changed();
 }
 
+static PGLogicalProvider *
+provider_fromtuple(HeapTuple tuple)
+{
+	ProviderTuple *providertup = (ProviderTuple *) GETSTRUCT(tuple);
+	PGLogicalProvider *provider
+		= (PGLogicalProvider *) palloc(sizeof(PGLogicalProvider));
+	provider->id = providertup->provider_id;
+	provider->name = pstrdup(NameStr(providertup->provider_name));
+	return provider;
+}
+
 /*
  * Load the info for specific provider.
  */
@@ -163,7 +174,6 @@ PGLogicalProvider *
 get_provider(Oid providerid)
 {
 	PGLogicalProvider  *provider;
-	ProviderTuple	   *providertup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
@@ -185,12 +195,7 @@ get_provider(Oid providerid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "provider %u not found", providerid);
 
-	providertup = (ProviderTuple *) GETSTRUCT(tuple);
-
-	/* Create and fill the node struct. */
-	provider = (PGLogicalProvider *) palloc(sizeof(PGLogicalProvider));
-	provider->id = providertup->provider_id;
-	provider->name = pstrdup(NameStr(providertup->provider_name));
+	provider = provider_fromtuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -205,7 +210,6 @@ PGLogicalProvider *
 get_provider_by_name(const char *name, bool missing_ok)
 {
 	PGLogicalProvider  *provider;
-	ProviderTuple	   *providertup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
@@ -236,12 +240,7 @@ get_provider_by_name(const char *name, bool missing_ok)
 		elog(ERROR, "provider %s not found", name);
 	}
 
-	providertup = (ProviderTuple *) GETSTRUCT(tuple);
-
-	/* Create and fill the provider struct. */
-	provider = (PGLogicalProvider *) palloc(sizeof(PGLogicalProvider));
-	provider->id = providertup->provider_id;
-	provider->name = pstrdup(NameStr(providertup->provider_name));
+	provider = provider_fromtuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -351,6 +350,36 @@ drop_subscriber(Oid subscriberid)
 	pglogical_connections_changed();
 }
 
+
+static PGLogicalSubscriber*
+subscriber_fromtuple(HeapTuple tuple, TupleDesc desc)
+{
+	SubscriberTuple *subtup = (SubscriberTuple *) GETSTRUCT(tuple);
+	Datum d;
+	bool isnull;
+
+	PGLogicalSubscriber *sub =
+		(PGLogicalSubscriber *) palloc(sizeof(PGLogicalSubscriber));
+	sub->id = subtup->subscriber_id;
+	sub->name = pstrdup(NameStr(subtup->subscriber_name));
+	sub->status = subtup->subscriber_status;
+	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
+	sub->provider_dsn = pstrdup(text_to_cstring(&subtup->subscriber_provider_dsn));
+	sub->local_dsn = pstrdup(text_to_cstring(&subtup->subscriber_local_dsn));
+	/* Get replication sets. */
+	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
+	if (isnull)
+		sub->replication_sets = NIL;
+	else
+	{
+		List		   *repset_names;
+		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
+		sub->replication_sets = get_replication_sets(repset_names, true);
+	}
+
+	return sub;
+}
+
 /*
  * Load the info for specific subscriber.
  */
@@ -358,15 +387,12 @@ PGLogicalSubscriber *
 get_subscriber(Oid subscriberid)
 {
 	PGLogicalSubscriber    *sub;
-	SubscriberTuple		   *subtup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	TupleDesc		desc;
 	ScanKeyData		key[1];
-	bool			isnull;
-	Datum			d;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -384,32 +410,7 @@ get_subscriber(Oid subscriberid)
 		elog(ERROR, "subscriber %u not found", subscriberid);
 
 	desc = RelationGetDescr(rel);
-	subtup = (SubscriberTuple *) GETSTRUCT(tuple);
-
-	/* Create and fill the node struct. */
-	sub = (PGLogicalSubscriber *) palloc(sizeof(PGLogicalSubscriber));
-	sub->id = subtup->subscriber_id;
-	sub->name = pstrdup(NameStr(subtup->subscriber_name));
-	sub->status = subtup->subscriber_status;
-	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
-	sub->provider_dsn =
-		pstrdup(TextDatumGetCString(heap_getattr(tuple,
-												 Anum_subscriber_provider_dsn,
-												 desc, &isnull)));
-	sub->local_dsn =
-		pstrdup(TextDatumGetCString(heap_getattr(tuple,
-												 Anum_subscriber_local_dsn,
-												 desc, &isnull)));
-	/* Get replication sets. */
-	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
-	if (isnull)
-		sub->replication_sets = NIL;
-	else
-	{
-		List		   *repset_names;
-		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-		sub->replication_sets = get_replication_sets(repset_names);
-	}
+	sub = subscriber_fromtuple(tuple, desc);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -424,15 +425,12 @@ PGLogicalSubscriber *
 get_subscriber_by_name(const char *name, bool missing_ok)
 {
 	PGLogicalSubscriber    *sub;
-	SubscriberTuple		   *subtup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	TupleDesc		desc;
 	ScanKeyData		key[1];
-	bool			isnull;
-	Datum			d;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -459,33 +457,7 @@ get_subscriber_by_name(const char *name, bool missing_ok)
 	}
 
 	desc = RelationGetDescr(rel);
-	subtup = (SubscriberTuple *) GETSTRUCT(tuple);
-
-	/* Create and fill the node struct. */
-	sub = (PGLogicalSubscriber *) palloc(sizeof(PGLogicalSubscriber));
-	sub->id = subtup->subscriber_id;
-	sub->name = pstrdup(NameStr(subtup->subscriber_name));
-	sub->status = subtup->subscriber_status;
-	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
-	sub->provider_dsn =
-		pstrdup(TextDatumGetCString(heap_getattr(tuple,
-												 Anum_subscriber_provider_dsn,
-												 desc, &isnull)));
-	sub->local_dsn =
-		pstrdup(TextDatumGetCString(heap_getattr(tuple,
-												 Anum_subscriber_local_dsn,
-												 desc, &isnull)));
-
-	/* Get replication sets. */
-	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
-	if (isnull)
-		sub->replication_sets = NIL;
-	else
-	{
-		List		   *repset_names;
-		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-		sub->replication_sets = get_replication_sets(repset_names);
-	}
+	sub = subscriber_fromtuple(tuple, desc);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -500,14 +472,11 @@ List *
 get_subscribers(void)
 {
 	PGLogicalSubscriber    *sub;
-	SubscriberTuple		   *subtup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	TupleDesc		desc;
-	bool			isnull;
-	Datum			d;
 	List		   *res = NIL;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
@@ -518,33 +487,7 @@ get_subscribers(void)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		subtup = (SubscriberTuple *) GETSTRUCT(tuple);
-
-		/* Create and fill the node struct. */
-		sub = (PGLogicalSubscriber *) palloc(sizeof(PGLogicalSubscriber));
-		sub->id = subtup->subscriber_id;
-		sub->name = pstrdup(NameStr(subtup->subscriber_name));
-		sub->status = subtup->subscriber_status;
-		sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
-		sub->provider_dsn =
-			pstrdup(TextDatumGetCString(heap_getattr(tuple,
-													 Anum_subscriber_provider_dsn,
-													 desc, &isnull)));
-		sub->local_dsn =
-			pstrdup(TextDatumGetCString(heap_getattr(tuple,
-													 Anum_subscriber_local_dsn,
-													 desc, &isnull)));
-
-		/* Get replication sets. */
-		d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
-		if (isnull)
-			sub->replication_sets = NIL;
-		else
-		{
-			List		   *repset_names;
-			repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-			sub->replication_sets = get_replication_sets(repset_names);
-		}
+		sub = subscriber_fromtuple(tuple, desc);
 
 		res = lappend(res, sub);
 	}

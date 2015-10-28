@@ -81,6 +81,21 @@ check_for_reserved_replication_set(setid)
 				 errmsg("replication set 'all' is reserved and cannot be manipulated")));
 }
 
+static PGLogicalRepSet*
+repset_fromtuple(HeapTuple tuple)
+
+{
+	RepSetTuple *repsettup = (RepSetTuple *) GETSTRUCT(tuple);
+	PGLogicalRepSet *repset = (PGLogicalRepSet *)palloc(sizeof(PGLogicalRepSet));
+	repset->id = repsettup->id;
+	repset->name = pstrdup(NameStr(repsettup->name));
+	repset->replicate_insert = repsettup->replicate_insert;
+	repset->replicate_update = repsettup->replicate_update;
+	repset->replicate_delete = repsettup->replicate_delete;
+	repset->replicate_truncate = repsettup->replicate_truncate;
+	return repset;
+}
+
 /*
  * Read the replication set.
  */
@@ -88,12 +103,13 @@ PGLogicalRepSet *
 get_replication_set(int setid)
 {
 	PGLogicalRepSet    *repset;
-	RepSetTuple		   *repsettup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
+
+	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -110,17 +126,7 @@ get_replication_set(int setid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "replication set %d not found", setid);
 
-	repsettup = (RepSetTuple *) GETSTRUCT(tuple);
-
-	/* Create and fill the replication set struct. */
-	repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
-	repset->id = setid;
-
-	repset->name = pstrdup(NameStr(repsettup->name));
-	repset->replicate_insert = repsettup->replicate_insert;
-	repset->replicate_update = repsettup->replicate_update;
-	repset->replicate_delete = repsettup->replicate_delete;
-	repset->replicate_truncate = repsettup->replicate_truncate;
+	repset = repset_fromtuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -135,12 +141,13 @@ PGLogicalRepSet *
 get_replication_set_by_name(const char *setname, bool missing_ok)
 {
 	PGLogicalRepSet    *repset;
-	RepSetTuple		   *repsettup;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
+
+	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -166,17 +173,7 @@ get_replication_set_by_name(const char *setname, bool missing_ok)
 		elog(ERROR, "replication set %s not found", setname);
 	}
 
-	repsettup = (RepSetTuple *) GETSTRUCT(tuple);
-
-	/* Create and fill the replication set struct. */
-	repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
-
-	repset->id = repsettup->id;
-	repset->name = pstrdup(NameStr(repsettup->name));
-	repset->replicate_insert = repsettup->replicate_insert;
-	repset->replicate_update = repsettup->replicate_update;
-	repset->replicate_delete = repsettup->replicate_delete;
-	repset->replicate_truncate = repsettup->replicate_truncate;
+	repset = repset_fromtuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -218,18 +215,27 @@ repset_relcache_init(void)
 	RepSetRelationHash = hash_create("pglogical repset relation cache", 128,
 									 &ctl, HASH_ELEM | HASH_CONTEXT);
 
-	/* Watch for invalidation events. */
+	/*
+	 * Watch for invalidation events fired when the relcache changes.
+	 *
+	 * Note that no invalidations are fired when the replication sets are
+	 * created, destroyed, modified, or change membership since there's no
+	 * syscache management for user catalogs. We do our own invalidations for
+	 * those separately.
+	 */
 	CacheRegisterRelcacheCallback(repset_relcache_invalidate_callback,
 								  (Datum) 0);
 }
 
 List *
-get_replication_sets(List *replication_set_names)
+get_replication_sets(List *replication_set_names, bool missing_ok)
 {
 	RangeVar	   *rv;
 	Relation		rel;
 	ListCell	   *lc;
 	List		   *replication_sets = NIL;
+
+	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -240,8 +246,6 @@ get_replication_sets(List *replication_set_names)
 		ScanKeyData		key[1];
 		SysScanDesc		scan;
 		HeapTuple		tuple;
-		RepSetTuple	   *repsettup;
-		PGLogicalRepSet	  *repset;
 
 		/* Search for repset record. */
 		ScanKeyInit(&key[0],
@@ -254,20 +258,16 @@ get_replication_sets(List *replication_set_names)
 		tuple = systable_getnext(scan);
 
 		if (!HeapTupleIsValid(tuple))
-			continue; /* error? */
+		{
+			if (missing_ok)
+				continue;
+			else
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("replication set %s not found", setname)));
+		}
 
-		repsettup = (RepSetTuple *) GETSTRUCT(tuple);
-
-		/* Create and fill the replication set struct. */
-		repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
-		repset->id = repsettup->id;
-		repset->name = pstrdup(NameStr(repsettup->name));
-		repset->replicate_insert = repsettup->replicate_insert;
-		repset->replicate_update = repsettup->replicate_update;
-		repset->replicate_delete = repsettup->replicate_delete;
-		repset->replicate_truncate = repsettup->replicate_truncate;
-
-		replication_sets = lappend(replication_sets, repset);
+		replication_sets = lappend(replication_sets, repset_fromtuple(tuple));
 
 		systable_endscan(scan);
 	}

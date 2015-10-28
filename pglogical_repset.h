@@ -51,7 +51,7 @@ extern PGLogicalRepSet *get_replication_set(int setid);
 extern PGLogicalRepSet *get_replication_set_by_name(const char *setname,
 													bool missing_ok);
 
-extern List *get_replication_sets(List *replication_set_names);
+extern List *get_replication_sets(List *replication_set_names, bool missing_ok);
 
 extern bool relation_is_replicated(Relation rel, List *replication_set_names,
 								   PGLogicalChangeType change_type);

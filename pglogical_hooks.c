@@ -85,7 +85,7 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 			if (!SplitIdentifierString(strVal(elem->arg), ',', &replication_set_names))
 				elog(ERROR, "Could not parse replication set name list %s", strVal(elem->arg));
 
-			private->replication_sets = get_replication_sets(replication_set_names);
+			private->replication_sets = get_replication_sets(replication_set_names, true);
 
 			continue;
 		}
