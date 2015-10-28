@@ -38,9 +38,10 @@ check: regresscheck ;
 regresscheck:
 	$(MKDIR_P) regression_output
 	$(pg_regress_check) \
-	    --temp-config ./postgresql.conf \
+	    --temp-config ./regress-postgresql.conf \
 	    --temp-instance=./tmp_check \
 	    --outputdir=./regression_output \
+	    --create-role=logical \
 	    $(REGRESS)
 
 .PHONY: regresscheck

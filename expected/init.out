@@ -1,6 +1,6 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
-CREATE USER nonsuper;
+CREATE USER nonsuper WITH replication;
 CREATE USER super SUPERUSER;
 -- Can't because of bug 37906
 --GRANT ALL ON DATABASE regress TO nonsuper;
@@ -18,7 +18,7 @@ END;$FUNC$ LANGUAGE plpgsql;
 GRANT ALL ON SCHEMA public TO nonsuper;
 \c regression
 CREATE EXTENSION pglogical;
-SELECT * FROM pglogical.create_provider('test_provider');
+SELECT * FROM pglogical.create_provider(provider_name := 'test_provider');
  create_provider 
 -----------------
       2689511696
@@ -26,7 +26,11 @@ SELECT * FROM pglogical.create_provider('test_provider');
 
 \c postgres
 CREATE EXTENSION pglogical;
-SELECT * FROM pglogical.create_subscriber('test_subscriber', 'dbname=postgres', 'test_provider', 'dbname=regression');
+SELECT * FROM pglogical.create_subscriber(
+    subscriber_name := 'test_subscriber',
+    local_dsn := 'dbname=postgres user=super',
+    provider_name := 'test_provider',
+    provider_dsn := 'dbname=regression user=super');
  create_subscriber 
 -------------------
         1755434425
