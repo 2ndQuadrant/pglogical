@@ -264,6 +264,9 @@ _PG_init(void)
 	if (IsBinaryUpgrade)
 		return;
 
+	if (!process_shared_preload_libraries_in_progress)
+		elog(ERROR, "pglogical is not in shared_preload_libraries");
+
 	/* Init workers. */
 	pglogical_worker_shmem_init();
 

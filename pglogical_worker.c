@@ -318,25 +318,25 @@ pglogical_worker_shmem_startup(void)
 void
 pglogical_worker_shmem_init(void)
 {
-        Assert(process_shared_preload_libraries_in_progress);
+	Assert(process_shared_preload_libraries_in_progress);
 
-		/* Allocate enough shmem for the worker limit ... */
-        RequestAddinShmemSpace(worker_shmem_size());
+	/* Allocate enough shmem for the worker limit ... */
+	RequestAddinShmemSpace(worker_shmem_size());
 
-		/*
-         * We'll need to be able to take exclusive locks so only one per-db backend
-         * tries to allocate or free blocks from this array at once.  There won't
-         * be enough contention to make anything fancier worth doing.
-         */
-        RequestAddinLWLocks(1);
+	/*
+	 * We'll need to be able to take exclusive locks so only one per-db backend
+	 * tries to allocate or free blocks from this array at once.  There won't
+	 * be enough contention to make anything fancier worth doing.
+	 */
+	RequestAddinLWLocks(1);
 
-        /*
-         * Whether this is a first startup or crash recovery, we'll be re-initing
-         * the bgworkers.
-         */
-        PGLogicalCtx = NULL;
-		MyPGLogicalWorker = NULL;
+	/*
+	 * Whether this is a first startup or crash recovery, we'll be re-initing
+	 * the bgworkers.
+	 */
+	PGLogicalCtx = NULL;
+	MyPGLogicalWorker = NULL;
 
-        prev_shmem_startup_hook = shmem_startup_hook;
-        shmem_startup_hook = pglogical_worker_shmem_startup;
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = pglogical_worker_shmem_startup;
 }
