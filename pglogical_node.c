@@ -364,8 +364,15 @@ subscriber_fromtuple(HeapTuple tuple, TupleDesc desc)
 	sub->name = pstrdup(NameStr(subtup->subscriber_name));
 	sub->status = subtup->subscriber_status;
 	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
-	sub->provider_dsn = pstrdup(text_to_cstring(&subtup->subscriber_provider_dsn));
-	sub->local_dsn = pstrdup(text_to_cstring(&subtup->subscriber_local_dsn));
+
+	d = heap_getattr(tuple, Anum_subscriber_provider_dsn, desc, &isnull);
+	Assert(!isnull);
+	sub->provider_dsn = pstrdup(TextDatumGetCString(d));
+
+	d = heap_getattr(tuple, Anum_subscriber_local_dsn, desc, &isnull);
+	Assert(!isnull);
+	sub->local_dsn = pstrdup(TextDatumGetCString(d));
+
 	/* Get replication sets. */
 	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
 	if (isnull)

@@ -111,7 +111,7 @@ dump_structure(PGLogicalSubscriber *sub, const char *snapshot)
 	if (res != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not execute command \"%s\": %m",
+				 errmsg("could not execute command \"%s\"",
 						command.data)));
 }
 
@@ -143,7 +143,7 @@ restore_structure(PGLogicalSubscriber *sub, const char *section)
 	if (res != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not execute command \"%s\": %m",
+				 errmsg("could not execute command \"%s\"",
 						command.data)));
 }
 
