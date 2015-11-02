@@ -1,0 +1,94 @@
+SET synchronous_commit = on;
+-- no need to CREATE EXTENSION as we intentionally don't have any catalog presence
+-- Instead, just create a slot.
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');
+ ?column? 
+----------
+ init
+(1 row)
+
+-- Minimal invocation with no data
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1');
+ data 
+------
+(0 rows)
+
+--
+-- Various invalid parameter combos:
+--
+-- Text mode is not supported
+SELECT data FROM pg_logical_slot_get_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1');
+ERROR:  logical decoding output plugin "pglogical_output" produces binary output, but "pg_logical_slot_get_changes(name,pg_lsn,integer,text[])" expects textual data
+-- error, only supports proto v1
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '2',
+	'max_proto_version', '1',
+	'startup_params_format', '1');
+ERROR:  client sent min_proto_version=2 but we only support protocol 1 or lower
+CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+-- error, only supports proto v1
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '2',
+	'max_proto_version', '2',
+	'startup_params_format', '1');
+ERROR:  client sent min_proto_version=2 but we only support protocol 1 or lower
+CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+-- error, unrecognised startup params format
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '2');
+ERROR:  client sent startup parameters in format 2 but we only support format 1
+CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+-- Should be OK and result in proto version 1 selection, though we won't
+-- see that here.
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '2',
+	'startup_params_format', '1');
+ data 
+------
+(0 rows)
+
+-- no such encoding / encoding mismatch
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'bork',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1');
+ERROR:  only "UTF8" encoding is supported by this server, client requested bork
+CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+-- Currently we're sensitive to the encoding name's format (TODO)
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF-8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1');
+ERROR:  only "UTF8" encoding is supported by this server, client requested UTF-8
+CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+SELECT 'drop' FROM pg_drop_replication_slot('regression_slot');
+ ?column? 
+----------
+ drop
+(1 row)
+

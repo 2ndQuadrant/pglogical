@@ -14,11 +14,9 @@ want efficiency, write your hook in C.
 Simple pointless example
 ===
 
-To compile, just "make".
-
-(If you're compiling against a PostgreSQL that doesn't have pglogical_output
-installed, from within the pglogical source tree, you can use instead use
-`make INTREE=1`)
+To compile and install, just "make USE_PGXS=1 install". Note that pglogical
+must already be installed so that its headers can be found. You might have
+to set the `PATH` so that `pg_config` can be found.
 
 To use it:
 

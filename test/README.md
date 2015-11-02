@@ -1,3 +1,12 @@
+What are these tests?
+---
+
+These tests exersise the pglogical protocol, parameter validation, hooks and
+filters, and the overall behaviour of the extension. They are *not* the tests
+run by `make check` or `make installcheck` on the top level source directory;
+those are the `pg_regress` tests discussed in the "tests" section of the
+top-level `README.md`.
+
 QUICK START
 ---
 

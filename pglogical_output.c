@@ -209,6 +209,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/* check for encoding match if specific encoding demanded by client */
+		/* TODO: Should parse encoding name and compare properly */
 		if (data->client_expected_encoding != NULL
 				&& strlen(data->client_expected_encoding) != 0
 				&& strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)

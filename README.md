@@ -24,7 +24,7 @@ occur while the client is disconnected are accumulated in the queue to be sent
 when the client reconnects. This reliabiliy also means that server-side
 resources are consumed whether or not a client is connected.
 
-## Architecture and high level interaction
+# Architecture and high level interaction
 
 The output plugin is loaded by a PostgreSQL walsender process when a client
 connects to PostgreSQL using the PostgreSQL wire protocol with connection
@@ -50,7 +50,7 @@ change history. The client *must* send feedback, otherwise `pg_xlog` on the
 server will eventually fill up and the server will stop working.
 
 
-## Usage
+# Usage
 
 The overall flow of client/server interaction is:
 
@@ -71,7 +71,7 @@ The overall flow of client/server interaction is:
 
  The details of `IDENTIFY_SYSTEM`, `CREATE_REPLICATION_SLOT` and `START_REPLICATION` are discussed in the [replication protocol docs](http://www.postgresql.org/docs/current/static/protocol-replication.html) and will not be repeated here.
 
-### Make a replication connection
+## Make a replication connection
 
 To use the `pglogical` plugin you must first establish a PostgreSQL FE/BE
 protocol connection using the client library of your choice, passing
@@ -90,7 +90,7 @@ The plug-in name to pass on logical slot creation is `'pglogical'`.
 
 Details are in the replication protocol docs.
 
-### Get system identity
+## Get system identity
 
 If required you can use the `IDENTIFY_SYSTEM` command, which reports system
 information:
@@ -102,7 +102,7 @@ information:
 
 Details in the replication protocol docs.
 
-### Create the slot if required
+## Create the slot if required
 
 If your application creates its own slots on first use and hasn't previously
 connected to this database on this system you'll need to create a replication
@@ -128,7 +128,7 @@ going forward, but don't care about the initial state, can ignore this. The
 snapshot is only valid as long as the connection that issued the
 `CREATE_REPLICATION_SLOT` remains open and has not run another command.
 
-### Send replication parameters
+## Send replication parameters
 
 The client now sends:
 
@@ -145,7 +145,7 @@ The parameters are very important for ensuring that the plugin accepts
 the replication request and streams changes in the expected form. `pglogical`
 parameters are discussed in the separate `pglogical` protocol documentation.
 
-### Process the startup message
+## Process the startup message
 
 `pglogical`'s output plugin will send a `CopyData` message containing its
 startup message as the first protocol message. This message contains a
@@ -158,7 +158,7 @@ at this point if it doesn't like the reply. It might then inform the user
 or reconnect with different parameters based on what it learned from the
 first connection's startup message.
 
-### Consume the change stream
+## Consume the change stream
 
 `pglogical`'s output plugin now sends a continuous series of `CopyData`
 protocol messages, each of which encapsulates a `pglogical` protocol message
@@ -177,12 +177,35 @@ it's holding in case that change stream has to be replayed again. See
 ["Hot standby feedback message" in the replication protocol docs](http://www.postgresql.org/docs/current/static/protocol-replication.html)
 for details.
 
-### Disconnect gracefully
+## Disconnect gracefully
 
 Disconnection works just like any normal client; you use your client library's
 usual method for closing the connection. No special action is required before
 disconnection, though it's usually a good idea to send a final standby status
 message just before you disconnect.
+
+# Tests
+
+There are two sets of tests bundled with `pglogical_output`: the `pg_regress`
+regression tests and some custom Python tests for the protocol.
+
+The `pg_regress` tests check invalid parameter handling and basic
+functionality.  They're intended for use by the buildfarm using an in-tree
+`make check`, but may also be run with an out-of-tree PGXS build against an
+existing PostgreSQL install using `make USE_PGXS=1 installcheck`.
+
+The Python tests are more comprehensive, and examine the data sent by
+the extension at the protocol level, validating the protocol structure,
+order and contents. They can run using the SQL-level logical decoding
+interface or, with a psycopg2 containing https://github.com/psycopg/psycopg2/pull/322,
+with the walsender / streaming replication protocol. The Python-based tests
+exercise the internal binary format support, too. See `test/README.md` for
+details.
+
+The tests may fail on installations that are not utf-8 encoded because the
+payloads of the binary protocol output will have text in different encodings,
+which aren't visible to psql as text to be decoded. Avoiding anything except
+7-bit ascii in the tests *should* prevent the problem.
 
 # Hooks
 
