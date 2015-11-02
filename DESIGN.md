@@ -28,6 +28,41 @@ The protocol implementation is fairly well encapsulated, so in future it should
 be possible to emit json instead for clients that request it. Right now that's
 not the priority as tools like wal2json already exist for that.
 
+## Column metadata
+
+The output plugin sends metadata for columsn - at minimum, the column names -
+before each row. It will soon be changed to send the data before each row from
+a new, different table, so that streams of inserts from COPY etc don't repeat
+the metadata each time. That's just a pending feature.
+
+The reason metadata must be sent is that the upstream and downstream table's
+attnos don't necessarily correspond. The column names might, and their ordering
+might even be the same, but any column drop or column type change will result
+in a dropped column on one side. So at the user level the tables look the same,
+but their attnos don't match, and if we rely on attno for replication we'll get
+the wrong data in the wrong columns. Not pretty.
+
+That could be avoided by requiring that the downstream table be strictly
+maintained by DDL replication, but:
+
+* We don't want to require DDL replication
+* That won't work with multiple upstreams feeding into a table
+* The initial table creation still won't be correct if the table has dropped
+  columns, unless we (ab)use `pg_dump`'s `--binary-upgrade` support to emit
+  tables with dropped columns, which we don't want to do.
+
+So despite the bandwidth cost, we need to send metadata.
+
+In future a client-negotiated cache is planned, so that clients can announce
+to the output plugin that they can cache metadata across change series, and
+metadata can only be sent when invalidated by relation changes or when a new
+relation is seen.
+
+Support for type metadata is penciled in to the protocol so that clients that
+don't have table definitions at all - like queueing engines - can decode the
+data. That'll also permit type validation sanity checking on the apply side
+with logical replication.
+
 ## Hook entry point as a SQL function
 
 The hooks entry point is a SQL function that populates a passed `internal`
