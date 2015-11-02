@@ -2,11 +2,36 @@
 
 Explanations of why things are done the way they are.
 
-## Hooks as SQL-level functions
+## Why does pglogical_output exist when there's wal2json etc?
 
-Hooks for things like replication set filtering use SQL-level functions that're
-looked up via the syscache, permissions-checked, and executed via the fmgr. This
-imposes fmgr call overheads for each invocation.
+`pglogical_output` does plenty more than convert logical decoding change
+messages to a wire format and send them to the client.
+
+It handles format negotiations, sender-side filtering using pluggable hooks
+(and the associated plugin handling), etc. The protocol its self is also
+important, and incorporates elements like binary datum transfer that can't be
+easily or efficiently achieved with json.
+
+## Custom binary protocol
+
+Why do we have a custom binary protocol inside the walsender / copy both protocol,
+rather than using a json message representation?
+
+Speed and compactness. It's expensive to create json, with lots of allocations.
+It's expensive to decode it too. You can't represent raw binary in json, and must
+encode it, which adds considerable overhead for some data types. Using the
+obvious, easy to decode json representations also makes it difficult to do
+later enhancements planned for the protocol and decoder, like caching row
+metadata.
+
+The protocol implementation is fairly well encapsulated, so in future it should
+be possible to emit json instead for clients that request it. Right now that's
+not the priority as tools like wal2json already exist for that.
+
+## Hook entry point as a SQL function
+
+The hooks entry point is a SQL function that populates a passed `internal`
+struct with hook function pointers.
 
 The reason for this is that hooks are specified by a remote peer over the
 network. We can't just let the peer say "dlsym() this arbitrary function name
@@ -14,9 +39,8 @@ and call it with these arguments" for fairly obvious security reasons. At bare
 minimum all replication using hooks would have to be superuser-only if we did
 that.
 
-fmgr calls are used for operators and all sorts of things, so it's not like
-they're especially slow. The SPI isn't needed, we can DirectFunctionCall
-the filter procs.
+The SQL entry point is only called once per decoding session and the rest of
+the calls are plain C function pointers.
 
 ## The startup reply message
 

@@ -192,7 +192,7 @@ regression tests and some custom Python tests for the protocol.
 The `pg_regress` tests check invalid parameter handling and basic
 functionality.  They're intended for use by the buildfarm using an in-tree
 `make check`, but may also be run with an out-of-tree PGXS build against an
-existing PostgreSQL install using `make USE_PGXS=1 installcheck`.
+existing PostgreSQL install using `make USE_PGXS=1 clean installcheck`.
 
 The Python tests are more comprehensive, and examine the data sent by
 the extension at the protocol level, validating the protocol structure,
