@@ -7,6 +7,12 @@ database and send it to a client over a network connection using a
 well-defined, efficient protocol that multiple different applications can
 consume.
 
+The primary purpose of `pglogical_output` is to supply data to logical
+streaming replication solutions, but any application can potentially use its
+data stream. The output stream is designed to be compact and fast to decode,
+and the plugin supports upstream filtering of data so that only the required
+information is sent.
+
 No triggers are required to collect the change stream and no external ticker or
 other daemon is required. It's accumulated using
 [replication slots](http://www.postgresql.org/docs/current/static/logicaldecoding-explanation.html#AEN66446),
@@ -23,6 +29,12 @@ replay from the last message that client processed. Server-side changes that
 occur while the client is disconnected are accumulated in the queue to be sent
 when the client reconnects. This reliabiliy also means that server-side
 resources are consumed whether or not a client is connected.
+
+# Why another output plugin?
+
+See [`DESIGN.md`](DESIGN.md) for a discussion of why using one of the existing
+generic logical decoding output plugins like `wal2json` to drive a logical
+replication downstream isn't ideal. It's mostly about speed.
 
 # Architecture and high level interaction
 
