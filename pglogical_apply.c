@@ -885,7 +885,7 @@ apply_work(PGconn *streamConn)
 static void
 execute_sql_command_error_cb(void *arg)
 {
-	errcontext("during executions of queued SQL statement: %s", (char *) arg);
+	errcontext("during execution of queued SQL statement: %s", (char *) arg);
 }
 
 /*

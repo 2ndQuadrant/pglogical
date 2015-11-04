@@ -161,6 +161,34 @@ The following functions are provided for managing the replication sets:
 You can view the information about which table is in which set by querying the
 `pglogical.replication_set_tables` view.
 
+#### Automatic assignment of replication set for new tables
+
+The event trigger facility can be used for describing rules which define
+replication sets for newly created tables.
+
+Example:
+
+	CREATE OR REPLACE FUNCTION pglogical_assign_repset()
+	RETURNS event_trigger AS $$
+	DECLARE obj record;
+	BEGIN
+	    FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()
+	    LOOP
+	        IF obj.object_type = 'table' AND obj.schema_name = 'config' THEN
+	            PERFORM pglogical.replication_set_add_table('configuration', obj.objid);
+	        END IF;
+	    END LOOP;
+	END;
+	$$ LANGUAGE plpgsql;
+
+	CREATE EVENT TRIGGER pglogical_assign_repset_trg
+	    ON ddl_command_end
+	    WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
+	    EXECUTE PROCEDURE pglogical_assign_repset();
+
+The above example will put all new tables created in schema `config` into
+replication set `configuration`.
+
 ## Conflicts
 
 In case the node is subscribed to multiple providers, conflicts between the
