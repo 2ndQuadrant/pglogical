@@ -339,27 +339,67 @@ handle_update(StringInfo s)
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup.values, newtup.nulls);
 
+	/*
+	 * Tuple found.
+	 *
+	 * Note this will fail if there are other conflicting unique indexes.
+	 */
 	if (found)
 	{
+		TransactionId	xmin;
+		TimestampTz		local_ts;
+		RepOriginId		local_origin;
+		bool			apply;
+		HeapTuple		applytuple;
+
+		get_tuple_origin(localslot->tts_tuple, &xmin, &local_origin,
+						 &local_ts);
+
 		/*
-		 * Tuple found.
-		 *
-		 * Note this will fail if there are other conflicting unique indexes.
+		 * If the local tuple was previously updated by different transaction
+		 * on different server, consider this to be conflict and resolve it.
 		 */
-		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
-		simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
-						   remotetuple);
-		/* Only update indexes if it's not HOT update. */
-		if (!HeapTupleIsHeapOnly(applyslot->tts_tuple))
+		if (xmin != GetTopTransactionId() &&
+			local_origin != replorigin_session_origin)
 		{
-			ExecOpenIndices(estate->es_result_relation_info, false);
-			UserTableUpdateOpenIndexes(estate, applyslot);
-			ExecCloseIndices(estate->es_result_relation_info);
+			PGLogicalConflictResolution resolution;
+
+			apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
+										 remotetuple, &applytuple,
+										 &resolution);
+
+			pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
+									  localslot->tts_tuple, remotetuple,
+									  applytuple, resolution);
+		}
+		else
+		{
+			apply = true;
+			applytuple = remotetuple;
+		}
+
+		if (apply)
+		{
+			ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
+			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
+						   remotetuple);
+
+			/* Only update indexes if it's not HOT update. */
+			if (!HeapTupleIsHeapOnly(applyslot->tts_tuple))
+			{
+				ExecOpenIndices(estate->es_result_relation_info, false);
+				UserTableUpdateOpenIndexes(estate, applyslot);
+				ExecCloseIndices(estate->es_result_relation_info);
+			}
 		}
 	}
 	else
 	{
-		/* The tuple to be updated could not be found. */
+		/*
+		 * The tuple to be updated could not be found.
+		 *
+		 * We can't do INSERT here because we might not have whole tuple.
+		 */
 		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel->rel, NULL,
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}

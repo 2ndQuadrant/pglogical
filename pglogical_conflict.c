@@ -40,7 +40,7 @@
 #include "pglogical_proto.h"
 #include "pglogical_conflict.h"
 
-int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_ERROR;
+int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
 
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
@@ -295,10 +295,10 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 				(errcode(ERRCODE_UNIQUE_VIOLATION),
 				errmsg("multiple unique constraints violated by remote tuple"),
 				errdetail("cannot apply transaction because remotely tuple "
-					  "conflicts with a local tuple on more than one UNIQUE "
-					  "constraint and/or PRIMARY KEY"),
-				errhint("Resolve the conflict by removing or changing the conflicting "
-					"local tuple")));
+						  "conflicts with a local tuple on more than one "
+						  "UNIQUE constraint and/or PRIMARY KEY"),
+				errhint("Resolve the conflict by removing or changing the "
+						"conflicting local tuple")));
 		}
 		else if (found)
 		{
@@ -363,6 +363,38 @@ conflict_resolve_by_timestamp(RepOriginId local_origin_id,
 	}
 }
 
+/*
+ * Get the origin of the local tuple.
+ *
+ * If the track_commit_timestamp is off, we return remote origin info since
+ * there is no way to get any meaningful info locally. This means that
+ * the caller will assume that all the local tuples came from remote site when
+ * track_commit_timestamp is off.
+ *
+ * This function is used by UPDATE conflict detection so the above means that
+ * UPDATEs will not be recognized as conflict even if they change locally
+ * modified row.
+ *
+ * Returns true if local origin data was found, false if not.
+ */
+bool
+get_tuple_origin(HeapTuple local_tuple, TransactionId *xmin,
+				 RepOriginId *local_origin, TimestampTz *local_ts)
+{
+
+	if (!track_commit_timestamp)
+	{
+		*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
+		*local_origin = replorigin_session_origin;
+		*local_ts = replorigin_session_origin_timestamp;
+		return false;
+	}
+	else
+	{
+		*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
+		return TransactionIdGetCommitTsData(*xmin, local_ts, local_origin);
+	}
+}
 
 /*
  * Try resolving the conflict resolution.
@@ -374,46 +406,48 @@ try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
 					 HeapTuple *resulttuple,
 					 PGLogicalConflictResolution *resolution)
 {
+	TransactionId	xmin;
 	TimestampTz		local_ts;
-	RepOriginId		local_id;
-	TransactionId	xmin = HeapTupleHeaderGetXmin(localtuple->t_data);
+	RepOriginId		local_origin;
 	bool			apply = false;
-
-	TransactionIdGetCommitTsData(xmin, &local_ts, &local_id);
-
-	/* If tuple was written twice in same transaction, apply row */
-	if (replorigin_session_origin == local_id)
-	{
-		*resolution = PGLogicalResolution_ApplyRemote;
-		*resulttuple = remotetuple;
-		return true;
-	}
 
 	switch (pglogical_conflict_resolver)
 	{
 		case PGLOGICAL_RESOLVE_ERROR:
 			/* TODO: proper error message */
 			elog(ERROR, "cannot apply conflicting row");
+			break;
 		case PGLOGICAL_RESOLVE_APPLY_REMOTE:
 			apply = true;
+			break;
 		case PGLOGICAL_RESOLVE_KEEP_LOCAL:
 			apply = false;
+			break;
 		case PGLOGICAL_RESOLVE_LAST_UPDATE_WINS:
-			apply = conflict_resolve_by_timestamp(local_id,
+			get_tuple_origin(localtuple, &xmin, &local_origin, &local_ts);
+			apply = conflict_resolve_by_timestamp(local_origin,
 												  replorigin_session_origin,
 												  local_ts,
 												  replorigin_session_origin_timestamp,
 												  true, resolution);
+			break;
 		case PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS:
-			apply = conflict_resolve_by_timestamp(local_id,
+			get_tuple_origin(localtuple, &xmin, &local_origin, &local_ts);
+			apply = conflict_resolve_by_timestamp(local_origin,
 												  replorigin_session_origin,
 												  local_ts,
 												  replorigin_session_origin_timestamp,
 												  false, resolution);
+			break;
+		default:
+			elog(ERROR, "unrecognized pglogical_conflict_resolver setting %d",
+				 pglogical_conflict_resolver);
 	}
 
 	if (apply)
 		*resulttuple = remotetuple;
+	else
+		*resulttuple = localtuple;
 
 	return apply;
 }
@@ -456,6 +490,8 @@ conflict_resolution_to_string(PGLogicalConflictResolution resolution)
 
 /*
  * Log the conflict to server log.
+ *
+ * TODO: provide more detail.
  */
 void
 pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
@@ -493,9 +529,13 @@ bool
 pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 									   GucSource source)
 {
+	/*
+	 * Only allow PGLOGICAL_RESOLVE_APPLY_REMOTE when track_commit_timestamp
+	 * is off, because there is no way to know where the local tuple
+	 * originated from.
+	 */
 	if (!track_commit_timestamp &&
-		((*newval) == PGLOGICAL_RESOLVE_LAST_UPDATE_WINS ||
-		(*newval) == PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS))
+		*newval != PGLOGICAL_RESOLVE_APPLY_REMOTE)
 	{
 		GUC_check_errdetail("track_commit_timestamp is off");
 		return false;

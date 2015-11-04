@@ -53,6 +53,9 @@ extern Oid pglogical_tuple_find_conflict(EState *estate,
 										 PGLogicalTupleData *tuple,
 										 TupleTableSlot *oldslot);
 
+extern bool get_tuple_origin(HeapTuple local_tuple, TransactionId *xmin,
+							 RepOriginId *local_origin, TimestampTz *local_ts);
+
 extern bool try_resolve_conflict(Relation rel, HeapTuple localtuple,
 								 HeapTuple remotetuple, HeapTuple *resulttuple,
 								 PGLogicalConflictResolution *resolution);

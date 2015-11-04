@@ -401,7 +401,6 @@ copy_node_data(PGLogicalSubscriber *sub, const char *snapshot)
 	tables = get_copy_tables(origin_conn, sub->replication_sets);
 
 	/* Connect to target node. */
-	/* TODO: make work */
 	target_conn = pg_connect(sub->local_dsn, EXTENSION_NAME "_init");
 	start_copy_target_tx(target_conn, snapshot);
 

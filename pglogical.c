@@ -255,7 +255,7 @@ _PG_init(void)
 							 gettext_noop("Sets method used for conflict resolution for resolvable conflicts."),
 							 NULL,
 							 &pglogical_conflict_resolver,
-							 PGLOGICAL_RESOLVE_ERROR,
+							 PGLOGICAL_RESOLVE_APPLY_REMOTE,
 							 PGLogicalConflictResolvers,
 							 PGC_SUSET, 0,
 							 pglogical_conflict_resolver_check_hook,

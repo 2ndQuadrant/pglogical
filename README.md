@@ -172,13 +172,15 @@ The configuration of the conflicts resolver is done via the
 `pglogical.conflict_resolution` are:
 
 - `error` - the replication will stop on error if conflict is detected and
-  manual action is needed for resolving, this is the default
-- `apply_remote` - always apply the change that's conflicting with local data
+  manual action is needed for resolving
+- `apply_remote` - always apply the change that's conflicting with local data,
+  this is the default
 - `keep_local` - keep the local version of the data and ignore the conflicting
   change that is coming from remote node
 - `last_update_wins` - the version of data with newest commit timestamp will be
-  be kept (this can be either local or remote version), this option requires
-  the `track_commit_timestamp` to be enable on all nodes to work
+  be kept (this can be either local or remote version)
 - `first_update_wins` - the version of the data with oldest timestamp will be
-  kept (this can be either local or remote version), this option requires the
-  `track_commit_timestamp` to be enable on all nodes to work
+  kept (this can be either local or remote version)
+
+When `track_commit_timestamp` is disabled, the only allowed value is
+`apply_remote`.
