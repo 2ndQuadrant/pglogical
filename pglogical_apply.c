@@ -380,9 +380,9 @@ handle_update(StringInfo s)
 
 		if (apply)
 		{
-			ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
+			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
-						   remotetuple);
+							   applytuple);
 
 			/* Only update indexes if it's not HOT update. */
 			if (!HeapTupleIsHeapOnly(applyslot->tts_tuple))
