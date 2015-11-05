@@ -1,25 +1,31 @@
 # pglogical replication
 
-The pglogical module is a logical replication solution based on the
-`pglogical_output`. It should be installed on both sides of the replication
-connection.
+The pglogical module provides logical streaming replication for PostgreSQL, using a publish/subscribe module.
 
-Provider node must run PostgreSQL 9.4+
-Subscriber node must run PostgreSQL 9.5+
+We use the following terms to describe data streams between nodes, deliberately reused from the earlier Slony technology.
+* Nodes
+* Providers and Subscribers
+* Replication Set
+
+pglogical is new technology utilising the latest in-core features, so we have these version restrictions
+* Provider node must run PostgreSQL 9.4+
+* Subscriber node must run PostgreSQL 9.5+
 
 Use cases supported are
-* Data transfer between a master and downstream nodes
 * Upgrades between major versions
+* Full database replication
+* Selective replication of sets of tables using replication sets
 
-Long term replication across major versions is not a design target. It very probably works, but restrictions may be introduced and we don't guarantee it will work.
+DDL replication is not supported; DDL is the responsibility of the user. As such, long term cross-version replication is not considered a design target, though it may often work.
 
-Currently, only provider to subscriber replication is supported. But one subscriber can
-merge changes from several masters and detect conflict between changes with
-automatic and configurable conflict resolution. Obviously multiple subscribers can
-be connected to one master. Cascading replication is implemented in the form of
-change forwarding.
+* One Provider may feed multiple Subscribers without incurring additional write overhead
+* One subscriber can merge changes from several origins and detect conflict between changes with
+automatic and configurable conflict resolution (some, but not all required for multi-master).
+* Cascading replication is implemented in the form of change forwarding.
 
 Selective replication is also supported in the form of replication sets.
+
+`pglogical_output` needs to be installed on both provider and subscriber. 
 
 ## Usage
 
@@ -58,6 +64,7 @@ Once the provider node is setup, subscribers can be subscribed to it:
         provider_name := 'provider1',
         provider_dsn := 'host=providerhost port=5432 dbname=db'
 	);
+(run this on the subscriber node)
 
 ### Node management
 
