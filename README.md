@@ -73,10 +73,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 - `pglogical.create_subscriber(subscriner_name name, provider_name name,
   provider_dsn text, replication_sets name[], synchronize_schema boolean
   synchronize_data boolean)`
-  Creates a subsriber node.
+  Creates a subscriber node.
 
   Parameters:
-  - `subscriner_name` - name of the subscriber, must be unique
+  - `subscriber_name` - name of the subscriber, must be unique
   - `local_dsn` - connection string to the subscriber, this is used for initial
     syncrhonization and administration tasks
   - `provider_name` - name of the provider to which this subscriber will be
@@ -96,7 +96,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscriber_name` - name of the existing provider
 
 - `pglogical.drop_subscriber(subscriber_name name)`
-  Disconnects the subsriber and removes it from the catalog.
+  Disconnects the subscriber and removes it from the catalog.
 
   Parameters:
   - `subscriber_name` - name of the existing subscriber
