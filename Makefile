@@ -1,7 +1,9 @@
 MODULE_big = pglogical_output
 PGFILEDESC = "pglogical_output - logical replication output plugin"
 
-OBJS = pglogical_output.o pglogical_proto.o pglogical_config.o pglogical_hooks.o
+OBJS = pglogical_output.o pglogical_hooks.o pglogical_config.o \
+	   pglogical_proto.o pglogical_proto_native.o \
+	   pglogical_proto_json.o
 
 REGRESS = params basic hooks
 
