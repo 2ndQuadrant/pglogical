@@ -23,6 +23,7 @@
 #include "access/xact.h"
 
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 
 #include "executor/spi.h"
@@ -64,10 +65,17 @@ typedef struct RepSetTuple
 #define Anum_repset_replicate_delete	5
 #define Anum_repset_replicate_truncate	6
 
+typedef struct RepSetTableTuple
+{
+	Oid			id;
+	Oid			reloid;
+} RepSetTableTuple;
+
 #define Natts_repset_table			2
-#define Anum_repset_table_setid	1
+#define Anum_repset_table_setid		1
 #define Anum_repset_table_reloid	2
 
+#define REPLICATION_SET_ID_DEFAULT	-1
 #define REPLICATION_SET_ID_ALL		-2
 
 static HTAB *RepSetRelationHash = NULL;
@@ -277,12 +285,50 @@ get_replication_sets(List *replication_set_names, bool missing_ok)
 	return replication_sets;
 }
 
+static List *
+get_relation_replication_sets(Oid reloid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	ScanKeyData		key[1];
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	List		   *replication_sets = NIL;
+	PGLogicalRepSet *repset;
+
+	Assert(IsTransactionState());
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_repset_table_reloid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				NameGetDatum(reloid));
+
+	/* TODO: use index */
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		RepSetTableTuple	*t = (RepSetTableTuple *) GETSTRUCT(tuple);
+		repset = get_replication_set(t->id);
+		replication_sets = lappend(replication_sets, repset);
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return replication_sets;
+}
+
 static PGLogicalRepSetRelation *
-get_repset_relation(Oid reloid, List *replication_sets)
+get_repset_relation(Oid reloid, List *subs_replication_sets)
 {
 	PGLogicalRepSetRelation *entry;
 	bool			found;
-	ListCell	   *lc;
+	ListCell	   *slc;
+	List		   *table_replication_sets;
 
 	if (RepSetRelationHash == NULL)
 		repset_relcache_init();
@@ -303,17 +349,47 @@ get_repset_relation(Oid reloid, List *replication_sets)
 	entry->replicate_delete = false;
 	entry->replicate_truncate = false;
 
-	foreach(lc, replication_sets)
-	{
-		PGLogicalRepSet	   *repset = lfirst(lc);
+	/* Get replication sets for a table. */
+	table_replication_sets = get_relation_replication_sets(reloid);
 
-		if (repset->replicate_insert)
+	/* Build union of the repsets and cache the computed info. */
+	foreach(slc, subs_replication_sets)
+	{
+		PGLogicalRepSet	   *srepset = lfirst(slc);
+		ListCell		   *tlc;
+		bool				found = false;
+
+		/* Handle special sets. */
+		if ((list_length(table_replication_sets) == 0 &&
+		   	srepset->id == REPLICATION_SET_ID_DEFAULT) ||
+			srepset->id == REPLICATION_SET_ID_ALL)
+		{
 			entry->replicate_insert = true;
-		if (repset->replicate_update)
 			entry->replicate_update = true;
-		if (repset->replicate_delete)
 			entry->replicate_delete = true;
-		if (repset->replicate_truncate)
+			entry->replicate_truncate = true;
+			break;
+		}
+
+		/* Standard set matching. */
+		foreach (tlc, table_replication_sets)
+		{
+			PGLogicalRepSet	   *trepset = lfirst(tlc);
+
+			if (trepset->id == srepset->id)
+				found = true;
+		}
+
+		if (!found)
+			continue;
+
+		if (srepset->replicate_insert)
+			entry->replicate_insert = true;
+		if (srepset->replicate_update)
+			entry->replicate_update = true;
+		if (srepset->replicate_delete)
+			entry->replicate_delete = true;
+		if (srepset->replicate_truncate)
 			entry->replicate_truncate = true;
 
 		/*
@@ -356,6 +432,9 @@ relation_is_replicated(Relation rel, List *replication_sets,
 					   PGLogicalChangeType change_type)
 {
 	PGLogicalRepSetRelation *r;
+
+	if (RelationGetNamespace(rel) == get_namespace_oid(EXTENSION_NAME, false))
+		return false;
 
 	r = get_repset_relation(RelationGetRelid(rel), replication_sets);
 
