@@ -62,13 +62,13 @@ shorten_hash(const char *str, int maxlen)
 	char   *ret;
 	int		len = strlen(str);
 
-	Assert(maxlen > 10);
+	Assert(maxlen >= 8);
 
 	if (len <= maxlen)
 		return pstrdup(str);
 
 	ret = (char *) palloc(maxlen + 1);
-	snprintf(ret, maxlen, "%*s%u", maxlen - 10, /* uint32 max length is 10 */
+	snprintf(ret, maxlen, "%.*s%08x", maxlen - 8,
 			 str, DatumGetUInt32(hash_any((unsigned char *) str, len)));
 	ret[maxlen] = '\0';
 
