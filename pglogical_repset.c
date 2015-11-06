@@ -298,7 +298,7 @@ get_relation_replication_sets(Oid reloid)
 
 	Assert(IsTransactionState());
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
@@ -357,8 +357,8 @@ get_repset_relation(Oid reloid, List *subs_replication_sets)
 	{
 		PGLogicalRepSet	   *srepset = lfirst(slc);
 		ListCell		   *tlc;
-		bool				found = false;
 
+		elog(WARNING, "MODOSsrepset %s, %d", srepset->name, list_length(table_replication_sets));
 		/* Handle special sets. */
 		if ((list_length(table_replication_sets) == 0 &&
 		   	srepset->id == REPLICATION_SET_ID_DEFAULT) ||
@@ -375,22 +375,20 @@ get_repset_relation(Oid reloid, List *subs_replication_sets)
 		foreach (tlc, table_replication_sets)
 		{
 			PGLogicalRepSet	   *trepset = lfirst(tlc);
+			elog(WARNING, "MODOStrepset %s", trepset->name);
 
 			if (trepset->id == srepset->id)
-				found = true;
+			{
+				if (trepset->replicate_insert)
+					entry->replicate_insert = true;
+				if (trepset->replicate_update)
+					entry->replicate_update = true;
+				if (trepset->replicate_delete)
+					entry->replicate_delete = true;
+				if (trepset->replicate_truncate)
+					entry->replicate_truncate = true;
+			}
 		}
-
-		if (!found)
-			continue;
-
-		if (srepset->replicate_insert)
-			entry->replicate_insert = true;
-		if (srepset->replicate_update)
-			entry->replicate_update = true;
-		if (srepset->replicate_delete)
-			entry->replicate_delete = true;
-		if (srepset->replicate_truncate)
-			entry->replicate_truncate = true;
 
 		/*
 		 * Now we now everything is replicated, no point in trying to check
@@ -511,6 +509,7 @@ create_replication_set(PGLogicalRepSet *repset)
 	CatalogUpdateIndexes(rel, tup);
 
 	/* Cleanup. */
+	CacheInvalidateRelcache(rel);
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 }
@@ -549,6 +548,7 @@ drop_replication_set(int setid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
+	CacheInvalidateRelcache(rel);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }
@@ -617,6 +617,7 @@ replication_set_add_table(int setid, Oid reloid)
 	CatalogUpdateIndexes(rel, tup);
 
 	/* Cleanup. */
+	CacheInvalidateRelcache(rel);
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 }
@@ -658,6 +659,7 @@ replication_set_remove_table(int setid, Oid reloid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
+	CacheInvalidateRelcache(rel);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }
