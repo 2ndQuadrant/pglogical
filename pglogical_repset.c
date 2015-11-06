@@ -358,7 +358,6 @@ get_repset_relation(Oid reloid, List *subs_replication_sets)
 		PGLogicalRepSet	   *srepset = lfirst(slc);
 		ListCell		   *tlc;
 
-		elog(WARNING, "MODOSsrepset %s, %d", srepset->name, list_length(table_replication_sets));
 		/* Handle special sets. */
 		if ((list_length(table_replication_sets) == 0 &&
 		   	srepset->id == REPLICATION_SET_ID_DEFAULT) ||
@@ -375,7 +374,6 @@ get_repset_relation(Oid reloid, List *subs_replication_sets)
 		foreach (tlc, table_replication_sets)
 		{
 			PGLogicalRepSet	   *trepset = lfirst(tlc);
-			elog(WARNING, "MODOStrepset %s", trepset->name);
 
 			if (trepset->id == srepset->id)
 			{
