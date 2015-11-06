@@ -38,6 +38,7 @@
 #include "pglogical_repset.h"
 #include "pglogical_rpc.h"
 #include "pglogical_init_replica.h"
+#include "pglogical_sync.h"
 #include "pglogical.h"
 
 /*
@@ -147,290 +148,6 @@ restore_structure(PGLogicalSubscriber *sub, const char *section)
 						command.data)));
 }
 
-/*
- * Make standard postgres connection, ERROR on failure.
- */
-static PGconn *
-pg_connect(const char *connstring, const char *connname)
-{
-	PGconn		   *conn;
-	StringInfoData	dsn;
-
-	initStringInfo(&dsn);
-	appendStringInfo(&dsn,
-					"%s fallback_application_name='%s'",
-					connstring, connname);
-
-	conn = PQconnectdb(dsn.data);
-	if (PQstatus(conn) != CONNECTION_OK)
-	{
-		ereport(FATAL,
-				(errmsg("could not connect to the postgresql server: %s",
-						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", dsn.data)));
-	}
-
-	return conn;
-}
-
-/*
- * Make replication connection, ERROR on failure.
- */
-static PGconn *
-pg_connect_replica(const char *connstring, const char *connname)
-{
-	PGconn		   *conn;
-	StringInfoData	dsn;
-
-	initStringInfo(&dsn);
-	appendStringInfo(&dsn,
-					"%s replication=database fallback_application_name='%s'",
-					connstring, connname);
-
-	conn = PQconnectdb(dsn.data);
-	if (PQstatus(conn) != CONNECTION_OK)
-	{
-		ereport(FATAL,
-				(errmsg("could not connect to the postgresql server in replication mode: %s",
-						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", dsn.data)));
-	}
-
-	return conn;
-}
-
-
-static void
-start_copy_origin_tx(PGconn *conn, const char *snapshot)
-{
-	PGresult	   *res;
-	const char	   *setup_query_template =
-		"BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY;\n"
-		"SET TRANSACTION SNAPSHOT '%s';\n"
-		"SET DATESTYLE = ISO;\n"
-		"SET INTERVALSTYLE = POSTGRES;\n"
-		"SET extra_float_digits TO 3;\n"
-		"SET statement_timeout = 0;\n"
-		"SET lock_timeout = 0;\n";
-	StringInfoData	query;
-
-	initStringInfo(&query);
-	appendStringInfo(&query, setup_query_template, snapshot);
-
-	res = PQexec(conn, query.data);
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		elog(ERROR, "BEGIN on origin node failed: %s",
-				PQresultErrorMessage(res));
-	PQclear(res);
-}
-
-static void
-start_copy_target_tx(PGconn *conn, const char *snapshot)
-{
-	PGresult	   *res;
-	const char	   *setup_query_template =
-		"BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;\n"
-		"SET DATESTYLE = ISO;\n"
-		"SET INTERVALSTYLE = POSTGRES;\n"
-		"SET extra_float_digits TO 3;\n"
-		"SET statement_timeout = 0;\n"
-		"SET lock_timeout = 0;\n";
-	StringInfoData	query;
-
-	initStringInfo(&query);
-	appendStringInfo(&query, setup_query_template, snapshot);
-
-	res = PQexec(conn, query.data);
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		elog(ERROR, "BEGIN on target node failed: %s",
-				PQresultErrorMessage(res));
-	PQclear(res);
-}
-
-/*
- * COPY table.
- *
- * TODO: move to separate worker and use COPY API instead of libpq connection.
- */
-static void
-copy_table_data(PGconn *origin_conn, PGconn *target_conn,
-				const char *schemaname, const char *relname)
-{
-	PGresult   *res;
-	int			bytes;
-	char	   *copybuf;
-	StringInfoData	query;
-
-	/* Build COPY TO query. */
-	initStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s TO stdout",
-					 PQescapeIdentifier(origin_conn, schemaname,
-										strlen(schemaname)),
-					 PQescapeIdentifier(origin_conn, relname,
-										strlen(relname)));
-
-	/* Execute COPY TO. */
-	res = PQexec(origin_conn, query.data);
-	if (PQresultStatus(res) != PGRES_COPY_OUT)
-	{
-		ereport(ERROR,
-				(errmsg("table copy failed"),
-				 errdetail("Query '%s': %s", query.data,
-					 PQerrorMessage(origin_conn))));
-	}
-
-	/* Build COPY FROM query. */
-	resetStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s FROM stdin",
-					 PQescapeIdentifier(origin_conn, schemaname,
-										strlen(schemaname)),
-					 PQescapeIdentifier(origin_conn, relname,
-										strlen(relname)));
-
-	/* Execute COPY FROM. */
-	res = PQexec(target_conn, query.data);
-	if (PQresultStatus(res) != PGRES_COPY_IN)
-	{
-		ereport(ERROR,
-				(errmsg("table copy failed"),
-				 errdetail("Query '%s': %s", query.data,
-					 PQerrorMessage(origin_conn))));
-	}
-
-	while ((bytes = PQgetCopyData(origin_conn, &copybuf, false)) > 0)
-	{
-		if (PQputCopyData(target_conn, copybuf, bytes) != 1)
-		{
-			ereport(ERROR,
-					(errmsg("writing to target table failed"),
-					 errdetail("destination connection reported: %s",
-						 PQerrorMessage(target_conn))));
-		}
-		PQfreemem(copybuf);
-
-		CHECK_FOR_INTERRUPTS();
-	}
-
-	if (bytes != -1)
-	{
-		ereport(ERROR,
-				(errmsg("reading from origin table failed"),
-				 errdetail("source connection returned %d: %s",
-					bytes, PQerrorMessage(origin_conn))));
-	}
-
-	/* Send local finish */
-	if (PQputCopyEnd(target_conn, NULL) != 1)
-	{
-		ereport(ERROR,
-				(errmsg("sending copy-completion to destination connection failed"),
-				 errdetail("destination connection reported: %s",
-					 PQerrorMessage(target_conn))));
-	}
-
-	PQclear(res);
-}
-
-static List *
-get_copy_tables(PGconn *origin_conn, List *replication_sets)
-{
-	PGresult   *res;
-	int			i;
-	List	   *tables = NIL;
-	ListCell   *lc;
-	StringInfoData	query;
-	StringInfoData	repsetarr;
-
-	initStringInfo(&repsetarr);
-	appendStringInfo(&repsetarr, "{");
-	foreach (lc, replication_sets)
-	{
-		PGLogicalRepSet *rs = lfirst(lc);
-
-		appendStringInfo(&repsetarr, "%s", rs->name);
-	}
-	appendStringInfo(&repsetarr, "}");
-
-	/* Build COPY TO query. */
-	initStringInfo(&query);
-	appendStringInfo(&query, "SELECT nspname, relname FROM %s.tables WHERE set_name = ANY(%s)",
-					 EXTENSION_NAME,
-					 PQescapeLiteral(origin_conn, repsetarr.data,
-									 repsetarr.len));
-
-	res = PQexec(origin_conn, query.data);
-	/* TODO: better error message */
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		elog(ERROR, "could not get table list");
-
-	for (i = 0; i < PQntuples(res); i++)
-	{
-		RangeVar *rv;
-
-		rv = makeRangeVar(pstrdup(PQgetvalue(res, i, 0)),
-						  pstrdup(PQgetvalue(res, i, 1)), -1);
-
-		tables = lappend(tables, rv);
-	}
-
-	PQclear(res);
-
-	return tables;
-}
-
-/*
- * Copy data from origin node to target node.
- *
- * For now restores complete structure, but data is copied only for
- * replicated tables.
- */
-static void
-copy_node_data(PGLogicalSubscriber *sub, const char *snapshot)
-{
-	PGconn	   *origin_conn;
-	PGconn	   *target_conn;
-	List	   *tables;
-	ListCell   *lc;
-	PGresult   *res;
-
-	/* Connect to origin node. */
-	origin_conn = pg_connect(sub->provider_dsn, EXTENSION_NAME "_init");
-	start_copy_origin_tx(origin_conn, snapshot);
-
-	/* Get tables to copy from origin node. */
-	tables = get_copy_tables(origin_conn, sub->replication_sets);
-
-	/* Connect to target node. */
-	target_conn = pg_connect(sub->local_dsn, EXTENSION_NAME "_init");
-	start_copy_target_tx(target_conn, snapshot);
-
-	/* Copy every table. */
-	foreach (lc, tables)
-	{
-		RangeVar	*rv = lfirst(lc);
-
-		copy_table_data(origin_conn, target_conn,
-						rv->schemaname, rv->relname);
-
-		CHECK_FOR_INTERRUPTS();
-	}
-
-	/* Close the  transaction and connection on origin node. */
-	res = PQexec(origin_conn, "ROLLBACK");
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		elog(WARNING, "ROLLBACK on origin node failed: %s",
-				PQresultErrorMessage(res));
-	PQclear(res);
-	PQfinish(origin_conn);
-
-	/* Close the transaction and connection on target node. */
-	res = PQexec(target_conn, "COMMIT");
-	if (PQresultStatus(res) != PGRES_COMMAND_OK)
-		elog(ERROR, "COMMIT on target node failed: %s",
-				PQresultErrorMessage(res));
-	PQclear(res);
-	PQfinish(target_conn);
-}
 
 /*
  * Ensure slot exitst.
@@ -520,8 +237,8 @@ pglogical_init_replica(PGLogicalSubscriber *sub)
 		gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
 					  sub->provider_name, sub->name);
 
-		origin_conn_repl = pg_connect_replica(sub->provider_dsn,
-											  EXTENSION_NAME "_snapshot");
+		origin_conn_repl = pglogical_connect_replica(sub->provider_dsn,
+													 EXTENSION_NAME "_snapshot");
 
 		snapshot = ensure_replication_slot_snapshot(origin_conn_repl, &slot_name,
 													&lsn);
@@ -542,7 +259,8 @@ pglogical_init_replica(PGLogicalSubscriber *sub)
 		restore_structure(sub, "pre-data");
 
 		/* Copy data. */
-		copy_node_data(sub, snapshot);
+		copy_replication_sets_data(sub->provider_dsn, sub->local_dsn,
+								   snapshot, sub->replication_sets);
 
 		/* Restore post-data structure (indexes, constraints, etc). */
 		restore_structure(sub, "post-data");

@@ -17,6 +17,8 @@
 #include "postmaster/bgworker.h"
 #include "utils/array.h"
 
+#include "libpq-fe.h"
+
 #include "pglogical_node.h"
 
 #define EXTENSION_NAME "pglogical"
@@ -33,6 +35,11 @@ extern void gen_slot_name(Name slot_name, char *dbname,
 extern Oid pglogical_generate_id(void);
 extern List *textarray_to_list(ArrayType *textarray);
 
-void pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel);
+extern void pglogical_execute_sql_command(char *cmdstr, char *role,
+										  bool isTopLevel);
+
+extern PGconn *pglogical_connect(const char *connstring, const char *connname);
+extern PGconn *pglogical_connect_replica(const char *connstring,
+										 const char *connname);
 
 #endif /* PGLOGICAL_H */

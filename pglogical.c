@@ -142,6 +142,59 @@ textarray_to_list(ArrayType *textarray)
 }
 
 /*
+ * Make standard postgres connection, ERROR on failure.
+ */
+PGconn *
+pglogical_connect(const char *connstring, const char *connname)
+{
+	PGconn		   *conn;
+	StringInfoData	dsn;
+
+	initStringInfo(&dsn);
+	appendStringInfo(&dsn,
+					"%s fallback_application_name='%s'",
+					connstring, connname);
+
+	conn = PQconnectdb(dsn.data);
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		ereport(FATAL,
+				(errmsg("could not connect to the postgresql server: %s",
+						PQerrorMessage(conn)),
+				 errdetail("dsn was: %s", dsn.data)));
+	}
+
+	return conn;
+}
+
+/*
+ * Make replication connection, ERROR on failure.
+ */
+PGconn *
+pglogical_connect_replica(const char *connstring, const char *connname)
+{
+	PGconn		   *conn;
+	StringInfoData	dsn;
+
+	initStringInfo(&dsn);
+	appendStringInfo(&dsn,
+					"%s replication=database fallback_application_name='%s'",
+					connstring, connname);
+
+	conn = PQconnectdb(dsn.data);
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		ereport(FATAL,
+				(errmsg("could not connect to the postgresql server in replication mode: %s",
+						PQerrorMessage(conn)),
+				 errdetail("dsn was: %s", dsn.data)));
+	}
+
+	return conn;
+}
+
+
+/*
  * Start the manager workers for every db which has a pglogical node.
  *
  * Note that we start workers that are not necessary here. We do this because
