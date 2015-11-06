@@ -53,8 +53,8 @@ void pglogical_supervisor_main(Datum main_arg);
  * The way we do this is we if the string is longer we return prefix from that
  * string and hash of the string which will together be exatly maxlen.
  *
- * Maxlen can't be less than 11 because hash produces uint32 which in text form
- * can have up to 10 characters.
+ * Maxlen can't be less than 8 because hash produces uint32 which in hex form
+ * can have up to 8 characters.
  */
 static char *
 shorten_hash(const char *str, int maxlen)
