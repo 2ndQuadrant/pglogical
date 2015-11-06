@@ -3,29 +3,34 @@
 The pglogical module provides logical streaming replication for PostgreSQL, using a publish/subscribe module.
 
 We use the following terms to describe data streams between nodes, deliberately reused from the earlier Slony technology.
-* Nodes
-* Providers and Subscribers
-* Replication Set
+* Nodes - PostgreSQL database instances
+* Providers and Subscribers - roles taken by Nodes
+* Replication Set - a collection of tables
 
 pglogical is new technology utilising the latest in-core features, so we have these version restrictions
 * Provider node must run PostgreSQL 9.4+
 * Subscriber node must run PostgreSQL 9.5+
 
 Use cases supported are
-* Upgrades between major versions
+* Upgrades between major versions (given the above restrictions)
 * Full database replication
 * Selective replication of sets of tables using replication sets
 
-DDL replication is not supported; DDL is the responsibility of the user. As such, long term cross-version replication is not considered a design target, though it may often work.
-
+Architectural details
+* pglogical works at the database level, not whole server level like physical streaming replication
 * One Provider may feed multiple Subscribers without incurring additional write overhead
-* One subscriber can merge changes from several origins and detect conflict between changes with
-automatic and configurable conflict resolution (some, but not all required for multi-master).
+* One Subscriber can merge changes from several origins and detect conflict between changes with
+automatic and configurable conflict resolution (some, but not all aspects required for multi-master).
 * Cascading replication is implemented in the form of change forwarding.
 
-Selective replication is also supported in the form of replication sets.
+## Requirements
 
-`pglogical_output` needs to be installed on both provider and subscriber. 
+DDL replication is not supported; DDL is the responsibility of the user. As such, long term cross-version replication is not considered a design target, though it may often work.
+
+* Currently pglogical replication requires superuser. It may be later extended to user with replication privileges. 
+* UNLOGGED and TEMP tables will not and cannot be replicated. 
+* Updates and Deletes cannot be replicated for tables that lack both a primary key and a replica identity - we have no way to find the tuple that should be updated/deleted since there is no unique identifier.
+* `pglogical_output` needs to be installed on both provider and subscriber. 
 
 ## Usage
 
