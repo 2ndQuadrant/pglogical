@@ -22,6 +22,8 @@
 #include "catalog/pg_database.h"
 #include "catalog/pg_type.h"
 
+#include "mb/pg_wchar.h"
+
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
@@ -80,13 +82,25 @@ shorten_hash(const char *str, int maxlen)
  */
 void
 gen_slot_name(Name slot_name, char *dbname, const char *provider_name,
-			  const char *subscriber_name)
+			  const char *subscriber_name, const char *suffix)
 {
-	snprintf(NameStr(*slot_name), NAMEDATALEN,
-			 "pgl_%s_%s_%s",
-			 shorten_hash(dbname, 16),
-			 shorten_hash(provider_name, 16),
-			 shorten_hash(subscriber_name, 16));
+	if (suffix)
+	{
+		snprintf(NameStr(*slot_name), NAMEDATALEN,
+				 "pgl_%s_%s_%s_%s",
+				 shorten_hash(dbname, 16),
+				 shorten_hash(provider_name, 16),
+				 shorten_hash(subscriber_name, 16),
+				 shorten_hash(suffix, 8));
+	}
+	else
+	{
+		snprintf(NameStr(*slot_name), NAMEDATALEN,
+				 "pgl_%s_%s_%s",
+				 shorten_hash(dbname, 16),
+				 shorten_hash(provider_name, 16),
+				 shorten_hash(subscriber_name, 16));
+	}
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 }
 
@@ -193,6 +207,97 @@ pglogical_connect_replica(const char *connstring, const char *connname)
 	return conn;
 }
 
+void
+pglogical_start_replication(PGconn *streamConn, const char *slot_name,
+							XLogRecPtr start_pos, const char *forward_origins,
+							const char *replication_sets,
+							const char *replicate_table)
+{
+	StringInfoData	command;
+	PGresult	   *res;
+	char		   *sqlstate;
+
+	initStringInfo(&command);
+	appendStringInfo(&command, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (",
+					 slot_name,
+					 (uint32) (start_pos >> 32),
+					 (uint32) start_pos);
+
+	/* Basic protocol info. */
+	appendStringInfo(&command, "expected_encoding '%s'",
+					 GetDatabaseEncodingName());
+	appendStringInfo(&command, ", min_proto_version '1'");
+	appendStringInfo(&command, ", max_proto_version '1'");
+	appendStringInfo(&command, ", startup_params_format '1'");
+	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
+
+	/* Binary protocol compatibility. */
+	appendStringInfo(&command, ", \"binary.want_internal_basetypes\" '1'");
+	appendStringInfo(&command, ", \"binary.want_binary_basetypes\" '1'");
+	appendStringInfo(&command, ", \"binary.basetypes_major_version\" '%u'",
+					 PG_VERSION_NUM/100);
+	appendStringInfo(&command, ", \"binary.sizeof_datum\" '%zu'",
+					 sizeof(Datum));
+	appendStringInfo(&command, ", \"binary.sizeof_int\" '%zu'", sizeof(int));
+	appendStringInfo(&command, ", \"binary.sizeof_long\" '%zu'", sizeof(long));
+	appendStringInfo(&command, ", \"binary.bigendian\" '%d'",
+#ifdef WORDS_BIGENDIAN
+					 true
+#else
+					 false
+#endif
+					 );
+	appendStringInfo(&command, ", \"binary.float4_byval\" '%d'",
+#ifdef USE_FLOAT4_BYVAL
+					 true
+#else
+					 false
+#endif
+					 );
+	appendStringInfo(&command, ", \"binary.float8_byval\" '%d'",
+#ifdef USE_FLOAT8_BYVAL
+					 true
+#else
+					 false
+#endif
+					 );
+	appendStringInfo(&command, ", \"binary.integer_datetimes\" '%d'",
+#ifdef USE_INTEGER_DATETIMES
+					 true
+#else
+					 false
+#endif
+					 );
+
+	appendStringInfoString(&command,
+						   ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
+
+	/* TODO: Allow forwarding mode control. Currently hardcoded. */
+	appendStringInfo(&command, ", \"pglogical.forward_origin\" '%s'", "all");
+
+	if (replicate_table)
+	{
+		/* Send the table name we want to the upstream */
+		appendStringInfoString(&command, ", \"pglogical.table_name\" ");
+		appendStringInfoString(&command, quote_literal_cstr(replicate_table));
+	}
+
+	if (replication_sets)
+	{
+		/* Send the replication set names we want to the upstream */
+		appendStringInfoString(&command, ", \"pglogical.replication_set_names\" ");
+		appendStringInfoString(&command, quote_literal_cstr(replication_sets));
+	}
+
+	appendStringInfoChar(&command, ')');
+
+	res = PQexec(streamConn, command.data);
+	sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+	if (PQresultStatus(res) != PGRES_COPY_BOTH)
+		elog(FATAL, "could not send replication command \"%s\": %s\n, sqlstate: %s",
+			 command.data, PQresultErrorMessage(res), sqlstate);
+	PQclear(res);
+}
 
 /*
  * Start the manager workers for every db which has a pglogical node.

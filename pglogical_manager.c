@@ -26,7 +26,6 @@
 
 #include "pglogical_node.h"
 #include "pglogical_worker.h"
-#include "pglogical_init_replica.h"
 #include "pglogical.h"
 
 void pglogical_manager_main(Datum main_arg);
@@ -86,7 +85,6 @@ pglogical_manager_main(Datum main_arg)
 	int			slot = DatumGetInt32(main_arg);
 	Oid			extoid;
 	List	   *subscribers;
-	ListCell   *lc;
 	MemoryContext	saved_ctx;
 
 	/* Setup shmem. */
@@ -119,16 +117,8 @@ pglogical_manager_main(Datum main_arg)
 	CommitTransactionCommand();
 
 	/* TODO: check that there is only one subscriber with node status != 'r' */
-	foreach (lc, subscribers)
-	{
-		PGLogicalSubscriber	   *sub = (PGLogicalSubscriber *) lfirst(lc);
 
-		if (sub->status != SUBSCRIBER_STATUS_READY)
-			pglogical_init_replica(sub);
-	}
-
-	/* Setup shared state between the manager and apply processes. */
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
 
 	/* Main wait loop. */
 	while (!got_SIGTERM)

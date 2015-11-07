@@ -53,9 +53,10 @@
 #include "pglogical_queue.h"
 #include "pglogical_relcache.h"
 #include "pglogical_repset.h"
+#include "pglogical_rpc.h"
+#include "pglogical_sync.h"
 #include "pglogical_worker.h"
 #include "pglogical.h"
-
 
 void pglogical_apply_main(Datum main_arg);
 
@@ -65,8 +66,21 @@ static RepOriginId	remote_origin_id = InvalidRepOriginId;
 
 static Oid			QueueRelid = InvalidOid;
 
+static List		   *MySyncWorkers = NIL;
+static List		   *SyncingTables = NIL;
+
+PGLogicalApplyWorker	   *MyApplyWorker = NULL;
+
+static PGconn	   *applyconn = NULL;
+
 static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
 
+static bool
+check_syncing_relation(const char *nspname, const char *relname)
+{
+	return list_length(SyncingTables) &&
+		list_member(SyncingTables, makeRangeVar((char *)nspname, (char *)relname, -1));
+}
 
 static bool
 ensure_transaction(void)
@@ -124,6 +138,131 @@ handle_commit(StringInfo s)
 	}
 
 	in_remote_transaction = false;
+
+	/*
+	 * Stop replay if we're doing limited replay and we've replayed up to the
+	 * last record we're supposed to process.
+	 */
+	if (MyApplyWorker->replay_stop_lsn != InvalidXLogRecPtr
+			&& MyApplyWorker->replay_stop_lsn <= end_lsn)
+	{
+		ereport(LOG,
+				(errmsg("pglogical apply finished processing; replayed to %X/%X of required %X/%X",
+				 (uint32)(end_lsn>>32), (uint32)end_lsn,
+				 (uint32)(MyApplyWorker->replay_stop_lsn >>32),
+				 (uint32)MyApplyWorker->replay_stop_lsn)));
+
+		/*
+		 * Flush all writes so the latest position can be reported back to the
+		 * sender.
+		 */
+		XLogFlush(GetXLogWriteRecPtr());
+
+		/*
+		 * If this is sync worker, report that it's done and wait for
+		 * acknowledgement.
+		 */
+		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC)
+		{
+			PGLogicalWorker	   *apply;
+			NameData			slot_name;
+			PGconn			   *origin_conn;
+			PGLogicalSubscriber	   *sub;
+
+			MyPGLogicalWorker->worker.sync.status = TABLE_SYNC_STATUS_READY;
+			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+			apply = pglogical_apply_find(MyPGLogicalWorker->dboid,
+										 MyApplyWorker->subscriberid);
+			if (apply)
+			{
+				SetLatch(&apply->proc->procLatch);
+				LWLockRelease(PGLogicalCtx->lock);
+
+				wait_for_sync_status_change(MyPGLogicalWorker,
+											TABLE_SYNC_STATUS_NONE);
+			}
+			else
+				LWLockRelease(PGLogicalCtx->lock);
+
+			StartTransactionCommand();
+			sub = get_subscriber(MyApplyWorker->subscriberid);
+			gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
+						  sub->provider_name, sub->name,
+						  NameStr(MyPGLogicalWorker->worker.sync.relname));
+
+			/* Disconnect from the slot so we can drop it. */
+			PQfinish(applyconn);
+
+			/* Drop the slot on the remote side. */
+			origin_conn = pglogical_connect(sub->provider_dsn, sub->name);
+			pglogical_drop_remote_slot(origin_conn, NameStr(slot_name));
+			PQfinish(origin_conn);
+
+			/* Drop the origin tracking locally. */
+			replorigin_session_reset();
+			replorigin_drop(replorigin_session_origin);
+			CommitTransactionCommand();
+		}
+
+		/* TODO: clean slot and origin tracking. */
+
+		/* Stop gracefully */
+		proc_exit(0);
+	}
+
+	if (list_length(MySyncWorkers) > 0)
+	{
+		ListCell	   *lc;
+
+		foreach (lc, MySyncWorkers)
+		{
+			int slot = lfirst_int(lc);
+			PGLogicalWorker *worker;
+
+			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+			worker = pglogical_get_worker(slot);
+
+			/* Sanity check. */
+			if (worker->worker_type != PGLOGICAL_WORKER_SYNC ||
+				worker->worker.sync.apply.subscriberid !=
+				MyApplyWorker->subscriberid)
+			{
+				LWLockRelease(PGLogicalCtx->lock);
+				continue;
+			}
+			LWLockRelease(PGLogicalCtx->lock);
+
+			/* TODO: improve lock handling. */
+			pg_memory_barrier();
+
+			/*
+			 * Process worker which is waiting for synchronization. But let
+			 * it synchronize only if we are not behind it.
+			 */
+			if (worker->worker.sync.status == TABLE_SYNC_STATUS_SYNCWAIT &&
+				end_lsn >= worker->worker.sync.apply.replay_stop_lsn)
+			{
+				XLogFlush(GetXLogWriteRecPtr());
+				worker->worker.sync.apply.replay_stop_lsn = end_lsn;
+				worker->worker.sync.status = TABLE_SYNC_STATUS_CATCHUP;
+				SetLatch(&worker->proc->procLatch);
+				wait_for_sync_status_change(worker, TABLE_SYNC_STATUS_READY);
+			}
+
+			/* We fall through here intentionally. */
+			if (worker->worker.sync.status == TABLE_SYNC_STATUS_READY)
+			{
+				RangeVar   *rv = makeRangeVar(NameStr(worker->worker.sync.nspname),
+											  NameStr(worker->worker.sync.relname),
+											  -1);
+
+				worker->worker.sync.status = TABLE_SYNC_STATUS_NONE;
+				MySyncWorkers = list_delete_int(MySyncWorkers, slot);
+				SyncingTables = list_delete(SyncingTables, rv);
+				SetLatch(&worker->proc->procLatch);
+			}
+		}
+	}
 }
 
 /*
@@ -192,12 +331,12 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 											   &slot->tts_tuple->t_self,
 											   estate, false, NULL, NIL);
 
+		/* FIXME: recheck the indexes */
 		if (recheckIndexes != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("pglogical doesn't support index rechecks")));
 
-		/* FIXME: recheck the indexes */
 		list_free(recheckIndexes);
 	}
 }
@@ -218,6 +357,13 @@ handle_insert(StringInfo s)
 	bool				started_tx = ensure_transaction();
 
 	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
+
+	/* If in list of relations which are being synchronized, skip. */
+	if (check_syncing_relation(rel->nspname, rel->relname))
+	{
+		pglogical_relation_close(rel, NoLock);
+		return;
+	}
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
@@ -324,6 +470,13 @@ handle_update(StringInfo s)
 	rel = pglogical_read_update(s, RowExclusiveLock, &hasoldtup, &oldtup,
 								&newtup);
 
+	/* If in list of relations which are being synchronized, skip. */
+	if (check_syncing_relation(rel->nspname, rel->relname))
+	{
+		pglogical_relation_close(rel, NoLock);
+		return;
+	}
+
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
 	localslot = ExecInitExtraTupleSlot(estate);
@@ -425,6 +578,13 @@ handle_delete(StringInfo s)
 
 	rel = pglogical_read_delete(s, RowExclusiveLock, &oldtup);
 
+	/* If in list of relations which are being synchronized, skip. */
+	if (check_syncing_relation(rel->nspname, rel->relname))
+	{
+		pglogical_relation_close(rel, NoLock);
+		return;
+	}
+
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
 	localslot = ExecInitExtraTupleSlot(estate);
@@ -456,14 +616,8 @@ handle_delete(StringInfo s)
 	CommandCounterIncrement();
 }
 
-/*
- * Handle TRUNCATE message comming via queue table.
- *
- * Note we do truncate filtering here in rhe downstream for performance
- * reasons.
- */
-static void
-handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
+static RangeVar *
+parse_relation_message(Jsonb *message)
 {
 	JsonbIterator  *it;
 	JsonbValue		v;
@@ -473,15 +627,12 @@ handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
 	char		  **parse_res = NULL;
 	char		   *nspname = NULL;
 	char		   *relname = NULL;
-	RangeVar	   *rv;
-	Oid				relid;
-	TruncateStmt   *truncate;
 
 	/* Parse and validate the json message. */
-	if (!JB_ROOT_IS_OBJECT(queued_message->message))
+	if (!JB_ROOT_IS_OBJECT(message))
 		elog(ERROR, "malformed message in queued message tuple: root is not object");
 
-	it = JsonbIteratorInit(&queued_message->message->root);
+	it = JsonbIteratorInit(&message->root);
 	while ((r = JsonbIteratorNext(&it, &v, false)) != WJB_DONE)
 	{
 		if (level == 0 && r != WJB_BEGIN_OBJECT)
@@ -529,17 +680,38 @@ handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
 
 	/* Check if we got both schema and table names. */
 	if (!nspname)
-		elog(ERROR, "missing schema_name in TRUNCATE message");
+		elog(ERROR, "missing schema_name in relation message");
 
 	if (!relname)
-		elog(ERROR, "missing table_name in TRUNCATE message");
+		elog(ERROR, "missing table_name in relation message");
+
+	return makeRangeVar(nspname, relname, -1);
+}
+
+/*
+ * Handle TRUNCATE message comming via queue table.
+ *
+ * Note we do truncate filtering here in rhe downstream for performance
+ * reasons.
+ */
+static void
+handle_truncate(QueuedMessage *queued_message)
+{
+	RangeVar	   *rv;
+	Oid				relid;
+	TruncateStmt   *truncate;
 
 	/*
 	 * If table doesn't exist locally, it can't be subscribed.
 	 *
-	 * TODO: error?
+	 * TODO: should we error here?
 	 */
-	rv = makeRangeVar(nspname, relname, -1);
+	rv = parse_relation_message(queued_message->message);
+
+	/* If in list of relations which are being synchronized, skip. */
+	if (check_syncing_relation(rv->schemaname, rv->relname))
+		return;
+
 	relid = RangeVarGetRelid(rv, AccessExclusiveLock, true);
 	if (relid == InvalidOid)
 		return;
@@ -553,6 +725,46 @@ handle_truncate(QueuedMessage *queued_message, bool tx_just_started)
 	ExecuteTruncate(truncate);
 
 	CommandCounterIncrement();
+}
+
+/*
+ * Handle TRUNCATE message comming via queue table.
+ *
+ * Note we do truncate filtering here in rhe downstream for performance
+ * reasons.
+ */
+static void
+handle_table_copy(QueuedMessage *queued_message)
+{
+	RangeVar	   *rv;
+	int				slot;
+	PGLogicalSubscriber	   *sub;
+	PGLogicalWorker			worker;
+	MemoryContext	oldcontext;
+
+	rv = parse_relation_message(queued_message->message);
+
+	sub = get_subscriber(MyApplyWorker->subscriberid);
+
+	memset(&worker, 0, sizeof(PGLogicalWorker));
+	worker.worker_type = PGLOGICAL_WORKER_SYNC;
+	worker.dboid = MyPGLogicalWorker->dboid;
+	worker.worker.apply.subscriberid = sub->id;
+
+	/* Tell the apply to stop at current position. */
+	worker.worker.sync.status = TABLE_SYNC_STATUS_INIT;
+	worker.worker.sync.apply.replay_stop_lsn = replorigin_session_origin_lsn;
+	namestrcpy(&worker.worker.sync.nspname, rv->schemaname);
+	namestrcpy(&worker.worker.sync.relname, rv->relname);
+
+	slot = pglogical_worker_register(&worker);
+
+	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+	SyncingTables = lappend(SyncingTables,
+							makeRangeVar(pstrdup(rv->schemaname),
+										 pstrdup(rv->relname), -1));
+	MySyncWorkers = lappend_int(MySyncWorkers, slot);
+	MemoryContextSwitchTo(oldcontext);
 }
 
 /*
@@ -610,14 +822,16 @@ handle_queued_message(HeapTuple msgtup, bool tx_just_started)
 			handle_sql(queued_message, tx_just_started);
 			break;
 		case QUEUE_COMMAND_TYPE_TRUNCATE:
-			handle_truncate(queued_message, tx_just_started);
+			handle_truncate(queued_message);
+			break;
+		case QUEUE_COMMAND_TYPE_TABLECOPY:
+			handle_table_copy(queued_message);
 			break;
 		default:
 			elog(ERROR, "unknown message type '%c'",
 				 queued_message->message_type);
 	}
 }
-
 
 static void
 replication_handler(StringInfo s)
@@ -721,7 +935,6 @@ send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
 		 (uint32) (flushpos >> 32), (uint32) flushpos
 		);
 
-
 	if (PQputCopyData(conn, reply_message->data, reply_message->len) <= 0 ||
 		PQflush(conn))
 	{
@@ -745,14 +958,15 @@ send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
 /*
  * Apply main loop.
  */
-static void
+void
 apply_work(PGconn *streamConn)
 {
 	int			fd;
 	char	   *copybuf = NULL;
 	XLogRecPtr	last_received = InvalidXLogRecPtr;
 
-	fd = PQsocket(streamConn);
+	applyconn = streamConn;
+	fd = PQsocket(applyconn);
 
 	/* Init the MessageContext which we use for easier cleanup. */
 	MessageContext = AllocSetContextCreate(TopMemoryContext,
@@ -788,13 +1002,13 @@ apply_work(PGconn *streamConn)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		if (PQstatus(streamConn) == CONNECTION_BAD)
+		if (PQstatus(applyconn) == CONNECTION_BAD)
 		{
 			elog(ERROR, "connection to other side has died");
 		}
 
 		if (rc & WL_SOCKET_READABLE)
-			PQconsumeInput(streamConn);
+			PQconsumeInput(applyconn);
 
 		for (;;)
 		{
@@ -807,7 +1021,7 @@ apply_work(PGconn *streamConn)
 				copybuf = NULL;
 			}
 
-			r = PQgetCopyData(streamConn, &copybuf, 1);
+			r = PQgetCopyData(applyconn, &copybuf, 1);
 
 			if (r == -1)
 			{
@@ -816,7 +1030,7 @@ apply_work(PGconn *streamConn)
 			else if (r == -2)
 			{
 				elog(ERROR, "could not read COPY data: %s",
-					 PQerrorMessage(streamConn));
+					 PQerrorMessage(applyconn));
 			}
 			else if (r < 0)
 				elog(ERROR, "invalid COPY status %d", r);
@@ -863,7 +1077,7 @@ apply_work(PGconn *streamConn)
 					/* timestamp = */ pq_getmsgint64(&s);
 					reply_requested = pq_getmsgbyte(&s);
 
-					send_feedback(streamConn, endpos,
+					send_feedback(applyconn, endpos,
 								  GetCurrentTimestamp(),
 								  reply_requested);
 				}
@@ -872,7 +1086,7 @@ apply_work(PGconn *streamConn)
 		}
 
 		/* confirm all writes at once */
-		send_feedback(streamConn, last_received, GetCurrentTimestamp(), false);
+		send_feedback(applyconn, last_received, GetCurrentTimestamp(), false);
 
 		/* Cleanup the memory. */
 		MemoryContextResetAndDeleteChildren(MessageContext);
@@ -915,7 +1129,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	 * executed in situations where they aren't allowed. The sender side should
 	 * provide protection, but better be safe than sorry.
 	 */
-	isTopLevel = isTopLevel & (list_length(commands) == 1);
+	isTopLevel = isTopLevel && (list_length(commands) == 1);
 
 	foreach(command_i, commands)
 	{
@@ -948,7 +1162,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 
 		PopActiveSnapshot();
 
-		portal = CreatePortal("bdr", true, true);
+		portal = CreatePortal("pglogical", true, true);
 		PortalDefineQuery(portal, NULL,
 						  cmdstr, commandTag,
 						  plantree_list, NULL);
@@ -1005,23 +1219,22 @@ repsets_to_identifierstr(List *repsets)
 	return repsetnames.data;
 }
 
+
 void
 pglogical_apply_main(Datum main_arg)
 {
 	int				slot = DatumGetInt32(main_arg);
 	PGconn		   *streamConn;
-	PGresult	   *res;
-	char		   *sqlstate;
-	StringInfoData	conninfo_repl;
-	StringInfoData	command;
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
 	NameData		slot_name;
 	PGLogicalSubscriber	   *sub;
+	MemoryContext	saved_ctx;
 	char		   *repsets;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
+	MyApplyWorker = &MyPGLogicalWorker->worker.apply;
 
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
@@ -1031,113 +1244,53 @@ pglogical_apply_main(Datum main_arg)
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
 
+
 	/* Connect to our database. */
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
 	StartTransactionCommand();
-	sub = get_subscriber(MyPGLogicalWorker->worker.apply.subscriberid);
+	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
+	sub = get_subscriber(MyApplyWorker->subscriberid);
+	MemoryContextSwitchTo(saved_ctx);
+	CommitTransactionCommand();
+
+	/* If the node isn't initialized yet, initialize it. */
+	if (sub->status != SUBSCRIBER_STATUS_READY)
+	{
+		pglogical_copy_database(sub);
+		StartTransactionCommand();
+		saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
+		sub = get_subscriber(MyApplyWorker->subscriberid);
+		MemoryContextSwitchTo(saved_ctx);
+		CommitTransactionCommand();
+	}
 
 	elog(DEBUG1, "starting apply for subscriber %s", sub->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
 		 sub->provider_name, sub->provider_dsn);
 
-	initStringInfo(&conninfo_repl);
-	appendStringInfo(&conninfo_repl, "%s replication=database fallback_application_name='%s_apply'",
-					 sub->provider_dsn, sub->name);
-
 	/*
-	 * Cache tne queue relation id.
+	 * Cache the queue relation id.
 	 * TODO: invalidation
 	 */
+	StartTransactionCommand();
 	QueueRelid = get_queue_table_oid();
-
-	streamConn = PQconnectdb(conninfo_repl.data);
-	if (PQstatus(streamConn) != CONNECTION_OK)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_CONNECTION_FAILURE),
-				 errmsg("could not connect to the upstream server: %s",
-						PQerrorMessage(streamConn)),
-				 errdetail("Connection string is '%s'", conninfo_repl.data)));
-	}
 
 	/* Setup the origin and get the starting position for the replication. */
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->provider_name, sub->name);
+				  sub->provider_name, sub->name, NULL);
 
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
 	origin_startpos = replorigin_session_get_progress(false);
 
 	/* Start the replication. */
-	initStringInfo(&command);
-	appendStringInfo(&command, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (",
-					 NameStr(slot_name),
-					 (uint32) (origin_startpos >> 32),
-					 (uint32) origin_startpos);
+	streamConn = pglogical_connect_replica(sub->provider_dsn, sub->name);
 
-	appendStringInfo(&command, "expected_encoding '%s'", GetDatabaseEncodingName());
-	appendStringInfo(&command, ", min_proto_version '1'");
-	appendStringInfo(&command, ", max_proto_version '1'");
-	appendStringInfo(&command, ", startup_params_format '1'");
-	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
-
-	/* Binary protocol compatibility. */
-	appendStringInfo(&command, ", \"binary.want_internal_basetypes\" '1'");
-	appendStringInfo(&command, ", \"binary.want_binary_basetypes\" '1'");
-	appendStringInfo(&command, ", \"binary.basetypes_major_version\" '%u'", PG_VERSION_NUM/100);
-	appendStringInfo(&command, ", \"binary.sizeof_datum\" '%zu'", sizeof(Datum));
-	appendStringInfo(&command, ", \"binary.sizeof_int\" '%zu'", sizeof(int));
-	appendStringInfo(&command, ", \"binary.sizeof_long\" '%zu'", sizeof(long));
-	appendStringInfo(&command, ", \"binary.bigendian\" '%d'",
-#ifdef WORDS_BIGENDIAN
-					 true
-#else
-					 false
-#endif
-					 );
-	appendStringInfo(&command, ", \"binary.float4_byval\" '%d'",
-#ifdef USE_FLOAT4_BYVAL
-					 true
-#else
-					 false
-#endif
-					 );
-	appendStringInfo(&command, ", \"binary.float8_byval\" '%d'",
-#ifdef USE_FLOAT8_BYVAL
-					 true
-#else
-					 false
-#endif
-					 );
-	appendStringInfo(&command, ", \"binary.integer_datetimes\" '%d'",
-#ifdef USE_INTEGER_DATETIMES
-					 true
-#else
-					 false
-#endif
-					 );
-
-	appendStringInfoString(&command, ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
-
-	/* TODO: Allow forwarding mode control. Currently hardcoded. */
-	appendStringInfo(&command, ", \"pglogical.forward_origin\" '%s'", "all");
-
-	/* Send the replication set names we want to the upstream */
-	appendStringInfoString(&command, ", \"pglogical.replication_set_names\" ");
 	repsets = repsets_to_identifierstr(sub->replication_sets);
-	appendStringInfoString(&command, quote_literal_cstr(repsets));
+	pglogical_start_replication(streamConn, NameStr(slot_name),
+								origin_startpos, "all", repsets, NULL);
 	pfree(repsets);
-	repsets=NULL;
-
-	appendStringInfoChar(&command, ')');
-
-	res = PQexec(streamConn, command.data);
-	sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
-	if (PQresultStatus(res) != PGRES_COPY_BOTH)
-		elog(FATAL, "could not send replication command \"%s\": %s\n, sqlstate: %s",
-			 command.data, PQresultErrorMessage(res), sqlstate);
-	PQclear(res);
 
 	CommitTransactionCommand();
 

@@ -20,7 +20,10 @@
 
 #include "access/xact.h"
 
+#include "catalog/namespace.h"
 #include "catalog/pg_type.h"
+
+#include "nodes/makefuncs.h"
 
 #include "replication/origin.h"
 
@@ -45,6 +48,7 @@ typedef struct PGLogicalHooksPrivate
     const char *forward_origin;
 	/* List of PGLogicalRepSet */
 	List	   *replication_sets;
+	RangeVar   *replicate_table;
 } PGLogicalHooksPrivate;
 
 void
@@ -85,7 +89,25 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 			if (!SplitIdentifierString(strVal(elem->arg), ',', &replication_set_names))
 				elog(ERROR, "Could not parse replication set name list %s", strVal(elem->arg));
 
-			private->replication_sets = get_replication_sets(replication_set_names, true);
+			private->replication_sets = get_replication_sets(replication_set_names, false);
+
+			continue;
+		}
+
+		if (pg_strcasecmp("pglogical.table_name", elem->defname) == 0)
+		{
+			List *table_name;
+
+			if (elem->arg == NULL || strVal(elem->arg) == NULL)
+				elog(ERROR, "pglogical.table_name may not be NULL");
+
+			elog(DEBUG2, "pglogical startup hook got table name %s", strVal(elem->arg));
+
+			if (!SplitIdentifierString(strVal(elem->arg), '.', &table_name))
+				elog(ERROR, "Could not parse table_name %s", strVal(elem->arg));
+
+			private->replicate_table = makeRangeVar(pstrdup(linitial(table_name)),
+													pstrdup(lsecond(table_name)), -1);
 
 			continue;
 		}
@@ -98,13 +120,27 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 	PGLogicalHooksPrivate *private = (PGLogicalHooksPrivate*)rowfilter_args->private_data;
 	bool ret;
 
-	if (RelationGetRelid(rowfilter_args->changed_rel) == get_queue_table_oid())
-		/* Always pass on queue table changes */
-		ret = true;
-	else
-		ret = relation_is_replicated(rowfilter_args->changed_rel,
-			    private->replication_sets,
-			    to_pglogical_changetype(rowfilter_args->change_type));
+	if (private->replicate_table)
+	{
+		/*
+		 * Special case - we are catching up just one table.
+		 * TODO: performance
+		 */
+		return strcmp(RelationGetRelationName(rowfilter_args->changed_rel),
+					  private->replicate_table->relname) == 0 &&
+			RelationGetNamespace(rowfilter_args->changed_rel) ==
+			get_namespace_oid(private->replicate_table->schemaname, true);
+	}
+	else if (RelationGetRelid(rowfilter_args->changed_rel) == get_queue_table_oid())
+	{
+		/* Special case - queue table */
+		return true;
+	}
+
+	/* Normal case - use replication sets. */
+	ret = relation_is_replicated(rowfilter_args->changed_rel,
+		private->replication_sets,
+		to_pglogical_changetype(rowfilter_args->change_type));
 
 	return ret;
 }

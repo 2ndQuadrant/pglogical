@@ -48,3 +48,11 @@ SELECT * FROM pglogical.replication_set_add_table('all', 'test_publicschema');
 --too short
 SELECT pglogical.create_replication_set('');
 
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.test_publicschema;
+	DROP SCHEMA normalschema CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+$$);
+
+\c postgres
+SELECT * FROM pglogical.replication_set;

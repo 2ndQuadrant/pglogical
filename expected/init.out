@@ -53,6 +53,6 @@ SELECT plugin, slot_type, database, active FROM pg_replication_slots;
 SELECT count(*) FROM pg_stat_replication;
  count 
 -------
-     2
+     1
 (1 row)
 

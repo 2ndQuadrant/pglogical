@@ -15,8 +15,9 @@
 
 #include "utils/jsonb.h"
 
-#define QUEUE_COMMAND_TYPE_SQL		'Q'
-#define QUEUE_COMMAND_TYPE_TRUNCATE	'T'
+#define QUEUE_COMMAND_TYPE_SQL			'Q'
+#define QUEUE_COMMAND_TYPE_TRUNCATE		'T'
+#define QUEUE_COMMAND_TYPE_TABLECOPY	'C'
 
 typedef struct QueuedMessage
 {
@@ -35,4 +36,3 @@ extern Oid get_queue_table_oid(void);
 extern void create_truncate_trigger(char *schemaname, char *relname);
 
 #endif /* PGLOGICAL_NODE_H */
-

@@ -19,6 +19,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
+#include "pglogical_sync.h"
 #include "pglogical_worker.h"
 #include "pglogical.h"
 
@@ -108,6 +109,15 @@ pglogical_worker_register(PGLogicalWorker *worker)
 				 "pglogical_manager_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
 				 "pglogical manager %d", worker->dboid);
+	}
+	else if (worker->worker_type == PGLOGICAL_WORKER_SYNC)
+	{
+		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
+				 "pglogical_sync_main");
+		snprintf(bgw.bgw_name, BGW_MAXLEN,
+				 "pglogical sync %s %d:%d",
+				 NameStr(worker->worker.sync.relname),
+				 worker->dboid, worker->worker.sync.apply.subscriberid);
 	}
 	else
 	{
@@ -232,6 +242,46 @@ pglogical_apply_find(Oid dboid, Oid subscriberid)
 	}
 
 	return NULL;
+}
+
+/*
+ * Get worker based on slot
+ */
+PGLogicalWorker *
+pglogical_get_worker(int slot)
+{
+	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
+	return &PGLogicalCtx->workers[slot];
+}
+
+/*
+ * Wait until the sync worker has changed the state to desired one.
+ *
+ * We also exit if the worker is no longer recognized as sync worker as
+ * that means somebody bad happened to it.
+ */
+void
+wait_for_sync_status_change(PGLogicalWorker *worker, char desired_state)
+{
+	int rc;
+
+	while (!got_SIGTERM)
+	{
+		pg_memory_barrier();
+		if (worker->worker_type != PGLOGICAL_WORKER_SYNC ||
+			worker->worker.sync.status == desired_state)
+			return;
+
+		rc = WaitLatch(&MyProc->procLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   180000L);
+
+        ResetLatch(&MyProc->procLatch);
+
+		/* emergency bailout if postmaster has died */
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+	}
 }
 
 static void

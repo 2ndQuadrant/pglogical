@@ -16,8 +16,24 @@
 typedef enum {
 	PGLOGICAL_WORKER_NONE,		/* Unused slot. */
 	PGLOGICAL_WORKER_MANAGER,	/* Manager. */
-	PGLOGICAL_WORKER_APPLY		/* Apply. */
+	PGLOGICAL_WORKER_APPLY,		/* Apply. */
+	PGLOGICAL_WORKER_SYNC		/* Special type of Apply that synchronizes
+								 * one table. */
 } PGLogicalWorkerType;
+
+typedef struct PGLogicalApplyWorker
+{
+	Oid			subscriberid;	/* Subscriber id for apply worker. */
+	XLogRecPtr	replay_stop_lsn;	/* Replay should stop here if defined. */
+} PGLogicalApplyWorker;
+
+typedef struct PGLogicalSyncWorker
+{
+	PGLogicalApplyWorker	apply; /* Apply worker info, must be first. */
+	char		status;		/* Status of synchronization */
+	NameData	nspname;	/* Name of the schema of table to copy if any. */
+	NameData	relname;	/* Name of the table to copy if any. */
+} PGLogicalSyncWorker;
 
 typedef struct PGLogicalWorker {
 	PGLogicalWorkerType	worker_type;
@@ -31,10 +47,8 @@ typedef struct PGLogicalWorker {
 	/* Connection id, for apply worker. */
 	union
 	{
-		struct
-		{
-			Oid     subscriberid;	/* Subscriber id for apply worker. */
-		} apply;
+		PGLogicalApplyWorker apply;
+		PGLogicalSyncWorker sync;
 	} worker;
 
 } PGLogicalWorker;
@@ -51,8 +65,9 @@ typedef struct PGLogicalContext {
 	PGLogicalWorker  workers[FLEXIBLE_ARRAY_MEMBER];
 } PGLogicalContext;
 
-extern PGLogicalContext	   *PGLogicalCtx;
-extern PGLogicalWorker	   *MyPGLogicalWorker;
+extern PGLogicalContext		   *PGLogicalCtx;
+extern PGLogicalWorker		   *MyPGLogicalWorker;
+extern PGLogicalApplyWorker	   *MyApplyWorker;
 
 extern volatile sig_atomic_t got_SIGTERM;
 
@@ -68,5 +83,9 @@ extern void pglogical_worker_detach(bool signal_supervisor);
 
 extern PGLogicalWorker *pglogical_manager_find(Oid dboid);
 extern PGLogicalWorker *pglogical_apply_find(Oid dboid, Oid subscriberid);
+extern PGLogicalWorker *pglogical_get_worker(int slot);
+
+extern void wait_for_sync_status_change(PGLogicalWorker *worker,
+										char desired_state);
 
 #endif /* PGLOGICAL_WORKER_H */
