@@ -198,8 +198,18 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 	if (RepSetRelationHash == NULL)
 		return;
 
-	if ((entry = hash_search(RepSetRelationHash, &reloid,
-							 HASH_FIND, NULL)) != NULL)
+	if (reloid == InvalidOid)
+	{
+		HASH_SEQ_STATUS status;
+		hash_seq_init(&status, RepSetRelationHash);
+
+		while ((entry = hash_seq_search(&status)) != NULL)
+		{
+			entry->isvalid = false;
+		}
+	}
+	else if ((entry = hash_search(RepSetRelationHash, &reloid,
+								  HASH_FIND, NULL)) != NULL)
 	{
 		entry->isvalid = false;
 	}
@@ -429,6 +439,7 @@ relation_is_replicated(Relation rel, List *replication_sets,
 {
 	PGLogicalRepSetRelation *r;
 
+	/* TODO: cache */
 	if (RelationGetNamespace(rel) == get_namespace_oid(EXTENSION_NAME, false))
 		return false;
 
@@ -507,11 +518,51 @@ create_replication_set(PGLogicalRepSet *repset)
 	CatalogUpdateIndexes(rel, tup);
 
 	/* Cleanup. */
-	CacheInvalidateRelcache(rel);
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 }
 
+/*
+ * Remove all tables from replication set.
+ */
+static void
+replication_set_remove_tables(int setid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	check_for_reserved_replication_set(setid);
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for the record. */
+	ScanKeyInit(&key[0],
+				Anum_repset_table_setid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(setid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		RepSetTableTuple   *t = (RepSetTableTuple *) GETSTRUCT(tuple);
+		Oid					reloid = t->reloid;
+
+		/* Remove the tuple. */
+		simple_heap_delete(rel, &tuple->t_self);
+
+		CacheInvalidateRelcacheByRelid(reloid);
+	}
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
 
 /*
  * Delete the tuple from replication sets catalog.
@@ -526,6 +577,8 @@ drop_replication_set(int setid)
 	ScanKeyData		key[1];
 
 	check_for_reserved_replication_set(setid);
+
+	replication_set_remove_tables(setid);
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -615,7 +668,7 @@ replication_set_add_table(int setid, Oid reloid)
 	CatalogUpdateIndexes(rel, tup);
 
 	/* Cleanup. */
-	CacheInvalidateRelcache(rel);
+	CacheInvalidateRelcacheByRelid(reloid);
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 }
@@ -647,7 +700,7 @@ replication_set_remove_table(int setid, Oid reloid)
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(reloid));
 
-	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	scan = systable_beginscan(rel, 0, true, NULL, 2, key);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
@@ -657,7 +710,7 @@ replication_set_remove_table(int setid, Oid reloid)
 	simple_heap_delete(rel, &tuple->t_self);
 
 	/* Cleanup. */
-	CacheInvalidateRelcache(rel);
+	CacheInvalidateRelcacheByRelid(reloid);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }
