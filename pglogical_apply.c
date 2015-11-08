@@ -204,8 +204,6 @@ handle_commit(StringInfo s)
 			CommitTransactionCommand();
 		}
 
-		/* TODO: clean slot and origin tracking. */
-
 		/* Stop gracefully */
 		proc_exit(0);
 	}
