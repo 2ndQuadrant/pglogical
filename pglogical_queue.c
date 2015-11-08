@@ -3,8 +3,6 @@
  * pglogical_queue.c
  *		pglogical queue and connection catalog manipulation functions
  *
- * TODO: caching
- *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
