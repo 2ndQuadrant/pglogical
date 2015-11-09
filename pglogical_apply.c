@@ -201,6 +201,7 @@ handle_commit(StringInfo s)
 			/* Drop the origin tracking locally. */
 			replorigin_session_reset();
 			replorigin_drop(replorigin_session_origin);
+			replorigin_session_origin = InvalidRepOriginId;
 			CommitTransactionCommand();
 		}
 
@@ -1286,6 +1287,7 @@ pglogical_apply_main(Datum main_arg)
 
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
+	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
 
 	/* Start the replication. */

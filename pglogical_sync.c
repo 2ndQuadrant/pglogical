@@ -682,7 +682,10 @@ pglogical_sync_main(Datum main_arg)
 				  NameStr(MySyncWorker->relname));
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
+	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
+
+	CommitTransactionCommand();
 
 	MySyncWorker->apply.replay_stop_lsn = origin_startpos;
 	MySyncWorker->status = TABLE_SYNC_STATUS_SYNCWAIT;
@@ -698,8 +701,6 @@ pglogical_sync_main(Datum main_arg)
 								origin_startpos, "all", NULL, tablename);
 
 	pfree(tablename);
-
-	CommitTransactionCommand();
 
 	apply_work(streamConn);
 
