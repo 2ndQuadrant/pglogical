@@ -210,12 +210,16 @@ handle_commit(StringInfo s)
 
 	if (list_length(MySyncWorkers) > 0)
 	{
-		ListCell	   *lc;
+		ListCell	   *lc,
+					   *next;
 
-		foreach (lc, MySyncWorkers)
+		for (lc = list_head(MySyncWorkers); lc; lc = next)
 		{
 			int slot = lfirst_int(lc);
 			PGLogicalWorker *worker;
+
+			/* We might delete the cell so advance it now. */
+			next = lnext(lc);
 
 			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 			worker = pglogical_get_worker(slot);
@@ -256,6 +260,7 @@ handle_commit(StringInfo s)
 
 				worker->worker.sync.status = TABLE_SYNC_STATUS_NONE;
 				MySyncWorkers = list_delete_int(MySyncWorkers, slot);
+				/* TODO: this leaks. */
 				SyncingTables = list_delete(SyncingTables, rv);
 				SetLatch(&worker->proc->procLatch);
 			}
@@ -757,6 +762,7 @@ handle_table_copy(QueuedMessage *queued_message)
 
 	slot = pglogical_worker_register(&worker);
 
+	/* Keep the lists persistent. */
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	SyncingTables = lappend(SyncingTables,
 							makeRangeVar(pstrdup(rv->schemaname),
