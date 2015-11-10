@@ -13,6 +13,11 @@ data stream. The output stream is designed to be compact and fast to decode,
 and the plugin supports upstream filtering of data so that only the required
 information is sent.
 
+Only one database is replicated, rather than the whole PostgreSQL install. A
+subset of that database may be selected for replication, currently based on
+table and on replication origin. Filtering by a WHERE clause can be supported
+easily in future.
+
 No triggers are required to collect the change stream and no external ticker or
 other daemon is required. It's accumulated using
 [replication slots](http://www.postgresql.org/docs/current/static/logicaldecoding-explanation.html#AEN66446),
@@ -23,11 +28,14 @@ Unlike block-level ("physical") streaming replication, the change stream from
 the `pglogical` output plugin is compatible across different PostgreSQL
 versions and can even be consumed by non-PostgreSQL clients.
 
+Becuse logical decoding is used, only the changed rows are sent on the wire.
+There's no index change data, no vacuum activity, etc transmitted.
+
 The use of a replication slot means that the change stream is reliable and
 crash-safe. If the client disconnects or crashes it can reconnect and resume
 replay from the last message that client processed. Server-side changes that
 occur while the client is disconnected are accumulated in the queue to be sent
-when the client reconnects. This reliabiliy also means that server-side
+when the client reconnects. This reliability also means that server-side
 resources are consumed whether or not a client is connected.
 
 # Why another output plugin?
@@ -352,13 +360,110 @@ in the hook context will be automatically when the decoding session shuts down.
 
 ## Writing hooks in procedural languages
 
-You can write hooks in PL/PgSQL, etc, too.
+You can write hooks in PL/PgSQL, etc, too, via the `pglogical_output_plhooks`
+adapter extension in `examples/hooks`. They won't perform very well though.
 
-There's a default hook setup callback `pglogical_output_default_hooks` that
-returns a set of hook functions which call PostgreSQL PL functions and return
-the results. They act as C-to-PL wrappers. The PostgreSQL PL functions to call
-for each hook are found by <XXX how? we don't want to use the hook arg, since
-we want it free to use in the hooks themselves. a new param read by startup
-hook?>
+# Limitations
 
-... TODO examples ....
+The advantages of logical decoding in general and `pglogical_output` in
+particular are discussed above. There are also some limitations that apply to
+`pglogical_output`, and to Pg's logical decoding in general.
+
+(TODO: move much of this to the main logical decoding docs)
+
+Notably:
+
+## Doesn't replicate DDL
+
+Logical decoding doesn't decode catalog changes directly. So the plugin can't
+just send a `CREATE TABLE` statement when a new table is added.
+
+If the data being decoded is being applied to another PostgreSQL database then
+its table definitions must be kept in sync via some means external to the logical
+decoding plugin its self, such as:
+
+* Event triggers using DDL deparse to capture DDL changes as they happen and write them to a table to be replicated and applied on the other end; or
+* doing DDL management via tools that synchronise DDL on all nodes
+
+## Doesn't replicate global objects/shared catalog changes
+
+PostgreSQL has a number of object types that exist across all databases, stored
+in *shared catalogs*. These include:
+
+* Roles (users/groups)
+* Security labels on users and databases
+
+Such objects cannot be replicated by `pglogical_output`. They're managed with DDL that
+can't be captured within a single database and isn't decoded anyway.
+
+DDL for global object changes must be synchronized via some external means.
+
+## Mostly one-way communication
+
+Per the protocol documentation, the downstream can't send anything except
+replay progress messages to the upstream after replication begins, and can't
+re-initialise replication without a disconnect.
+
+To achieve downstream-to-upstream communication, clients can use a regular
+libpq connection to the upstream then write to tables or call functions.
+Alternately, a separate replication connection in the opposite direction can be
+created by the application to carry information from downstream to upstream.
+
+See "Protocol flow" in the protocol documentation for more information.
+
+## Physical replica failover
+
+Logical decoding cannot follow a physical replication failover because
+replication slot state is not replicated to physical replicas. If you fail over
+to a streaming replica you have to manually reconnect your logical replication
+clients, creating new slots, etc. This is a core PostgreSQL limitation.
+
+Also, there's no built-in way to guarantee that the logical replication slot
+from the failed master hasn't replayed further than the physical streaming
+replica you failed over to. You could recieve changes on your logical decoding
+stream from the old master that never made it to the physical streaming
+replica. This is true (albeit very unlikely) *even if the physical streaming
+replica is synchronous* because PostgreSQL sends the replication data anyway,
+then just delays the commit's visibility on the master. Support for strictly
+ordered standbys would be required in PostgreSQL to avoid this.
+
+To achieve failover with logical replication you cannot mix in physical
+standbys. The logical replication client has to take responsibility for
+maintaining slots on logical replicas intended as failover candidates
+and for ensuring that the furthest-ahead replica is promoted if there is
+more than one.
+
+## Can only replicate complete transactions
+
+Logical decoding can only replicate a transaction after it has committed. This
+usefully skips replication of rolled back transactions, but it also means that
+very large transactions must be completed upstream before they can begin on the
+downstream, adding to replication latency.
+
+## Replicates only one transaction at a time
+
+Logical decoding serializes transactions in commit order, so pglogical_output
+cannot replay interleaved concurrent transactions. This can lead to high latencies
+when big transactions are being replayed, since smaller transactions get queued
+up behind them.
+
+## Unique index required for inserts or updates
+
+To replicate `INSERT`s or `UPDATE`s it is necessary to have a `PRIMARY KEY`
+or a (non-partial, columns-only) `UNIQUE` index on the table, so the table
+has a `REPLICA IDENTITY`. Without that `pglogical_output` doesn't know what
+old key to send to allow the receiver to tell which tuple is being updated.
+
+## UNLOGGED tables aren't replicated
+
+Because `UNLOGGED` tables aren't written to WAL, they aren't replicated by
+logical or physical repliation. You can only replicate `UNLOGGED` tables
+with trigger-based solutions.
+
+## Unchanged fields are often sent in `UPDATE`
+
+Because there's no tracking of dirty/clean fields when a tuple is updated,
+logical decoding can't tell if a given field was changed by an update.
+Unchanged fields can only by identified and omitted if they're a variable
+length TOASTable type and are big enough to get stored out-of-line in
+a TOAST table.
