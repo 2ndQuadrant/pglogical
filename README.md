@@ -227,6 +227,62 @@ payloads of the binary protocol output will have text in different encodings,
 which aren't visible to psql as text to be decoded. Avoiding anything except
 7-bit ascii in the tests *should* prevent the problem.
 
+# Changeset forwarding
+
+It's possible to use `pglogical_output` to cascade replication between multiple
+PostgreSQL servers, in combination with an appropriate client to apply the
+changes to the downstreams.
+
+There are three forwarding modes:
+
+* Forward everything. Transactions are replicated whether they were made directly
+  on the immediate upstream or some other node upstream of it. This is the only
+  option when running on 9.4. All rows from transactions are sent.
+
+  Selected by setting `forward_changesets` to true (default) and not setting a
+  row or transaction filter hook.
+
+* No forwarding. Only transactions applied immediately on the upstream node are
+  forwarded. Transactions with any non-local origin are skipped. All rows from
+  locally originated transactions are sent.
+
+  Selected by setting `forward_changesets` to false. Remember to confirm by
+  checking the startup reply message.
+
+* Filtered forwarding. Transactions are replicated unless a client-supplied
+  transaction filter hook says to skip this transaction. Row changes are
+  replicated unless the client-supplied row filter hook (if provided) says to
+  skip that row.
+
+  Selected by setting `forward_changesets` to `true` and installing a
+  transaction and/or row filter hook (see "hooks").
+
+If the upstream server is 9.5 or newer and `forward_changesets` is enabled, the
+server will enable changeset origin information. It will set
+`forward_changeset_origins` to true in the startup reply message to indicate
+this. It will then send changeset origin messages after the `BEGIN` for each
+transaction, per the protocol documentation. Origin messages are omitted for
+transactions originating directly on the immediate upstream to save bandwidth.
+If `forward_changeset_origins` is true then transactions without an origin are
+always from the immediate upstream that’s running the decoding plugin.
+
+Note that changeset forwarding may be forced to on if not requested by some
+servers, so the client _should_ check the forward_changesets and
+`forward_changeset_origins` params in the startup reply message. In particular,
+9.4 servers force changeset forwarding on, but never forward replication
+origins. This means you cannot use 9.4 for mutual replication as it’ll create
+an infinite loop.
+
+Clients may use this facility to form arbitrarily complex topologies when
+combined with hooks to determine which transactions are forwarded. An obvious
+case is bi-directional (mutual) replication.
+
+# Selective replication
+
+By specifying a row filter hook it's possible to filter the replication stream
+server-side so that only a subset of changes is replicated.
+
+
 # Hooks
 
 `pglogical_output` exposes a number of extension points where applications can
@@ -247,7 +303,8 @@ The SQL signature of this function is
     LANGUAGE c AS 'MODULE_PATHNAME';
 
 Permissions are checked. This function must be callable by the user that the
-output plugin is running as.
+output plugin is running as. The function name *must* be schema-qualified and is
+parsed like any other qualified identifier.
 
 The function receives a pointer to a newly allocated structure of hook function
 pointers to populate as its first argument. The function must not free the
@@ -268,6 +325,15 @@ left null.
 An example is provided in `examples/hooks` and the argument structs are defined
 in `pglogical_output/hooks.h`, which is installed into the PostgreSQL source
 tree when the extension is installed.
+
+Each hook that is enabled results in a new startup parameter being emitted in
+the startup reply message. Clients must check for these and must not assume a
+hook was successfully activated because no error is seen.
+
+Hook functions are called in the context of the backend doing logical decoding.
+Except for the startup hook, hooks see the catalog state as it was at the time
+the transaction or row change being examined was made. Access to to non-catalog
+tables is unsafe unless they have the `user_catalog_table` reloption set.
 
 ## Startup hook
 
@@ -293,6 +359,10 @@ startup.
 
 When successfully enabled, the output parameter `hooks.startup_hook_enabled` is
 set to true in the startup reply message.
+
+Unlike the other hooks, this hook sees a snapshot of the database's current
+state, not a time-traveled catalog state. It is safe to access all tables from
+this hook.
 
 ## Transaction filter hook
 
@@ -353,10 +423,6 @@ invocations under the SQL interface to logical decoding.
 You don't need a hook to free memory you allocated, unless you explicitly
 switched to a longer lived memory context like TopMemoryContext. Memory allocated
 in the hook context will be automatically when the decoding session shuts down.
-
-## Hook example
-
-... TODO ...
 
 ## Writing hooks in procedural languages
 

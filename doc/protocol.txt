@@ -79,18 +79,27 @@ A stream of rows starts with a `BEGIN` message. Rows may only be sent after a
 
 === Forwarded transaction origin message
 
-Sent if and only if the immediately prior message was a `BEGIN` message with
-the `FORWARDED_TRANSACTION` flag set, the message after the `BEGIN` _must_ be a
-_forwarded transaction origin _message indicating what upstream host the
-transaction came from.
+The message after the `BEGIN` may be a _forwarded transaction origin_ message
+indicating what upstream node the transaction came from.
+
+Sent if the immediately prior message was a `BEGIN` message, the upstream
+transaction was forwarded from another node, and replication origin forwarding
+is enabled, i.e. `forward_changeset_origins` is `t` in the startup reply
+message.
+
+A "node" could be another host, another DB on the same host, or pretty much
+anything. Whatever origin name is found gets forwarded.  The origin identifier
+is of arbitrary and application-defined format.  Applications _should_ prefix
+their origin identifier with a fixed application name part, like `bdr_`,
+`myapp_`, etc. It is application-defined what an application does with
+forwarded transactions from other applications.
+
+An origin message with a zero-length origin name indicates that the origin
+could not be identified but was (probably) not the local node. It is
+client-defined what action is taken in this case.
 
 It is a protocol error to send/receive a forwarded transaction origin message
-at any other time.
-
-The origin identifier is of arbitrary and application-defined format.
-Applications _should_ prefix their origin identifier with a fixed application
-name part, like `bdr_`, `myapp_`, etc. It is application-defined what an
-application does with forwarded transactions from other applications.
+at any time other than immediately after a `BEGIN` message.
 
 The origin identifier is typically closely related to replication slot names
 and replication origins’ names in an application system.
