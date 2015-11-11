@@ -182,26 +182,46 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	{
 		int		params_format;
 
+		 /*
+		 * Ideally we'd send the startup message immediately. That way
+		 * it'd arrive before any error we emit if we see incompatible
+		 * options sent by the client here. That way the client could
+		 * possibly adjust its options and reconnect. It'd also make
+		 * sure the client gets the startup message in a timely way if
+		 * the server is idle, since otherwise it could be a while
+		 * before the next callback.
+		 *
+		 * The decoding plugin API doesn't let us write to the stream
+		 * from here, though, so we have to delay the startup message
+		 * until the first change processed on the stream, in a begin
+		 * callback.
+		 *
+		 * If we ERROR there, the startup message is buffered but not
+		 * sent since the callback didn't finish. So we'd have to send
+		 * the startup message, finish the callback and check in the
+		 * next callback if we need to ERROR.
+		 *
+		 * That's a bit much hoop jumping, so for now ERRORs are
+		 * immediate. A way to emit a message from the startup callback
+		 * is really needed to change that.
+		 */
 		startup_message_sent = false;
 
 		/* Now parse the rest of the params and ERROR if we see any we don't recognise */
 		params_format = process_parameters(ctx->output_plugin_options, data);
 
-		/* TODO: delay until after sending startup reply */
 		if (params_format != 1)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
-		/* TODO: Should delay our ERROR until sending startup reply */
 		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
 					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
 
-		/* TODO: Should delay our ERROR until sending startup reply */
 		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -209,7 +229,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/* check for encoding match if specific encoding demanded by client */
-		/* TODO: Should parse encoding name and compare properly */
 		if (data->client_expected_encoding != NULL
 				&& strlen(data->client_expected_encoding) != 0
 				&& strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
