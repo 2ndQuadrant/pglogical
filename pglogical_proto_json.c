@@ -163,8 +163,10 @@ json_write_startup_message(StringInfo out, List *msg)
 		if (first)
 			first = false;
 		else
-			appendStringInfoString(out, ", ");
-		appendStringInfo(out, "\"%s\": \"%s\"", param->defname, strVal(param->arg));
+			appendStringInfoChar(out, ',');
+		escape_json(out, param->defname);
+		appendStringInfoChar(out, ':');
+		escape_json(out, strVal(param->arg));
 	}
 	appendStringInfoString(out, "}}");
 }
