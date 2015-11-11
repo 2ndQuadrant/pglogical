@@ -58,6 +58,7 @@ enum {
 	PARAM_UNRECOGNISED,
 	PARAM_MAX_PROTOCOL_VERSION,
 	PARAM_MIN_PROTOCOL_VERSION,
+	PARAM_PROTOCOL_FORMAT,
 	PARAM_EXPECTED_ENCODING,
 	PARAM_BINARY_BIGENDIAN,
 	PARAM_BINARY_SIZEOF_DATUM,
@@ -83,6 +84,7 @@ typedef struct {
 static OutputPluginParam param_lookup[] = {
 	{"max_proto_version", PARAM_MAX_PROTOCOL_VERSION},
 	{"min_proto_version", PARAM_MIN_PROTOCOL_VERSION},
+	{"proto_format", PARAM_PROTOCOL_FORMAT},
 	{"expected_encoding", PARAM_EXPECTED_ENCODING},
 	{"binary.bigendian", PARAM_BINARY_BIGENDIAN},
 	{"binary.sizeof_datum", PARAM_BINARY_SIZEOF_DATUM},
@@ -190,6 +192,11 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
 				data->client_binary_intdatetimes_set = true;
 				data->client_binary_intdatetimes = DatumGetBool(val);
+				break;
+
+			case PARAM_PROTOCOL_FORMAT:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
+				data->client_protocol_format = DatumGetCString(val);
 				break;
 
 			case PARAM_EXPECTED_ENCODING:

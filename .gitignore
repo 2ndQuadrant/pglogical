@@ -4,3 +4,5 @@ regression.diffs
 tmp_install/
 tmp_check/
 log/
+*.o
+*.pyc
