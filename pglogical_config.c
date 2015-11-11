@@ -21,6 +21,8 @@
 
 #include "mb/pg_wchar.h"
 
+#include "nodes/makefuncs.h"
+
 #include "utils/builtins.h"
 #include "utils/int8.h"
 #include "utils/inval.h"
@@ -372,33 +374,22 @@ parse_param_uint32(DefElem *elem)
 	return (uint32) res;
 }
 
-static void
-append_startup_msg_key(StringInfo si, const char *key)
+static List*
+add_startup_msg_s(List *l, char *key, char *val)
 {
-	appendStringInfoString(si, key);
-	appendStringInfoChar(si, '\0');
+	return lappend(l, makeDefElem(key, (Node*)makeString(val)));
 }
 
-static void
-append_startup_msg_s(StringInfo si, const char *key, const char *val)
+static List*
+add_startup_msg_i(List *l, char *key, int val)
 {
-	append_startup_msg_key(si, key);
-	appendStringInfoString(si, val);
-	appendStringInfoChar(si, '\0');
+	return lappend(l, makeDefElem(key, (Node*)makeString(psprintf("%d", val))));
 }
 
-static void
-append_startup_msg_i(StringInfo si, const char *key, int val)
+static List*
+add_startup_msg_b(List *l, char *key, bool val)
 {
-	append_startup_msg_key(si, key);
-	appendStringInfo(si, "%d", val);
-	appendStringInfoChar(si, '\0');
-}
-
-static void
-append_startup_msg_b(StringInfo si, const char *key, bool val)
-{
-	append_startup_msg_s(si, key, val ? "t" : "f");
+	return lappend(l, makeDefElem(key, (Node*)makeString(val ? "t" : "f")));
 }
 
 /*
@@ -407,11 +398,6 @@ append_startup_msg_b(StringInfo si, const char *key, bool val)
  *
  * It confirms to the client that we could apply requested options, and
  * tells the client our capabilities.
- *
- * The message is a series of null-terminated strings, alternating keys
- * and values.
- *
- * See the protocol docs for details.
  *
  * Any additional parameters provided by the startup hook are also output
  * now.
@@ -424,75 +410,73 @@ append_startup_msg_b(StringInfo si, const char *key, bool val)
  * separates config handling from the protocol implementation, and
  * it's not like startup msg performance matters much.
  */
-void
-prepare_startup_message(PGLogicalOutputData *data, char **msg, int *len)
+List *
+prepare_startup_message(PGLogicalOutputData *data)
 {
-	StringInfoData si;
 	ListCell *lc;
+	List *l = NIL;
 
-	initStringInfo(&si);
-
-	append_startup_msg_s(&si, "max_proto_version", "1");
-	append_startup_msg_s(&si, "min_proto_version", "1");
+	l = add_startup_msg_s(l, "max_proto_version", "1");
+	l = add_startup_msg_s(l, "min_proto_version", "1");
 
 	/* We don't support understand column types yet */
-	append_startup_msg_b(&si, "coltypes", false);
+	l = add_startup_msg_b(l, "coltypes", false);
 
 	/* Info about our Pg host */
-	append_startup_msg_i(&si, "pg_version_num", PG_VERSION_NUM);
-	append_startup_msg_s(&si, "pg_version", PG_VERSION);
-	append_startup_msg_i(&si, "pg_catversion", CATALOG_VERSION_NO);
+	l = add_startup_msg_i(l, "pg_version_num", PG_VERSION_NUM);
+	l = add_startup_msg_s(l, "pg_version", PG_VERSION);
+	l = add_startup_msg_i(l, "pg_catversion", CATALOG_VERSION_NO);
 
-	append_startup_msg_s(&si, "encoding", GetDatabaseEncodingName());
+	l = add_startup_msg_s(l, "encoding", (char*)GetDatabaseEncodingName());
 
-	append_startup_msg_b(&si, "forward_changesets",
+	l = add_startup_msg_b(l, "forward_changesets",
 			data->forward_changesets);
-	append_startup_msg_b(&si, "forward_changeset_origins",
+	l = add_startup_msg_b(l, "forward_changeset_origins",
 			data->forward_changeset_origins);
 
 	/* binary options enabled */
-	append_startup_msg_b(&si, "binary.internal_basetypes",
+	l = add_startup_msg_b(l, "binary.internal_basetypes",
 			data->allow_internal_basetypes);
-	append_startup_msg_b(&si, "binary.binary_basetypes",
+	l = add_startup_msg_b(l, "binary.binary_basetypes",
 			data->allow_binary_basetypes);
 
 	/* Binary format characteristics of server */
-	append_startup_msg_i(&si, "binary.basetypes_major_version", PG_VERSION_NUM/100);
-	append_startup_msg_i(&si, "binary.sizeof_int", sizeof(int));
-	append_startup_msg_i(&si, "binary.sizeof_long", sizeof(long));
-	append_startup_msg_i(&si, "binary.sizeof_datum", sizeof(Datum));
-	append_startup_msg_i(&si, "binary.maxalign", MAXIMUM_ALIGNOF);
-	append_startup_msg_b(&si, "binary.bigendian", server_bigendian());
-	append_startup_msg_b(&si, "binary.float4_byval", server_float4_byval());
-	append_startup_msg_b(&si, "binary.float8_byval", server_float8_byval());
-	append_startup_msg_b(&si, "binary.integer_datetimes", server_integer_datetimes());
+	l = add_startup_msg_i(l, "binary.basetypes_major_version", PG_VERSION_NUM/100);
+	l = add_startup_msg_i(l, "binary.sizeof_int", sizeof(int));
+	l = add_startup_msg_i(l, "binary.sizeof_long", sizeof(long));
+	l = add_startup_msg_i(l, "binary.sizeof_datum", sizeof(Datum));
+	l = add_startup_msg_i(l, "binary.maxalign", MAXIMUM_ALIGNOF);
+	l = add_startup_msg_b(l, "binary.bigendian", server_bigendian());
+	l = add_startup_msg_b(l, "binary.float4_byval", server_float4_byval());
+	l = add_startup_msg_b(l, "binary.float8_byval", server_float8_byval());
+	l = add_startup_msg_b(l, "binary.integer_datetimes", server_integer_datetimes());
 	/* We don't know how to send in anything except our host's format */
-	append_startup_msg_i(&si, "binary.binary_pg_version",
+	l = add_startup_msg_i(l, "binary.binary_pg_version",
 			PG_VERSION_NUM/100);
 
 
 	/*
 	 * Confirm that we've enabled any requested hook functions.
 	 */
-	append_startup_msg_b(&si, "hooks.startup_hook_enabled",
+	l = add_startup_msg_b(l, "hooks.startup_hook_enabled",
 			data->hooks.startup_hook != NULL);
-	append_startup_msg_b(&si, "hooks.shutdown_hook_enabled",
+	l = add_startup_msg_b(l, "hooks.shutdown_hook_enabled",
 			data->hooks.shutdown_hook != NULL);
-	append_startup_msg_b(&si, "hooks.row_filter_enabled",
+	l = add_startup_msg_b(l, "hooks.row_filter_enabled",
 			data->hooks.row_filter_hook != NULL);
-	append_startup_msg_b(&si, "hooks.transaction_filter_enabled",
+	l = add_startup_msg_b(l, "hooks.transaction_filter_enabled",
 			data->hooks.txn_filter_hook != NULL);
 
 	/*
-	 * Output any extra params supplied by a startup hook.
+	 * Output any extra params supplied by a startup hook by appending
+	 * them verbatim to the params list.
 	 */
 	foreach(lc, data->extra_startup_params)
 	{
 		DefElem *param = (DefElem*)lfirst(lc);
 		Assert(IsA(param->arg, String) && strVal(param->arg) != NULL);
-		append_startup_msg_s(&si, param->defname, strVal(param->arg));
+		l = lappend(l, param);
 	}
 
-	*msg = si.data;
-	*len = si.len;
+	return l;
 }

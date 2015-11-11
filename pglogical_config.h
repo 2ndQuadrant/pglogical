@@ -50,7 +50,6 @@ typedef struct PGLogicalOutputData PGLogicalOutputData;
 
 extern int process_parameters(List *options, PGLogicalOutputData *data);
 
-extern void prepare_startup_message(PGLogicalOutputData *data,
-		char **msg, int *length);
+extern List * prepare_startup_message(PGLogicalOutputData *data);
 
 #endif

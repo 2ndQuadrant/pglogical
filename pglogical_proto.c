@@ -286,14 +286,23 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 
 /*
  * Most of the brains for startup message creation lives in
- * pglogical_config.c, so this presently just sends the set of key/value pairs.
+ * pglogical_config.c, so this just sends the set of key/value pairs.
  */
 void
-write_startup_message(StringInfo out, const char *msg, int len)
+write_startup_message(StringInfo out, List *msg)
 {
+	ListCell *lc;
+
 	pq_sendbyte(out, 'S');	/* message type field */
 	pq_sendbyte(out, 1); 	/* startup message version */
-	pq_sendbytes(out, msg, len);	/* null-terminated key/value pairs */
+	foreach (lc, msg)
+	{
+		DefElem *param = (DefElem*)lfirst(lc);
+		Assert(IsA(param->arg, String) && strVal(param->arg) != NULL);
+		/* null-terminated key and value pairs, in client_encoding */
+		pq_sendstring(out, param->defname);
+		pq_sendstring(out, strVal(param->arg));
+	}
 }
 
 /*

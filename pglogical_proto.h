@@ -31,6 +31,6 @@ void pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 							 Relation rel, HeapTuple oldtuple);
 
-void write_startup_message(StringInfo out, const char *msg, int len);
+void write_startup_message(StringInfo out, List *msg);
 
 #endif /* PG_LOGICAL_PROTO_H */

@@ -445,12 +445,11 @@ static void
 send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message)
 {
-	char *msg;
-	int len;
+	List *msg;
 
 	Assert(!startup_message_sent);
 
-	prepare_startup_message(data, &msg, &len);
+	msg = prepare_startup_message(data);
 
 	/*
 	 * We could free the extra_startup_params DefElem list here, but it's
@@ -460,7 +459,7 @@ send_startup_message(LogicalDecodingContext *ctx,
 	 */
 
 	OutputPluginPrepareWrite(ctx, last_message);
-	write_startup_message(ctx->out, msg, len);
+	write_startup_message(ctx->out, msg);
 	OutputPluginWrite(ctx, last_message);
 
 	pfree(msg);
