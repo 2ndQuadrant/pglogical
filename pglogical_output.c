@@ -40,6 +40,7 @@
 
 #include "utils/builtins.h"
 #include "utils/catcache.h"
+#include "utils/guc.h"
 #include "utils/int8.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -228,13 +229,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		 * This is the output plugin protocol format, this is different
 		 * from the individual fields binary vs textual format.
 		 */
+		elog(LOG, "proto format is %s", data->client_protocol_format);
+
 		if (data->client_protocol_format != NULL
 				&& strcmp(data->client_protocol_format, "json") == 0)
 		{
 			data->api = pglogical_init_api(PGLogicalProtoJson);
 			opt->output_type = OUTPUT_PLUGIN_TEXTUAL_OUTPUT;
 		}
-		else
+		else if ((data->client_protocol_format != NULL
+			     && strcmp(data->client_protocol_format, "native") == 0)
+				 || data->client_protocol_format == NULL)
 		{
 			data->api = pglogical_init_api(PGLogicalProtoNative);
 			opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
@@ -244,18 +249,53 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				elog(WARNING, "no_txinfo option ignored for protocols other than json");
 				data->client_no_txinfo = false;
 			}
-
+		}
+		else
+		{
+			ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("client requested protocol %s but only \"json\" or \"native\" are supported",
+				 	data->client_protocol_format)));
 		}
 
 		/* check for encoding match if specific encoding demanded by client */
 		if (data->client_expected_encoding != NULL
-				&& strlen(data->client_expected_encoding) != 0
-				&& strcmp(data->client_expected_encoding, GetDatabaseEncodingName()) != 0)
+				&& strlen(data->client_expected_encoding) != 0)
 		{
-			ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("internal and binary data representation cannot be  \"%s\" encoding is supported by this server, client requested %s",
-				 	GetDatabaseEncodingName(), data->client_expected_encoding)));
+			int wanted_encoding = pg_char_to_encoding(data->client_expected_encoding);
+
+			if (wanted_encoding == -1)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("unrecognised encoding name %s passed to expected_encoding",
+								data->client_expected_encoding)));
+
+			if (opt->output_type == OUTPUT_PLUGIN_TEXTUAL_OUTPUT)
+			{
+				/*
+				 * datum encoding must match assigned client_encoding in text
+				 * proto, since everything is subject to client_encoding
+				 * conversion.
+				 */
+				if (wanted_encoding != pg_get_client_encoding())
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("expected_encoding must be unset or match client_encoding in text protocols")));
+			}
+			else
+			{
+				/*
+				 * currently in the binary protocol we can only emit encoded
+				 * datums in the server encoding. There's no support for encoding
+				 * conversion.
+				 */
+				if (wanted_encoding != GetDatabaseEncoding())
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							 errmsg("encoding conversion for binary datum not supported yet"),
+							 errdetail("expected_encoding %s must be unset or match server_encoding %s",
+								 data->client_expected_encoding, GetDatabaseEncodingName())));
+			}
 		}
 
 		/*

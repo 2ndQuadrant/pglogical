@@ -38,6 +38,8 @@
 
 #include "mb/pg_wchar.h"
 
+#include "replication/origin.h"
+
 #include "utils/builtins.h"
 #include "utils/json.h"
 #include "utils/lsyscache.h"
@@ -58,7 +60,8 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 	appendStringInfoString(out, "\"action\":\"B\"");
 	appendStringInfo(out, ", has_catalog_changes:\"%c\"",
 		txn->has_catalog_changes ? 't' : 'f');
-	appendStringInfo(out, ", origin_id:\"%u\"", txn->origin_id);
+	if (txn->origin_id != InvalidRepOriginId)
+	    appendStringInfo(out, ", origin_id:\"%u\"", txn->origin_id);
 	if (!data->client_no_txinfo)
 	{
 	    appendStringInfo(out, ", xid:\"%u\"", txn->xid);
@@ -66,8 +69,9 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 		    (uint32)(txn->first_lsn >> 32), (uint32)(txn->first_lsn));
 	    appendStringInfo(out, ", origin_lsn:\"%X/%X\"",
 		    (uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
-	    appendStringInfo(out, ", commit_time:\"%s\"",
-		    timestamptz_to_str(txn->commit_time));
+	    if (txn->commit_time != 0)
+		appendStringInfo(out, ", commit_time:\"%s\"",
+			timestamptz_to_str(txn->commit_time));
 	}
 	appendStringInfoChar(out, '}');
 }

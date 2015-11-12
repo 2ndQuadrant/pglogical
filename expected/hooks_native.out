@@ -1,3 +1,4 @@
+\i sql/hooks_setup.sql
 CREATE EXTENSION pglogical_output_plhooks;
 CREATE FUNCTION test_filter(relid regclass, action "char", nodeid text)
 returns bool stable language plpgsql AS $$
@@ -33,6 +34,7 @@ DELETE FROM test_filter WHERE id % 2 = 0;
 DELETE FROM test_nofilt WHERE id % 2 = 0;
 UPDATE test_filter SET id = id*100 WHERE id = 5;
 UPDATE test_nofilt SET id = id*100 WHERE id = 5;
+-- Regular hook setup
 SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	NULL, NULL,
 	'expected_encoding', 'UTF8',
@@ -48,6 +50,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
     40
 (1 row)
 
+-- Test action filter
 SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	NULL, NULL,
 	'expected_encoding', 'UTF8',
@@ -62,6 +65,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
     53
 (1 row)
 
+-- Invalid row fiter hook function
 SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	NULL, NULL,
 	'expected_encoding', 'UTF8',
@@ -73,6 +77,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	);
 ERROR:  function public.nosuchfunction(regclass, "char", text) does not exist
 CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+-- Hook filter functoin with wrong signature
 SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	NULL, NULL,
 	'expected_encoding', 'UTF8',
@@ -84,6 +89,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	);
 ERROR:  function public.wrong_signature_fn(regclass, "char", text) does not exist
 CONTEXT:  slot "regression_slot", output plugin "pglogical_output", in the startup callback
+\i sql/hooks_teardown.sql
 SELECT 'drop' FROM pg_drop_replication_slot('regression_slot');
  ?column? 
 ----------
@@ -92,4 +98,7 @@ SELECT 'drop' FROM pg_drop_replication_slot('regression_slot');
 
 DROP TABLE test_filter;
 DROP TABLE test_nofilt;
+DROP FUNCTION test_filter(relid regclass, action "char", nodeid text);
+DROP FUNCTION test_action_filter(relid regclass, action "char", nodeid text);
+DROP FUNCTION wrong_signature_fn(relid regclass);
 DROP EXTENSION pglogical_output_plhooks;
