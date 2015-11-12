@@ -385,6 +385,7 @@ Since all parameter values are sent as strings, the value types given below spec
 
 |max_proto_version|integer|Newest version of the protocol supported by output plugin.
 |min_proto_version|integer|Oldest protocol version supported by server.
+|proto_format|text|Protocol format requested. native (documented here) or json. Default is native.
 |coltypes|boolean|Column types will be sent in table metadata.
 |pg_version_num|integer|PostgreSQL server_version_num of server, if it’s PostgreSQL. e.g. 090400
 |pg_version|string|PostgreSQL server_version of server, if it’s PostgreSQL.
@@ -534,3 +535,11 @@ with a json object value to carry their extension information. Additions to the
 startup message should follow the same pattern.
 
 Hooks and plugins can be used to add functionality specific to a client.
+
+== JSON protocol
+
+If `proto_format` is set to `json` then the output plugin will emit JSON
+instead of the custom binary protocol. JSON support is intended mainly for
+debugging and diagnostics.
+
+The JSON format supports all the same hooks.
