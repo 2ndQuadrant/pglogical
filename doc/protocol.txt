@@ -393,6 +393,7 @@ Since all parameter values are sent as strings, the value types given below spec
 |encoding|string|The text encoding used in the upstream database. Used for text fields.
 |forward_changesets|bool|Specifies that all transactions, not just those originating on the upstream, will be forwarded. See “_Changeset forwarding_”.
 |forward_changeset_origins|bool|Tells the client that the server will send changeset origin information. Independent of forward_changesets. See “_Changeset forwarding_” for details.
+|no_txinfo|bool|Requests that variable transaction info such as XIDs, LSNs, and timestamps be omitted from output. Mainly for tests. Currently ignored for protos other than json.
 |===
 
 

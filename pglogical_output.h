@@ -83,6 +83,7 @@ typedef struct PGLogicalOutputData
 	bool	client_binary_intdatetimes;
 	bool	client_forward_changesets_set;
 	bool	client_forward_changesets;
+	bool	client_no_txinfo;
 
 	/* hooks */
 	List *hooks_setup_funcname;

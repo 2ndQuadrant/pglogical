@@ -238,6 +238,13 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		{
 			data->api = pglogical_init_api(PGLogicalProtoNative);
 			opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
+
+			if (data->client_no_txinfo)
+			{
+				elog(WARNING, "no_txinfo option ignored for protocols other than json");
+				data->client_no_txinfo = false;
+			}
+
 		}
 
 		/* check for encoding match if specific encoding demanded by client */

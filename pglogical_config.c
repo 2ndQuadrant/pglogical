@@ -73,6 +73,7 @@ enum {
 	PARAM_PG_VERSION,
 	PARAM_FORWARD_CHANGESETS,
 	PARAM_HOOKS_SETUP_FUNCTION,
+	PARAM_NO_TXINFO
 } OutputPluginParamKey;
 
 typedef struct {
@@ -99,6 +100,7 @@ static OutputPluginParam param_lookup[] = {
 	{"pg_version", PARAM_PG_VERSION},
 	{"forward_changesets", PARAM_FORWARD_CHANGESETS},
 	{"hooks.setup_function", PARAM_HOOKS_SETUP_FUNCTION},
+	{"no_txinfo", PARAM_NO_TXINFO},
 	{NULL, PARAM_UNRECOGNISED}
 };
 
@@ -243,6 +245,11 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 			case PARAM_HOOKS_SETUP_FUNCTION:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_QUALIFIED_NAME);
 				data->hooks_setup_funcname = (List*) PointerGetDatum(val);
+				break;
+
+			case PARAM_NO_TXINFO:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
+				data->client_no_txinfo = DatumGetBool(val);
 				break;
 
 			case PARAM_UNRECOGNISED:
@@ -460,6 +467,8 @@ prepare_startup_message(PGLogicalOutputData *data)
 	/* We don't know how to send in anything except our host's format */
 	l = add_startup_msg_i(l, "binary.binary_pg_version",
 			PG_VERSION_NUM/100);
+
+	l = add_startup_msg_b(l, "no_txinfo", data->client_no_txinfo);
 
 
 	/*

@@ -55,7 +55,6 @@ void
 pglogical_json_write_begin(StringInfo out, ReorderBufferTXN *txn)
 {
 	appendStringInfoString(out, "{\"action\":\"B\"}");
-	appendStringInfoChar('}');
 }
 
 /*
