@@ -56,6 +56,19 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 {
 	appendStringInfoChar(out, '{');
 	appendStringInfoString(out, "\"action\":\"B\"");
+	appendStringInfo(out, ", has_catalog_changes:\"%c\"",
+		txn->has_catalog_changes ? 't' : 'f');
+	appendStringInfo(out, ", origin_id:\"%u\"", txn->origin_id);
+	if (!data->client_no_txinfo)
+	{
+	    appendStringInfo(out, ", xid:\"%u\"", txn->xid);
+	    appendStringInfo(out, ", first_lsn:\"%X/%X\"",
+		    (uint32)(txn->first_lsn >> 32), (uint32)(txn->first_lsn));
+	    appendStringInfo(out, ", origin_lsn:\"%X/%X\"",
+		    (uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
+	    appendStringInfo(out, ", commit_time:\"%s\"",
+		    timestamptz_to_str(txn->commit_time));
+	}
 	appendStringInfoChar(out, '}');
 }
 
@@ -66,9 +79,15 @@ void
 pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data, ReorderBufferTXN *txn,
 						XLogRecPtr commit_lsn)
 {
-	/* TODO: needs the rest of the message data */
 	appendStringInfoChar(out, '{');
 	appendStringInfoString(out, "{\"action\":\"C\"}");
+	if (!data->client_no_txinfo)
+	{
+	    appendStringInfo(out, ", final_lsn:\"%X/%X\"",
+		    (uint32)(txn->final_lsn >> 32), (uint32)(txn->final_lsn));
+	    appendStringInfo(out, ", end_lsn:\"%X/%X\"",
+		    (uint32)(txn->end_lsn >> 32), (uint32)(txn->end_lsn));
+	}
 	appendStringInfoChar(out, '}');
 }
 
@@ -98,7 +117,6 @@ static void
 pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
 							HeapTuple oldtuple, HeapTuple newtuple)
 {
-	/* TODO: needs the rest of the message data */
 	appendStringInfoChar(out, '{');
 	appendStringInfo(out, "\"action\":\"%s\",\"relation\":[\"%s\",\"%s\"]",
 					 change,
