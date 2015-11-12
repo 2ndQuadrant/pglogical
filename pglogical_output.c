@@ -229,8 +229,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		 * This is the output plugin protocol format, this is different
 		 * from the individual fields binary vs textual format.
 		 */
-		elog(LOG, "proto format is %s", data->client_protocol_format);
-
 		if (data->client_protocol_format != NULL
 				&& strcmp(data->client_protocol_format, "json") == 0)
 		{
@@ -296,6 +294,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 							 errdetail("expected_encoding %s must be unset or match server_encoding %s",
 								 data->client_expected_encoding, GetDatabaseEncodingName())));
 			}
+
+			data->field_datum_encoding = wanted_encoding;
 		}
 
 		/*

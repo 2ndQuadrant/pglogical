@@ -441,7 +441,9 @@ prepare_startup_message(PGLogicalOutputData *data)
 	l = add_startup_msg_s(l, "pg_version", PG_VERSION);
 	l = add_startup_msg_i(l, "pg_catversion", CATALOG_VERSION_NO);
 
-	l = add_startup_msg_s(l, "encoding", (char*)GetDatabaseEncodingName());
+	l = add_startup_msg_s(l, "database_encoding", (char*)GetDatabaseEncodingName());
+
+	l = add_startup_msg_s(l, "encoding", (char*)pg_encoding_to_char(data->field_datum_encoding));
 
 	l = add_startup_msg_b(l, "forward_changesets",
 			data->forward_changesets);

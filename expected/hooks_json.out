@@ -1,0 +1,137 @@
+\i sql/hooks_setup.sql
+CREATE EXTENSION pglogical_output_plhooks;
+CREATE FUNCTION test_filter(relid regclass, action "char", nodeid text)
+returns bool stable language plpgsql AS $$
+BEGIN
+	IF nodeid <> 'foo' THEN
+	    RAISE EXCEPTION 'Expected nodeid <foo>, got <%>',nodeid;
+	END IF;
+	RETURN relid::regclass::text NOT LIKE '%_filter%';
+END
+$$;
+CREATE FUNCTION test_action_filter(relid regclass, action "char", nodeid text)
+returns bool stable language plpgsql AS $$
+BEGIN
+    RETURN action NOT IN ('U', 'D');
+END
+$$;
+CREATE FUNCTION wrong_signature_fn(relid regclass)
+returns bool stable language plpgsql as $$
+BEGIN
+END;
+$$;
+CREATE TABLE test_filter(id integer);
+CREATE TABLE test_nofilt(id integer);
+SELECT 'init' FROM pg_create_logical_replication_slot('regression_slot', 'pglogical_output');
+ ?column? 
+----------
+ init
+(1 row)
+
+INSERT INTO test_filter(id) SELECT generate_series(1,10);
+INSERT INTO test_nofilt(id) SELECT generate_series(1,10);
+DELETE FROM test_filter WHERE id % 2 = 0;
+DELETE FROM test_nofilt WHERE id % 2 = 0;
+UPDATE test_filter SET id = id*100 WHERE id = 5;
+UPDATE test_nofilt SET id = id*100 WHERE id = 5;
+-- Test table filter
+SELECT data FROM pg_logical_slot_peek_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1',
+	'hooks.setup_function', 'public.pglo_plhooks_setup_fn',
+	'pglo_plhooks.row_filter_hook', 'public.test_filter',
+	'pglo_plhooks.client_hook_arg', 'foo',
+	'proto_format', 'json',
+	'no_txinfo', 't');
+                                                                                                                                                                                                                                                                                                                                                                                          data                                                                                                                                                                                                                                                                                                                                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"action":"S", "params": {"max_proto_version":"1","min_proto_version":"1","coltypes":"f","pg_version_num":"90600","pg_version":"9.6devel","pg_catversion":"201510161","database_encoding":"UTF8","encoding":"UTF8","forward_changesets":"f","forward_changeset_origins":"f","binary.internal_basetypes":"f","binary.binary_basetypes":"f","binary.basetypes_major_version":"906","binary.sizeof_int":"4","binary.sizeof_long":"8","binary.sizeof_datum":"8","binary.maxalign":"8","binary.bigendian":"f","binary.float4_byval":"t","binary.float8_byval":"t","binary.integer_datetimes":"t","binary.binary_pg_version":"906","no_txinfo":"t","hooks.startup_hook_enabled":"t","hooks.shutdown_hook_enabled":"t","hooks.row_filter_enabled":"t","hooks.transaction_filter_enabled":"t"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":1}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":2}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":3}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":4}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":5}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":6}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":7}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":8}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":9}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":10}}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {"action":"U","relation":["public","test_nofilt"],"newtuple":{"id":500}}
+ {{"action":"C"}}
+(24 rows)
+
+-- test action filter
+SELECT data FROM pg_logical_slot_peek_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1',
+	'hooks.setup_function', 'public.pglo_plhooks_setup_fn',
+	'pglo_plhooks.row_filter_hook', 'public.test_action_filter',
+	'proto_format', 'json',
+	'no_txinfo', 't');
+                                                                                                                                                                                                                                                                                                                                                                                          data                                                                                                                                                                                                                                                                                                                                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"action":"S", "params": {"max_proto_version":"1","min_proto_version":"1","coltypes":"f","pg_version_num":"90600","pg_version":"9.6devel","pg_catversion":"201510161","database_encoding":"UTF8","encoding":"UTF8","forward_changesets":"f","forward_changeset_origins":"f","binary.internal_basetypes":"f","binary.binary_basetypes":"f","binary.basetypes_major_version":"906","binary.sizeof_int":"4","binary.sizeof_long":"8","binary.sizeof_datum":"8","binary.maxalign":"8","binary.bigendian":"f","binary.float4_byval":"t","binary.float8_byval":"t","binary.integer_datetimes":"t","binary.binary_pg_version":"906","no_txinfo":"t","hooks.startup_hook_enabled":"t","hooks.shutdown_hook_enabled":"t","hooks.row_filter_enabled":"t","hooks.transaction_filter_enabled":"t"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":1}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":2}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":3}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":4}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":5}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":6}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":7}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":8}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":9}}
+ {"action":"I","relation":["public","test_filter"],"newtuple":{"id":10}}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":1}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":2}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":3}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":4}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":5}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":6}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":7}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":8}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":9}}
+ {"action":"I","relation":["public","test_nofilt"],"newtuple":{"id":10}}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+ {"action":"B", has_catalog_changes:"f"}
+ {{"action":"C"}}
+(33 rows)
+
+\i sql/hooks_teardown.sql
+SELECT 'drop' FROM pg_drop_replication_slot('regression_slot');
+ ?column? 
+----------
+ drop
+(1 row)
+
+DROP TABLE test_filter;
+DROP TABLE test_nofilt;
+DROP FUNCTION test_filter(relid regclass, action "char", nodeid text);
+DROP FUNCTION test_action_filter(relid regclass, action "char", nodeid text);
+DROP FUNCTION wrong_signature_fn(relid regclass);
+DROP EXTENSION pglogical_output_plhooks;
