@@ -5,7 +5,7 @@ OBJS = pglogical_output.o pglogical_hooks.o pglogical_config.o \
 	   pglogical_proto.o pglogical_proto_native.o \
 	   pglogical_proto_json.o
 
-REGRESS = params basic hooks
+REGRESS = params_native basic_native hooks_native
 
 
 ifdef USE_PGXS
