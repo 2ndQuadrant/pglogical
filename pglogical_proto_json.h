@@ -14,9 +14,10 @@
 #define PG_LOGICAL_PROTO_JSON_H
 
 
-extern void pglogical_json_write_begin(StringInfo out, ReorderBufferTXN *txn);
-extern void pglogical_json_write_commit(StringInfo out, ReorderBufferTXN *txn,
-								 XLogRecPtr commit_lsn);
+extern void pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data,
+								 ReorderBufferTXN *txn);
+extern void pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data,
+								 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 
 extern void pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
 								 Relation rel, HeapTuple newtuple);

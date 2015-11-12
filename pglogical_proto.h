@@ -15,9 +15,10 @@
 
 typedef void (*pglogical_write_rel_fn)(StringInfo out, Relation rel);
 
-typedef void (*pglogical_write_begin_fn)(StringInfo out, ReorderBufferTXN *txn);
-typedef void (*pglogical_write_commit_fn)(StringInfo out, ReorderBufferTXN *txn,
-							 XLogRecPtr commit_lsn);
+typedef void (*pglogical_write_begin_fn)(StringInfo out, PGLogicalOutputData *data,
+							 ReorderBufferTXN *txn);
+typedef void (*pglogical_write_commit_fn)(StringInfo out, PGLogicalOutputData *data,
+							 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 
 typedef void (*pglogical_write_origin_fn)(StringInfo out, const char *origin,
 							 XLogRecPtr origin_lsn);

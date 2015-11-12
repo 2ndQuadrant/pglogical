@@ -345,7 +345,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 #endif
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
-	data->api->write_begin(ctx->out, txn);
+	data->api->write_begin(ctx->out, data, txn);
 
 #ifdef HAVE_REPLICATION_ORIGINS
 	if (send_replication_origin)
@@ -384,7 +384,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	OutputPluginPrepareWrite(ctx, true);
-	data->api->write_commit(ctx->out, txn, commit_lsn);
+	data->api->write_commit(ctx->out, data, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
 }
 

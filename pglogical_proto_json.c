@@ -52,20 +52,24 @@
  * Write BEGIN to the output stream.
  */
 void
-pglogical_json_write_begin(StringInfo out, ReorderBufferTXN *txn)
+pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBufferTXN *txn)
 {
-	appendStringInfoString(out, "{\"action\":\"B\"}");
+	appendStringInfoChar(out, '{');
+	appendStringInfoString(out, "\"action\":\"B\"");
+	appendStringInfoChar(out, '}');
 }
 
 /*
  * Write COMMIT to the output stream.
  */
 void
-pglogical_json_write_commit(StringInfo out, ReorderBufferTXN *txn,
+pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data, ReorderBufferTXN *txn,
 						XLogRecPtr commit_lsn)
 {
 	/* TODO: needs the rest of the message data */
+	appendStringInfoChar(out, '{');
 	appendStringInfoString(out, "{\"action\":\"C\"}");
+	appendStringInfoChar(out, '}');
 }
 
 /*
@@ -95,7 +99,8 @@ pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
 							HeapTuple oldtuple, HeapTuple newtuple)
 {
 	/* TODO: needs the rest of the message data */
-	appendStringInfo(out, "{\"action\":\"%s\",\"relation\":[\"%s\",\"%s\"]",
+	appendStringInfoChar(out, '{');
+	appendStringInfo(out, "\"action\":\"%s\",\"relation\":[\"%s\",\"%s\"]",
 					 change,
 					 get_namespace_name(RelationGetNamespace(rel)),
 					 RelationGetRelationName(rel));
@@ -110,7 +115,7 @@ pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
 		appendStringInfoString(out, ",\"newtuple\":");
 		json_write_tuple(out, rel, newtuple);
 	}
-	appendStringInfoString(out, "}");
+	appendStringInfoChar(out, '}');
 }
 
 /*

@@ -16,9 +16,10 @@
 
 extern void pglogical_write_rel(StringInfo out, Relation rel);
 
-extern void pglogical_write_begin(StringInfo out, ReorderBufferTXN *txn);
-extern void pglogical_write_commit(StringInfo out, ReorderBufferTXN *txn,
-							XLogRecPtr commit_lsn);
+extern void pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
+							ReorderBufferTXN *txn);
+extern void pglogical_write_commit(StringInfo out,PGLogicalOutputData *data,
+							ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 
 extern void pglogical_write_origin(StringInfo out, const char *origin,
 							XLogRecPtr origin_lsn);
