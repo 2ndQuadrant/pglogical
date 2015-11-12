@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pglogical_proto.c
- * 		pglogical protocol functions
+ * pglogical_proto_json.c
+ * 		pglogical protocol functions for json support
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pglogical_proto.c
+ *		  pglogical_proto_json.c
  *
  *-------------------------------------------------------------------------
  */
@@ -54,8 +54,8 @@
 void
 pglogical_json_write_begin(StringInfo out, ReorderBufferTXN *txn)
 {
-	/* TODO: needs the rest of the message data */
 	appendStringInfoString(out, "{\"action\":\"B\"}");
+	appendStringInfoChar('}');
 }
 
 /*

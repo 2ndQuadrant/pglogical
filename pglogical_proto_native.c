@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * pglogical_proto.c
- * 		pglogical protocol functions
+ * pglogical_proto_native.c
+ * 		pglogical binary protocol functions
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pglogical_proto.c
+ *		  pglogical_proto_native.c
  *
  *-------------------------------------------------------------------------
  */
