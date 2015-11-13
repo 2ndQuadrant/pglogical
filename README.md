@@ -533,3 +533,107 @@ logical decoding can't tell if a given field was changed by an update.
 Unchanged fields can only by identified and omitted if they're a variable
 length TOASTable type and are big enough to get stored out-of-line in
 a TOAST table.
+
+# Troubleshooting and debugging
+
+## Non-destructively previewing pending data on a slot
+
+Using the json mode of `pglogical_output` you can examine pending transactions
+on a slot without consuming them, so they are still delivered to the usual
+client application that created/owns this slot. This is best done using the SQL
+interface to logical decoding, since it gives you finer control than using
+`pg_recvlogical`.
+
+You can only peek at a slot while there is no other client connected to that
+slot.
+
+Use `pg_logical_slot_peek_changes` to examine the change stream without
+destructively consuming changes. This is extremely helpful when trying to
+determine why an error occurs in a downstream, since you can examine a
+json-ified representation of the xact. It's necessary to supply a minimal
+set of required parameters to the output plugin.
+
+e.g. given setup:
+
+    CREATE TABLE discard_test(blah text);
+    SELECT 'init' FROM pg_create_logical_replication_slot('demo_slot', 'pglogical_output');
+    INSERT INTO discard_test(blah) VALUES('one');
+    INSERT INTO discard_test(blah) VALUES('two1'),('two2'),('two3');
+    INSERT INTO discard_test(blah) VALUES('three1'),('three2');
+
+you can peek at the change stream with:
+
+     SELECT location, xid, data
+     FROM pg_logical_slot_peek_changes('demo_slot', NULL, NULL,
+              'min_proto_version', '1', 'max_proto_version', '1',
+              'startup_params_format', '1', 'proto_format', 'json');
+
+The two `NULL`s mean you don't want to stop decoding after any particular
+LSN or any particular number of changes. Decoding will stop when there's nothing
+left to decode or you cancel the query.
+
+This will emit a key/value startup message then change data rows like:
+
+     location  | xid  |                                            data
+     0/4E8AAF0 | 5562 | {"action":"B", has_catalog_changes:"f", xid:"5562", first_lsn:"0/4E8AAF0", commit_time:"2015-11-13 14:26:21.404425+08"}
+     0/4E8AAF0 | 5562 | {"action":"I","relation":["public","discard_test"],"newtuple":{"blah":"one"}}
+     0/4E8AB70 | 5562 | {"action":"C", final_lsn:"0/4E8AB30", end_lsn:"0/4E8AB70"}
+     0/4E8ABA8 | 5563 | {"action":"B", has_catalog_changes:"f", xid:"5563", first_lsn:"0/4E8ABA8", commit_time:"2015-11-13 14:26:32.015611+08"}
+     0/4E8ABA8 | 5563 | {"action":"I","relation":["public","discard_test"],"newtuple":{"blah":"two1"}}
+     0/4E8ABE8 | 5563 | {"action":"I","relation":["public","discard_test"],"newtuple":{"blah":"two2"}}
+     0/4E8AC28 | 5563 | {"action":"I","relation":["public","discard_test"],"newtuple":{"blah":"two3"}}
+     0/4E8ACA8 | 5563 | {"action":"C", final_lsn:"0/4E8AC68", end_lsn:"0/4E8ACA8"}
+     ....
+
+The output is the LSN (log sequence number) associated with a change, the top
+level transaction ID that performed the change, and the change data as json.
+
+You can see the transaction boundaries by xid changes and by the "B"egin and
+"C"ommit messages, and you can see the individual row "I"nserts. Replication
+origins, commit timestamps, etc will be shown if known.
+
+See http://www.postgresql.org/docs/current/static/functions-admin.html for
+information on the peek functions.
+
+If you want the binary format you can get that with
+`pg_logical_slot_peek_binary_changes` and the `native` protocol, but that's
+generally much less useful.
+
+# Manually discarding a change from a slot
+
+Sometimes it's desirable to manually purge one or more changes from a
+replication slot. This is usually an error recovery step when problems arise
+with the downstream code that's replaying from the slot.
+
+You can use the peek functions to determine the point in the stream you want to
+discard up to, as identifed by LSN (log sequence number). See
+"non-destructively previewing pending data on a slot" above for details.
+
+You can't control the point you start discarding from, it's always from the
+current stream position up to a point you specify. If the peek shows that
+there's data you still want to retain you must make sure that the downstream
+replays up to the point you want to keep changes and sends replay confirmation.
+In other words there's no way to cut a sequence of changes out of the middle of
+the pending change stream.
+
+Once you've peeked the stream and know the LSN you want to discard up to, you
+can use `pg_logical_slot_peek_changes`, specifying an `upto_lsn`, to consume
+changes from the slot up to but not including that point, i.e. that will be the
+point at which replay resumes.
+
+For example, if you wanted to discard the first transaction in the example
+from the section above, i.e. discard xact 5562 and start decoding at xact
+5563 from its' BEGIN lsn `0/4E8ABA8`, you'd run:
+
+      SELECT location, xid, data
+      FROM pg_logical_slot_get_changes('demo_slot', '0/4E8ABA8', NULL,
+               'min_proto_version', '1', 'max_proto_version', '1',
+               'startup_params_format', '1', 'proto_format', 'json');
+
+Note that `_get_changes` is used instead of `_peek_changes` and that
+the `upto_lsn` is `'0/4E8ABA8'` instead of `NULL`.
+
+
+
+
+
