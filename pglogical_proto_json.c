@@ -38,7 +38,9 @@
 
 #include "mb/pg_wchar.h"
 
+#ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
+#endif
 
 #include "utils/builtins.h"
 #include "utils/json.h"
@@ -60,15 +62,19 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 	appendStringInfoString(out, "\"action\":\"B\"");
 	appendStringInfo(out, ", has_catalog_changes:\"%c\"",
 		txn->has_catalog_changes ? 't' : 'f');
+#ifdef HAVE_REPLICATION_ORIGINS
 	if (txn->origin_id != InvalidRepOriginId)
 	    appendStringInfo(out, ", origin_id:\"%u\"", txn->origin_id);
+#endif
 	if (!data->client_no_txinfo)
 	{
 	    appendStringInfo(out, ", xid:\"%u\"", txn->xid);
 	    appendStringInfo(out, ", first_lsn:\"%X/%X\"",
 		    (uint32)(txn->first_lsn >> 32), (uint32)(txn->first_lsn));
+#ifdef HAVE_REPLICATION_ORIGINS
 	    appendStringInfo(out, ", origin_lsn:\"%X/%X\"",
 		    (uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
+#endif
 	    if (txn->commit_time != 0)
 		appendStringInfo(out, ", commit_time:\"%s\"",
 			timestamptz_to_str(txn->commit_time));
