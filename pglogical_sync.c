@@ -111,7 +111,7 @@ dump_structure(PGLogicalSubscriber *sub, const char *snapshot)
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -N %s -F c -f \"%s\" \"%s\"",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
 					 pg_dump, snapshot, EXTENSION_NAME, "/tmp/pglogical.dump",
 					 sub->provider_dsn);
 
