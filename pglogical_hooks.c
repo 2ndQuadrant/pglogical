@@ -56,7 +56,7 @@ typedef struct PGLogicalHooksPrivate
     const char *forward_origin;
 	/* List of PGLogicalRepSet */
 	List	   *replication_sets;
-	RangeVar   *replicate_table;
+	RangeVar   *replicate_only_table;
 } PGLogicalHooksPrivate;
 
 void
@@ -102,20 +102,20 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 			continue;
 		}
 
-		if (pg_strcasecmp("pglogical.table_name", elem->defname) == 0)
+		if (pg_strcasecmp("pglogical.replicate_only_table", elem->defname) == 0)
 		{
-			List *table_name;
+			List *replicate_only_table;
 
 			if (elem->arg == NULL || strVal(elem->arg) == NULL)
-				elog(ERROR, "pglogical.table_name may not be NULL");
+				elog(ERROR, "pglogical.replicate_only_table may not be NULL");
 
 			elog(DEBUG2, "pglogical startup hook got table name %s", strVal(elem->arg));
 
-			if (!SplitIdentifierString(strVal(elem->arg), '.', &table_name))
-				elog(ERROR, "Could not parse table_name %s", strVal(elem->arg));
+			if (!SplitIdentifierString(strVal(elem->arg), '.', &replicate_only_table))
+				elog(ERROR, "Could not parse replicate_only_table %s", strVal(elem->arg));
 
-			private->replicate_table = makeRangeVar(pstrdup(linitial(table_name)),
-													pstrdup(lsecond(table_name)), -1);
+			private->replicate_only_table = makeRangeVar(pstrdup(linitial(replicate_only_table)),
+													pstrdup(lsecond(replicate_only_table)), -1);
 
 			continue;
 		}
@@ -128,16 +128,16 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 	PGLogicalHooksPrivate *private = (PGLogicalHooksPrivate*)rowfilter_args->private_data;
 	bool ret;
 
-	if (private->replicate_table)
+	if (private->replicate_only_table)
 	{
 		/*
 		 * Special case - we are catching up just one table.
 		 * TODO: performance
 		 */
 		return strcmp(RelationGetRelationName(rowfilter_args->changed_rel),
-					  private->replicate_table->relname) == 0 &&
+					  private->replicate_only_table->relname) == 0 &&
 			RelationGetNamespace(rowfilter_args->changed_rel) ==
-			get_namespace_oid(private->replicate_table->schemaname, true);
+			get_namespace_oid(private->replicate_only_table->schemaname, true);
 	}
 	else if (RelationGetRelid(rowfilter_args->changed_rel) == get_queue_table_oid())
 	{

@@ -47,7 +47,7 @@ extern void pglogical_start_replication(PGconn *streamConn,
 										XLogRecPtr start_pos,
 										const char *forward_origins,
 										const char *replication_sets,
-										const char *replicate_table);
+										const char *replicate_only_table);
 
 extern void apply_work(PGconn *streamConn);
 

@@ -211,7 +211,7 @@ void
 pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 							XLogRecPtr start_pos, const char *forward_origins,
 							const char *replication_sets,
-							const char *replicate_table)
+							const char *replicate_only_table)
 {
 	StringInfoData	command;
 	PGresult	   *res;
@@ -275,11 +275,11 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	/* TODO: Allow forwarding mode control. Currently hardcoded. */
 	appendStringInfo(&command, ", \"pglogical.forward_origin\" '%s'", "all");
 
-	if (replicate_table)
+	if (replicate_only_table)
 	{
 		/* Send the table name we want to the upstream */
-		appendStringInfoString(&command, ", \"pglogical.table_name\" ");
-		appendStringInfoString(&command, quote_literal_cstr(replicate_table));
+		appendStringInfoString(&command, ", \"pglogical.replicate_only_table\" ");
+		appendStringInfoString(&command, quote_literal_cstr(replicate_only_table));
 	}
 
 	if (replication_sets)

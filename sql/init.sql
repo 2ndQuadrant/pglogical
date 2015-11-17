@@ -1,5 +1,9 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
+SET client_min_messages = 'warning';
+DROP USER IF EXISTS nonsuper;
+DROP USER IF EXISTS super;
+
 CREATE USER nonsuper WITH replication;
 CREATE USER super SUPERUSER;
 
