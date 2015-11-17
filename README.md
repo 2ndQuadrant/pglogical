@@ -67,6 +67,7 @@ Once the provider node is setup, subscribers can be subscribed to it:
 	SELECT pglogical.create_subscriber(
 		subscriber_name := 'subscriber1',
         provider_name := 'provider1',
+        local_dsn := 'host=thishost port=5432 dbname=db',
         provider_dsn := 'host=providerhost port=5432 dbname=db'
 	);
 (run this on the subscriber node)
@@ -82,9 +83,9 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `provider_name` - name of the new provider, currently only one provider
     is allowed per database
 
-- `pglogical.create_subscriber(subscriber_name name, provider_name name,
-  provider_dsn text, replication_sets name[], synchronize_schema boolean
-  synchronize_data boolean)`
+- `pglogical.create_subscriber(subscriber_name name, local_dsn text,
+  provider_name name, provider_dsn text, replication_sets name[],
+  synchronize_schema boolean synchronize_data boolean)`
   Creates a subscriber node.
 
   Parameters:
