@@ -13,6 +13,14 @@
 
 #include "postgres.h"
 
+/*
+ * If you get an error like
+ *
+ *     pglogical_output/hooks.h: No such file or directory
+ *
+ * then you forgot to install the pglogical_output extension before building
+ * pglogical.
+ */
 #include "pglogical_output/hooks.h"
 #include "pglogical_repset.h"
 #include "pglogical_queue.h"
