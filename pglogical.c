@@ -272,7 +272,9 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	appendStringInfoString(&command,
 						   ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
 
+
 	/* TODO: Allow forwarding mode control. Currently hardcoded. */
+	appendStringInfoString(&command, ", \"forward_changesets\" 'f'");
 	appendStringInfo(&command, ", \"pglogical.forward_origin\" '%s'", "all");
 
 	if (replicate_only_table)

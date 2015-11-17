@@ -74,6 +74,8 @@ PGLogicalApplyWorker	   *MyApplyWorker = NULL;
 static PGconn	   *applyconn = NULL;
 
 static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
+static void handle_startup_param(const char *key, const char *value);
+static bool parse_bool_param(const char *key, const char *value);
 
 static bool
 check_syncing_relation(const char *nspname, const char *relname)
@@ -620,6 +622,128 @@ handle_delete(StringInfo s)
 	CommandCounterIncrement();
 }
 
+inline static bool
+getmsgisend(StringInfo msg)
+{
+	return msg->cursor == msg->len;
+}
+
+static void
+handle_startup(StringInfo s)
+{
+	uint8 msgver = pq_getmsgbyte(s);
+	if (msgver != 1)
+		elog(ERROR, "Expected startup message version 1, but got %u", msgver);
+
+	/*
+	 * The startup message consists of null-terminated strings as key/value
+	 * pairs. The first entry is always the format identifier.
+	 */
+	do {
+		const char *k, *v;
+
+		k = pq_getmsgstring(s);
+		if (strlen(k) == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					 errmsg("invalid startup message: key has zero length")));
+
+		if (getmsgisend(s))
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					 errmsg("invalid startup message: key '%s' has no following value", k)));
+
+		/* It's OK to have a zero length value */
+		v = pq_getmsgstring(s);
+
+		handle_startup_param(k, v);
+	} while (!getmsgisend(s));
+}
+
+static bool
+parse_bool_param(const char *key, const char *value)
+{
+	bool result;
+
+	if (!parse_bool(value, &result))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("couldn't parse value '%s' for key '%s' as boolean",
+						value, key)));
+
+	return result;
+}
+
+static void
+handle_startup_param(const char *key, const char *value)
+{
+	elog(DEBUG2, "Got pglogical startup msg param  %s=%s", key, value);
+
+	if (strcmp(key, "pg_version") == 0)
+		elog(DEBUG1, "upstream Pg version is %s", value);
+
+	if (strcmp(key, "encoding") == 0)
+	{
+		int encoding = pg_char_to_encoding(value);
+
+		if (encoding != GetDatabaseEncoding())
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("expected encoding=%s from upstream but got %s",
+						 GetDatabaseEncodingName(), value)));
+	}
+
+	if (strcmp(key, "forward_changesets") == 0)
+	{
+		bool fwd = parse_bool_param(key, value);
+		/* FIXME: Verify forwarding mode is what we expect */
+		elog(DEBUG1, "changeset forwarding enabled: %s", fwd ? "t" : "f");
+	}
+
+	if (strcmp(key, "forward_changeset_origins") == 0)
+	{
+		bool fwd = parse_bool_param(key, value);
+		/* FIXME: Store this somewhere */
+		elog(DEBUG1, "changeset origin forwarding enabled: %s", fwd ? "t" : "f");
+	}
+
+	if (strcmp(key, "hooks.startup_hook_enabled") == 0)
+	{
+		if (!parse_bool_param(key, value))
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("pglogical requested a startup hook, but it was not activated"),
+					 errdetail("hooks.startup_hook_enabled='f' returned by upstream")));
+	}
+
+	if (strcmp(key, "hooks.row_filter_enabled") == 0)
+	{
+		if (!parse_bool_param(key, value))
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("pglogical requested a row filter hook, but it was not activated"),
+					 errdetail("hooks.startup_hook_enabled='f' returned by upstream")));
+	}
+
+	if (strcmp(key, "hooks.transaction_filter_enabled") == 0)
+	{
+		if (!parse_bool_param(key, value))
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("pglogical requested a transaction filter hook, but it was not activated"),
+					 errdetail("hooks.startup_hook_enabled='f' returned by upstream")));
+	}
+
+	/*
+	 * We just ignore a bunch of parameters here because we specify what we
+	 * require when we send our params to the upstream. It's required to ERROR
+	 * if it can't match what we asked for. It may send the startup message
+	 * first, but it'll be followed by an ERROR if it does. There's no need
+	 * to check params we can't do anything about mismatches of, like protocol
+	 * versions and type sizes.
+	 */
+}
+
 static RangeVar *
 parse_relation_message(Jsonb *message)
 {
@@ -875,6 +999,7 @@ replication_handler(StringInfo s)
 			break;
 		/* STARTUP MESSAGE */
 		case 'S':
+			handle_startup(s);
 			break;
 		default:
 			elog(ERROR, "unknown action of type %c", action);
