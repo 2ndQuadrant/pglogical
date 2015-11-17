@@ -82,7 +82,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `provider_name` - name of the new provider, currently only one provider
     is allowed per database
 
-- `pglogical.create_subscriber(subscriner_name name, provider_name name,
+- `pglogical.create_subscriber(subscriber_name name, provider_name name,
   provider_dsn text, replication_sets name[], synchronize_schema boolean
   synchronize_data boolean)`
   Creates a subscriber node.
@@ -90,7 +90,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   Parameters:
   - `subscriber_name` - name of the subscriber, must be unique
   - `local_dsn` - connection string to the subscriber, this is used for initial
-    syncrhonization and administration tasks
+    synchronization and administration tasks
   - `provider_name` - name of the provider to which this subscriber will be
      connected
   - `provider_dsn` - connection string to a provider
@@ -102,7 +102,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     the subscriber, default true
 
 - `pglogical.drop_provider(provider_name name)`
-  Removes the provider and disconnect all subscrbers from it.
+  Removes the provider and disconnect all subscribers from it.
 
   Parameters:
   - `subscriber_name` - name of the existing provider
@@ -131,7 +131,7 @@ has not been added to specific replication set will be in the "default" set.
 The following functions are provided for managing the replication sets:
 
 - `pglogical.create_replication_set(set_name name, replicate_insert bool, replicate_update bool, replicate_delete bool, replicate_truncate bool)`
-  This function creates new replication set.
+  This function creates a new replication set.
 
   Parameters:
   - `set_name` - name of the set, must be unique
@@ -141,7 +141,7 @@ The following functions are provided for managing the replication sets:
   - `replicate_truncate` - specifies if `TRUNCATE` is replicated, default true
 
 - `pglogical.alter_replication_set(set_name name, replicate_inserts bool, replicate_updates bool, replicate_deletes bool, replicate_truncate bool)`
-  This function change the parameters of the existing replication set.
+  This function changes the parameters of the existing replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
@@ -173,7 +173,7 @@ The following functions are provided for managing the replication sets:
 You can view the information about which table is in which set by querying the
 `pglogical.replication_set_tables` view.
 
-#### Automatic assignment of replication set for new tables
+#### Automatic assignment of replication sets for new tables
 
 The event trigger facility can be used for describing rules which define
 replication sets for newly created tables.
@@ -216,7 +216,7 @@ The configuration of the conflicts resolver is done via the
 - `apply_remote` - always apply the change that's conflicting with local data,
   this is the default
 - `keep_local` - keep the local version of the data and ignore the conflicting
-  change that is coming from remote node
+  change that is coming from the remote node
 - `last_update_wins` - the version of data with newest commit timestamp will be
   be kept (this can be either local or remote version)
 - `first_update_wins` - the version of the data with oldest timestamp will be
