@@ -28,7 +28,7 @@ Unlike block-level ("physical") streaming replication, the change stream from
 the `pglogical` output plugin is compatible across different PostgreSQL
 versions and can even be consumed by non-PostgreSQL clients.
 
-Becuse logical decoding is used, only the changed rows are sent on the wire.
+Because logical decoding is used, only the changed rows are sent on the wire.
 There's no index change data, no vacuum activity, etc transmitted.
 
 The use of a replication slot means that the change stream is reliable and
@@ -120,7 +120,7 @@ information:
      6153224364663410513 |        1 | 0/C429C48 | testd  | 16385
     (1 row)
 
-Details in the replication protocol docs.
+Details are in the replication protocol docs.
 
 ## Create the slot if required
 
@@ -267,7 +267,7 @@ If `forward_changeset_origins` is true then transactions without an origin are
 always from the immediate upstream that’s running the decoding plugin.
 
 Note that changeset forwarding may be forced to on if not requested by some
-servers, so the client _should_ check the forward_changesets and
+servers, so the client _should_ check the `forward_changesets` and
 `forward_changeset_origins` params in the startup reply message. In particular,
 9.4 servers force changeset forwarding on, but never forward replication
 origins. This means you cannot use 9.4 for mutual replication as it’ll create
@@ -486,7 +486,7 @@ clients, creating new slots, etc. This is a core PostgreSQL limitation.
 
 Also, there's no built-in way to guarantee that the logical replication slot
 from the failed master hasn't replayed further than the physical streaming
-replica you failed over to. You could recieve changes on your logical decoding
+replica you failed over to. You could receive changes on your logical decoding
 stream from the old master that never made it to the physical streaming
 replica. This is true (albeit very unlikely) *even if the physical streaming
 replica is synchronous* because PostgreSQL sends the replication data anyway,
@@ -523,7 +523,7 @@ old key to send to allow the receiver to tell which tuple is being updated.
 ## UNLOGGED tables aren't replicated
 
 Because `UNLOGGED` tables aren't written to WAL, they aren't replicated by
-logical or physical repliation. You can only replicate `UNLOGGED` tables
+logical or physical replication. You can only replicate `UNLOGGED` tables
 with trigger-based solutions.
 
 ## Unchanged fields are often sent in `UPDATE`
