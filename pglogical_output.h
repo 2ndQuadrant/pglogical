@@ -41,11 +41,13 @@ typedef struct HookFuncName
 	char    schema[NAMEDATALEN];
 } HookFuncName;
 
+struct PGLogicalProtoAPI;
+
 typedef struct PGLogicalOutputData
 {
 	MemoryContext context;
 
-	PGLogicalProtoAPI *api;
+	struct PGLogicalProtoAPI *api;
 
 	/* protocol */
 	bool	allow_internal_basetypes;

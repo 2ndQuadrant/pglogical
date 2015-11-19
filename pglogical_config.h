@@ -5,6 +5,9 @@
 #error <postgres.h> must be included first
 #endif
 
+#include "nodes/pg_list.h"
+#include "pglogical_output.h"
+
 inline static bool
 server_float4_byval(void)
 {
@@ -44,9 +47,6 @@ server_bigendian(void)
 	return false;
 #endif
 }
-
-typedef struct List List;
-typedef struct PGLogicalOutputData PGLogicalOutputData;
 
 extern int process_parameters(List *options, PGLogicalOutputData *data);
 
