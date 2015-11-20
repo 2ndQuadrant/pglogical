@@ -13,22 +13,24 @@
 #ifndef PG_LOGICAL_PROTO_H
 #define PG_LOGICAL_PROTO_H
 
+struct PGLogicalOutputData;
+
 typedef void (*pglogical_write_rel_fn)(StringInfo out, Relation rel);
 
-typedef void (*pglogical_write_begin_fn)(StringInfo out, PGLogicalOutputData *data,
+typedef void (*pglogical_write_begin_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 ReorderBufferTXN *txn);
-typedef void (*pglogical_write_commit_fn)(StringInfo out, PGLogicalOutputData *data,
+typedef void (*pglogical_write_commit_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 
 typedef void (*pglogical_write_origin_fn)(StringInfo out, const char *origin,
 							 XLogRecPtr origin_lsn);
 
-typedef void (*pglogical_write_insert_fn)(StringInfo out, PGLogicalOutputData *data,
+typedef void (*pglogical_write_insert_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 Relation rel, HeapTuple newtuple);
-typedef void (*pglogical_write_update_fn)(StringInfo out, PGLogicalOutputData *data,
+typedef void (*pglogical_write_update_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 Relation rel, HeapTuple oldtuple,
 							 HeapTuple newtuple);
-typedef void (*pglogical_write_delete_fn)(StringInfo out, PGLogicalOutputData *data,
+typedef void (*pglogical_write_delete_fn)(StringInfo out, struct PGLogicalOutputData *data,
 							 Relation rel, HeapTuple oldtuple);
 
 typedef void (*write_startup_message_fn)(StringInfo out, List *msg);

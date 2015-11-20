@@ -9,9 +9,6 @@
 
 #include "pglogical_output/compat.h"
 
-struct PGLogicalOutputData;
-typedef struct PGLogicalOutputData PGLogicalOutputData;
-
 /*
  * This header is to be included by extensions that implement pglogical output
  * plugin callback hooks for transaction origin and row filtering, etc. It is

@@ -5,6 +5,7 @@
 
 /* public interface for hooks */
 #include "pglogical_output/hooks.h"
+#include "pglogical_output.h"
 
 extern void load_hooks(PGLogicalOutputData *data);
 
