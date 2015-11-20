@@ -250,6 +250,37 @@ get_provider_by_name(const char *name, bool missing_ok)
 	return provider;
 }
 
+/*
+ * Return all local providers.
+ */
+List *
+get_providers(void)
+{
+	PGLogicalProvider    *provider;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	List		   *res = NIL;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_PROVIDER, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		provider = provider_fromtuple(tuple);
+
+		res = lappend(res, provider);
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return res;
+}
+
 
 /*
  * Add new tuple to the subsriber catalog.

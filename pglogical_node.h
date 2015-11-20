@@ -47,9 +47,11 @@ extern void drop_subscriber(Oid subscriberid);
 
 extern PGLogicalProvider *get_provider(Oid providerid);
 extern PGLogicalProvider *get_provider_by_name(const char *name, bool missing_ok);
+extern List *get_providers(void);
+
 extern PGLogicalSubscriber *get_subscriber(Oid subscriberid);
-extern List *get_subscribers(void);
 extern PGLogicalSubscriber *get_subscriber_by_name(const char *name, bool missing_ok);
+extern List *get_subscribers(void);
 extern void set_subscriber_status(int subscriberid, char status);
 
 #endif /* PGLOGICAL_NODE_H */

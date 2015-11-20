@@ -250,7 +250,15 @@ pglogical_alter_subscriber_enable(PG_FUNCTION_ARGS)
 Datum
 pglogical_create_replication_set(PG_FUNCTION_ARGS)
 {
-	PGLogicalRepSet	repset;
+	PGLogicalRepSet		repset;
+	List			   *providers;
+
+	providers = get_providers();
+	if (list_length(providers) == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("replication sets can be only created on provider"),
+				 errhint("create provider first")));
 
 	repset.id = InvalidOid;
 
