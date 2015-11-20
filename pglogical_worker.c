@@ -224,7 +224,7 @@ pglogical_manager_find(Oid dboid)
 }
 
 /*
- * Find the manager worker for given database.
+ * Find the apply worker for given subscription.
  */
 PGLogicalWorker *
 pglogical_apply_find(Oid dboid, Oid subscriberid)
@@ -242,6 +242,27 @@ pglogical_apply_find(Oid dboid, Oid subscriberid)
 	}
 
 	return NULL;
+}
+
+/*
+ * Find all apply worker for given database.
+ */
+List *
+pglogical_apply_find_all(Oid dboid)
+{
+	int			i;
+	List	   *res = NIL;
+
+	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
+
+	for (i = 0; i < PGLogicalCtx->total_workers; i++)
+	{
+		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
+			dboid == PGLogicalCtx->workers[i].dboid)
+			res = lappend(res, &PGLogicalCtx->workers[i]);
+	}
+
+	return res;
 }
 
 /*
