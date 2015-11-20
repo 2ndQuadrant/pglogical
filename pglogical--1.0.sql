@@ -111,8 +111,8 @@ RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replic
 
 CREATE TABLE pglogical.queue (
     queued_at timestamp with time zone NOT NULL,
-	provider_name name NOT NULL,
     role name NOT NULL,
+	replication_set name NOT NULL,
     message_type "char" NOT NULL,
     message json NOT NULL
 );

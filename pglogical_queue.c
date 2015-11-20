@@ -46,7 +46,7 @@
 
 #define Natts_queue					5
 #define Anum_queue_queued_at		1
-#define Anum_queue_provider_name	2
+#define Anum_queue_replication_set	2
 #define Anum_queue_role				3
 #define Anum_queue_message_type		4
 #define Anum_queue_message			5
@@ -54,7 +54,7 @@
 typedef struct QueueTuple
 {
 	TimestampTz	queued_at;
-	NameData	provider_name;
+	NameData	replication_set;
 	NameData	role;
 	char		message_type;
 /*	json		message;*/
@@ -64,7 +64,8 @@ typedef struct QueueTuple
  * Add tuple to the queue table.
  */
 void
-queue_command(Oid roleoid, char message_type, char *message)
+queue_message(char *replication_set, Oid roleoid, char message_type,
+			  char *message)
 {
 	RangeVar   *rv;
 	Relation	rel;
@@ -83,9 +84,8 @@ queue_command(Oid roleoid, char message_type, char *message)
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_queue_queued_at - 1] = TimestampTzGetDatum(ts);
-	/* TODO */
-	values[Anum_queue_provider_name - 1] =
-		DirectFunctionCall1(namein, CStringGetDatum(role));
+	values[Anum_queue_replication_set - 1] =
+		DirectFunctionCall1(namein, CStringGetDatum(replication_set));
 	values[Anum_queue_role - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(role));
 	values[Anum_queue_message_type - 1] = CharGetDatum(message_type);
@@ -141,6 +141,7 @@ queued_message_from_tuple(HeapTuple queue_tup)
 	res->message = data;
 
 	res->queued_at = q->queued_at;
+	res->replication_set = pstrdup(NameStr(q->replication_set));
 	res->role = pstrdup(NameStr(q->role));
 	res->message_type = q->message_type;
 
