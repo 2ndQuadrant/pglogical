@@ -49,7 +49,7 @@ SELECT * FROM pglogical.replication_set_add_table('all', 'test_publicschema');
 SELECT pglogical.create_replication_set('');
 
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);

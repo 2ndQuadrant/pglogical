@@ -121,19 +121,41 @@ ERROR:  replication set 'all' is reserved and cannot be manipulated
 SELECT pglogical.create_replication_set('');
 ERROR:  replication set name cannot be empty
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.test_publicschema in replication set repset_replicate_all
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_publicschema CASCADE;
+	DROP SCHEMA normalschema CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+
 NOTICE:  drop cascades to table normalschema.test_normalschema
 CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
+	DROP SCHEMA normalschema CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  table normalschema.test_normalschema in replication set repset_replicate_instrunc
+table normalschema.test_normalschema in replication set repset_replicate_insupd
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
 CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
+	DROP SCHEMA normalschema CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table "strange.schema-IS".test_strangeschema in replication set repset_replicate_insupd
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 

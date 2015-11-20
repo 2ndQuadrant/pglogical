@@ -63,6 +63,6 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
 SELECT plugin, slot_type, database, active FROM pg_replication_slots;
 
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);

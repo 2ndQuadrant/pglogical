@@ -124,12 +124,26 @@ SELECT plugin, slot_type, database, active FROM pg_replication_slots;
 (1 row)
 
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  table public.test_publicschema in replication set repset_test
+table public.test_publicschema in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_publicschema CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
 CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema;
+	DROP TABLE public.test_publicschema CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  table "strange.schema-IS".test_strangeschema in replication set repset_test
+table "strange.schema-IS".test_strangeschema in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
  replicate_ddl_command 
