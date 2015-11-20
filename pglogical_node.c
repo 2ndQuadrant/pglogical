@@ -348,6 +348,86 @@ create_subscriber(PGLogicalSubscriber *subscriber)
 }
 
 /*
+ * Change the subscriber tuple.
+ */
+void
+alter_subscriber(PGLogicalSubscriber *subscriber)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	SysScanDesc	scan;
+	SubscriberTuple	*oldsub;
+	HeapTuple	oldtup,
+				newtup;
+	ScanKeyData	key[1];
+	Datum		values[Natts_subscriber];
+	bool		nulls[Natts_subscriber];
+	bool		replaces[Natts_subscriber];
+	NameData	subscriber_provider_name;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Search for node record. */
+	ScanKeyInit(&key[0],
+				Anum_subscriber_id,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subscriber->id));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	oldtup = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "subscriber %u not found", subscriber->id);
+
+	oldsub = (SubscriberTuple *) GETSTRUCT(oldtup);
+	if (strcmp(NameStr(oldsub->subscriber_name), subscriber->name) != 0)
+		ereport(LOG,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("subscriber name change not is not supported")));
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, true, sizeof(nulls));
+
+	replaces[Anum_subscriber_id - 1] = false;
+	replaces[Anum_subscriber_name - 1] = false;
+
+	values[Anum_subscriber_enabled - 1] = BoolGetDatum(subscriber->enabled);
+	values[Anum_subscriber_status - 1] = CharGetDatum(subscriber->status);
+	namestrcpy(&subscriber_provider_name, subscriber->provider_name);
+	values[Anum_subscriber_provider_name - 1] =
+		NameGetDatum(&subscriber_provider_name);
+	values[Anum_subscriber_provider_dsn - 1] =
+		CStringGetTextDatum(subscriber->provider_dsn);
+	values[Anum_subscriber_local_dsn - 1] =
+		CStringGetTextDatum(subscriber->local_dsn);
+
+	if (list_length(subscriber->replication_sets) > 0)
+		values[Anum_subscriber_replication_sets - 1] =
+			PointerGetDatum(strlist_to_textarray(subscriber->replication_sets));
+	else
+		nulls[Anum_subscriber_replication_sets - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_update(rel, &oldtup->t_self, newtup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, newtup);
+
+	/* Cleanup. */
+	heap_freetuple(oldtup);
+	heap_freetuple(newtup);
+	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
+}
+
+/*
  * Delete the tuple from subsriber catalog.
  */
 void

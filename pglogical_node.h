@@ -43,6 +43,7 @@ extern void create_provider(PGLogicalProvider *provider);
 extern void drop_provider(Oid providerid);
 
 extern void create_subscriber(PGLogicalSubscriber *subscriber);
+extern void alter_subscriber(PGLogicalSubscriber *subscriber);
 extern void drop_subscriber(Oid subscriberid);
 
 extern PGLogicalProvider *get_provider(Oid providerid);
