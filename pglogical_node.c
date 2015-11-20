@@ -45,20 +45,22 @@ typedef struct SubscriberTuple
 {
 	Oid			subscriber_id;
 	NameData	subscriber_name;
+	bool		subscriber_enabled;
 	char		subscriber_status;
 	NameData	subscriber_provider_name;
 	text		subscriber_provider_dsn;
 	text		subscriber_local_dsn;
 } SubscriberTuple;
 
-#define Natts_subscriber					7
+#define Natts_subscriber					8
 #define Anum_subscriber_id					1
 #define Anum_subscriber_name				2
-#define Anum_subscriber_status				3
-#define Anum_subscriber_provider_name		4
-#define Anum_subscriber_provider_dsn		5
-#define Anum_subscriber_local_dsn			6
-#define Anum_subscriber_replication_sets	7
+#define Anum_subscriber_enabled				3
+#define Anum_subscriber_status				4
+#define Anum_subscriber_provider_name		5
+#define Anum_subscriber_provider_dsn		6
+#define Anum_subscriber_local_dsn			7
+#define Anum_subscriber_replication_sets	8
 
 typedef struct ProviderTuple
 {
@@ -283,6 +285,7 @@ create_subscriber(PGLogicalSubscriber *subscriber)
 	values[Anum_subscriber_id - 1] = ObjectIdGetDatum(subscriber->id);
 	namestrcpy(&subscriber_name, subscriber->name);
 	values[Anum_subscriber_name - 1] = NameGetDatum(&subscriber_name);
+	values[Anum_subscriber_enabled - 1] = BoolGetDatum(subscriber->enabled);
 	values[Anum_subscriber_status - 1] = CharGetDatum(subscriber->status);
 	namestrcpy(&subscriber_provider_name, subscriber->provider_name);
 	values[Anum_subscriber_provider_name - 1] =
@@ -362,6 +365,7 @@ subscriber_fromtuple(HeapTuple tuple, TupleDesc desc)
 		(PGLogicalSubscriber *) palloc(sizeof(PGLogicalSubscriber));
 	sub->id = subtup->subscriber_id;
 	sub->name = pstrdup(NameStr(subtup->subscriber_name));
+	sub->enabled = subtup->subscriber_enabled;
 	sub->status = subtup->subscriber_status;
 	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
 

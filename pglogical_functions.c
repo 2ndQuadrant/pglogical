@@ -60,6 +60,9 @@ PG_FUNCTION_INFO_V1(pglogical_create_subscriber);
 PG_FUNCTION_INFO_V1(pglogical_drop_subscriber);
 PG_FUNCTION_INFO_V1(pglogical_wait_for_subscriber_ready);
 
+PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_disable);
+PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_enable);
+
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_drop_replication_set);
@@ -128,6 +131,7 @@ pglogical_create_subscriber(PG_FUNCTION_ARGS)
 	sub.provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(3));
 	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(4));
 
+	sub.enabled = true;
 	sub.status = SUBSCRIBER_STATUS_INIT;
 
 	create_subscriber(&sub);
@@ -181,6 +185,60 @@ pglogical_wait_for_subscriber_ready(PG_FUNCTION_ARGS)
 						 WL_LATCH_SET | WL_TIMEOUT, 1000L);
 
         ResetLatch(&MyProc->procLatch);
+	}
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Disable ssubscriber.
+ */
+Datum
+pglogical_alter_subscriber_disable(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	bool					immediate = PG_GETARG_BOOL(1);
+	PGLogicalSubscriber	   *sub = get_subscriber_by_name(sub_name, false);
+
+	sub->enabled = false;
+
+	alter_subscriber(sub);
+
+	if (immediate)
+	{
+		PGLogicalWorker		   *apply;
+
+		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+		apply = pglogical_apply_find(MyDatabaseId, sub->id);
+		kill(apply->proc->pid, SIGTERM);
+		LWLockRelease(PGLogicalCtx->lock);
+	}
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Enable subscriber.
+ */
+Datum
+pglogical_alter_subscriber_enable(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	bool					immediate = PG_GETARG_BOOL(1);
+	PGLogicalSubscriber	   *sub = get_subscriber_by_name(sub_name, false);
+
+	sub->enabled = true;
+
+	alter_subscriber(sub);
+
+	if (immediate)
+	{
+		PGLogicalWorker		   *manager;
+
+		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+		manager = pglogical_manager_find(MyDatabaseId);
+		SetLatch(&manager->proc->procLatch);
+		LWLockRelease(PGLogicalCtx->lock);
 	}
 
 	PG_RETURN_BOOL(true);

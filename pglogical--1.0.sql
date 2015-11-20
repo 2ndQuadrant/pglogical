@@ -18,6 +18,7 @@ RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_p
 CREATE TABLE pglogical.subscriber (
 	subscriber_id oid NOT NULL PRIMARY KEY,
 	subscriber_name name NOT NULL,
+	subscriber_enabled boolean NOT NULL,
 	subscriber_status "char" NOT NULL,
 	subscriber_provider_name name NOT NULL,
 	subscriber_provider_dsn text NOT NULL,

@@ -23,6 +23,7 @@ typedef struct PGLogicalSubscriber
 {
 	Oid			id;
 	const char *name;
+	bool		enabled;
 	char		status;
 	const char *provider_name;
 	const char *provider_dsn;

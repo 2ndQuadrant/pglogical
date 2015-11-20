@@ -33,7 +33,7 @@ void pglogical_manager_main(Datum main_arg);
 /*
  * Manage the apply workers - start new ones, kill old ones.
  *
- * TODO: check workers which need to be killed and kill them.
+ * TODO: check workers which need to be killed/disabled and kill/disable them.
  */
 static void
 manage_apply_workers(void)
@@ -54,6 +54,9 @@ manage_apply_workers(void)
 	{
 		PGLogicalSubscriber	   *sub = (PGLogicalSubscriber *) lfirst(lc);
 		PGLogicalWorker			worker;
+
+		if (!sub->enabled)
+			continue;
 
 		/* Skip already registered workers. */
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
