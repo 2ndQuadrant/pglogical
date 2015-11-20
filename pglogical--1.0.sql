@@ -8,6 +8,8 @@ CREATE UNIQUE INDEX provider_onlyone ON pglogical.provider ((true));
 
 CREATE FUNCTION pglogical.create_provider(provider_name name)
 RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_provider';
+CREATE FUNCTION pglogical.drop_provider(provider_name name, ifexists boolean DEFAULT false)
+RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_provider';
 
 CREATE FUNCTION pglogical.drop_provider(provider_name name)
 RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_provider';
@@ -28,6 +30,8 @@ CREATE TABLE pglogical.subscriber (
 CREATE FUNCTION pglogical.create_subscriber(subscriber_name name, local_dsn text, provider_name name, provider_dsn text,
 	replication_sets text[] = '{default}', synchronize_schema boolean = true, syncrhonize_data boolean = true)
 RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscriber';
+CREATE FUNCTION pglogical.drop_subscriber(subscriber_name name, ifexists boolean DEFAULT false)
+RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscriber';
 
 CREATE FUNCTION pglogical.drop_subscriber(subscriber_name name)
 RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscriber';
@@ -100,7 +104,7 @@ CREATE FUNCTION pglogical.create_replication_set(set_name name,
 	replicate_insert boolean = true, replicate_update boolean = true,
 	replicate_delete boolean = true, replicate_truncate boolean = true)
 RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_replication_set';
-CREATE FUNCTION pglogical.drop_replication_set(set_name name)
+CREATE FUNCTION pglogical.drop_replication_set(set_name name, ifexists boolean DEFAULT false)
 RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
 
 CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass)

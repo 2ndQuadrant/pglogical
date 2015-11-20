@@ -94,15 +94,19 @@ pglogical_create_provider(PG_FUNCTION_ARGS)
 Datum
 pglogical_drop_provider(PG_FUNCTION_ARGS)
 {
+	char	   *provider_name = NameStr(*PG_GETARG_NAME(0));
+	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalProvider  *provider;
 
-	provider = get_provider_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	provider = get_provider_by_name(provider_name, !ifexists);
 
-	drop_provider(provider->id);
+	if (provider != NULL)
+	{
+		drop_provider(provider->id);
+		pglogical_connections_changed();
+	}
 
-	pglogical_connections_changed();
-
-	PG_RETURN_BOOL(true);
+	PG_RETURN_BOOL(provider != NULL);
 }
 
 /*
@@ -139,14 +143,19 @@ pglogical_create_subscriber(PG_FUNCTION_ARGS)
 Datum
 pglogical_drop_subscriber(PG_FUNCTION_ARGS)
 {
+	char	   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalSubscriber	   *sub;
 
-	sub = get_subscriber_by_name(NameStr(*PG_GETARG_NAME(0)), false);
-	drop_subscriber(sub->id);
+	sub = get_subscriber_by_name(sub_name, !ifexists);
 
-	pglogical_connections_changed();
+	if (sub != NULL)
+	{
+		drop_subscriber(sub->id);
+		pglogical_connections_changed();
+	}
 
-	PG_RETURN_BOOL(true);
+	PG_RETURN_BOOL(sub != NULL);
 }
 
 /*
@@ -205,13 +214,24 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 Datum
 pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 {
+	char	   *set_name = NameStr(*PG_GETARG_NAME(0));
+	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalRepSet    *repset;
+	List			   *providers;
 
-	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	providers = get_providers();
+	if (list_length(providers) == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("replication sets can be only dropped on provider"),
+				 errhint("run the command on a provider")));
 
-	drop_replication_set(repset->id);
+	repset = get_replication_set_by_name(set_name, !ifexists);
 
-	PG_RETURN_BOOL(true);
+	if (repset != NULL)
+		drop_replication_set(repset->id);
+
+	PG_RETURN_BOOL(repset != NULL);
 }
 
 /*
