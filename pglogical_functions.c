@@ -286,7 +286,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	 * Note, we keep "DDL" message type for the future when we have deparsing
 	 * support.
 	 */
-	queue_command(GetUserId(), QUEUE_COMMAND_TYPE_SQL, cmd.data);
+	queue_message("all", GetUserId(), QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
 	/* Execute the query locally. */
 	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId(), false),
@@ -343,7 +343,7 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	appendStringInfo(&json, "}");
 
 	/* Queue the truncate for replication. */
-	queue_command(GetUserId(), QUEUE_COMMAND_TYPE_TRUNCATE, json.data);
+	queue_message("all", GetUserId(), QUEUE_COMMAND_TYPE_TRUNCATE, json.data);
 
 	PG_RETURN_VOID();
 }
