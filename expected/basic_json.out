@@ -57,7 +57,11 @@ ROLLBACK TO SAVEPOINT sp1;
 INSERT INTO demo(tx) VALUES ('2');
 COMMIT;
 -- Simple decode with text-format tuples
-SELECT data
+TRUNCATE TABLE json_decoding_output;
+INSERT INTO json_decoding_output(ch, rn)
+SELECT
+  data::jsonb,
+  row_number() OVER ()
 FROM pg_logical_slot_peek_changes('regression_slot',
 	NULL, NULL,
 	'expected_encoding', 'UTF8',
@@ -66,37 +70,64 @@ FROM pg_logical_slot_peek_changes('regression_slot',
 	'startup_params_format', '1',
 	'proto_format', 'json',
 	'no_txinfo', 't');
-                                                                                                                                                                                                                                                                                                                                                                                          data                                                                                                                                                                                                                                                                                                                                                                                           
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- {"action":"S", "params": {"max_proto_version":"1","min_proto_version":"1","coltypes":"f","pg_version_num":"90600","pg_version":"9.6devel","pg_catversion":"201510161","database_encoding":"UTF8","encoding":"UTF8","forward_changesets":"f","forward_changeset_origins":"f","binary.internal_basetypes":"f","binary.binary_basetypes":"f","binary.basetypes_major_version":"906","binary.sizeof_int":"4","binary.sizeof_long":"8","binary.sizeof_datum":"8","binary.maxalign":"8","binary.bigendian":"f","binary.float4_byval":"t","binary.float8_byval":"t","binary.integer_datetimes":"t","binary.binary_pg_version":"906","no_txinfo":"t","hooks.startup_hook_enabled":"f","hooks.shutdown_hook_enabled":"f","hooks.row_filter_enabled":"f","hooks.transaction_filter_enabled":"f"}}
- {"action":"B", has_catalog_changes:"f"}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":1,"tx":"textval","ts":null,"jsb":null,"js":null,"ba":null}}
- {{"action":"C"}}
- {"action":"B", has_catalog_changes:"f"}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":2,"tx":null,"ts":null,"jsb":null,"js":null,"ba":"\\xdeadbeef0001"}}
- {{"action":"C"}}
- {"action":"B", has_catalog_changes:"f"}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":3,"tx":"blah","ts":"2045-09-12T12:34:56","jsb":null,"js":null,"ba":null}}
- {{"action":"C"}}
- {"action":"B", has_catalog_changes:"f"}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":4,"tx":null,"ts":null,"jsb":{"key": "value"},"js":{"key":"value"},"ba":null}}
- {{"action":"C"}}
- {"action":"B", has_catalog_changes:"f"}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":6,"tx":"row1","ts":null,"jsb":null,"js":null,"ba":null}}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":7,"tx":"row2","ts":null,"jsb":null,"js":null,"ba":null}}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":8,"tx":"row3","ts":null,"jsb":null,"js":null,"ba":null}}
- {"action":"D","relation":["public","demo"],"oldtuple":{"seq":7,"tx":null,"ts":null,"jsb":null,"js":null,"ba":null}}
- {"action":"U","relation":["public","demo"],"newtuple":{"seq":6,"tx":"updated","ts":null,"jsb":null,"js":null,"ba":null}}
- {{"action":"C"}}
- {"action":"B", has_catalog_changes:"t"}
- {"action":"I","relation":["public","cat_test"],"newtuple":{"id":42}}
- {{"action":"C"}}
- {"action":"B", has_catalog_changes:"f"}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":9,"tx":"1","ts":null,"jsb":null,"js":null,"ba":null}}
- {"action":"I","relation":["public","demo"],"newtuple":{"seq":10,"tx":"2","ts":null,"jsb":null,"js":null,"ba":null}}
- {{"action":"C"}}
-(27 rows)
+SELECT * FROM get_startup_params();
+               key                | value  
+----------------------------------+--------
+ binary.binary_basetypes          | "f"
+ binary.float4_byval              | "t"
+ binary.float8_byval              | "t"
+ binary.internal_basetypes        | "f"
+ binary.sizeof_datum              | "8"
+ binary.sizeof_int                | "4"
+ binary.sizeof_long               | "8"
+ coltypes                         | "f"
+ database_encoding                | "UTF8"
+ encoding                         | "UTF8"
+ forward_changeset_origins        | "f"
+ forward_changesets               | "f"
+ hooks.row_filter_enabled         | "f"
+ hooks.shutdown_hook_enabled      | "f"
+ hooks.startup_hook_enabled       | "f"
+ hooks.transaction_filter_enabled | "f"
+ max_proto_version                | "1"
+ min_proto_version                | "1"
+ no_txinfo                        | "t"
+(19 rows)
 
+SELECT * FROM get_queued_data();
+                                                                             data                                                                             
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"action": "B", "has_catalog_changes": "f"}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "textval", "jsb": null, "seq": 1}, "relation": ["public", "demo"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "f"}
+ {"action": "I", "newtuple": {"ba": "\\xdeadbeef0001", "js": null, "ts": null, "tx": null, "jsb": null, "seq": 2}, "relation": ["public", "demo"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "f"}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": "2045-09-12T12:34:56", "tx": "blah", "jsb": null, "seq": 3}, "relation": ["public", "demo"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "f"}
+ {"action": "I", "newtuple": {"ba": null, "js": {"key": "value"}, "ts": null, "tx": null, "jsb": {"key": "value"}, "seq": 4}, "relation": ["public", "demo"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "f"}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "row1", "jsb": null, "seq": 6}, "relation": ["public", "demo"]}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "row2", "jsb": null, "seq": 7}, "relation": ["public", "demo"]}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "row3", "jsb": null, "seq": 8}, "relation": ["public", "demo"]}
+ {"action": "D", "oldtuple": {"ba": null, "js": null, "ts": null, "tx": null, "jsb": null, "seq": 7}, "relation": ["public", "demo"]}
+ {"action": "U", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "updated", "jsb": null, "seq": 6}, "relation": ["public", "demo"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "t"}
+ {"action": "I", "newtuple": {"id": 42}, "relation": ["public", "cat_test"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "f"}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "1", "jsb": null, "seq": 9}, "relation": ["public", "demo"]}
+ {"action": "I", "newtuple": {"ba": null, "js": null, "ts": null, "tx": "2", "jsb": null, "seq": 10}, "relation": ["public", "demo"]}
+ {"action": "C"}
+ {"action": "B", "has_catalog_changes": "t"}
+ {"action": "C"}
+(28 rows)
+
+TRUNCATE TABLE json_decoding_output;
 \i sql/basic_teardown.sql
 SELECT 'drop' FROM pg_drop_replication_slot('regression_slot');
  ?column? 

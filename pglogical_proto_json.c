@@ -60,23 +60,23 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 {
 	appendStringInfoChar(out, '{');
 	appendStringInfoString(out, "\"action\":\"B\"");
-	appendStringInfo(out, ", has_catalog_changes:\"%c\"",
+	appendStringInfo(out, ", \"has_catalog_changes\":\"%c\"",
 		txn->has_catalog_changes ? 't' : 'f');
 #ifdef HAVE_REPLICATION_ORIGINS
 	if (txn->origin_id != InvalidRepOriginId)
-	    appendStringInfo(out, ", origin_id:\"%u\"", txn->origin_id);
+	    appendStringInfo(out, ", \"origin_id\":\"%u\"", txn->origin_id);
 #endif
 	if (!data->client_no_txinfo)
 	{
-	    appendStringInfo(out, ", xid:\"%u\"", txn->xid);
-	    appendStringInfo(out, ", first_lsn:\"%X/%X\"",
+	    appendStringInfo(out, ", \"xid\":\"%u\"", txn->xid);
+	    appendStringInfo(out, ", \"first_lsn\":\"%X/%X\"",
 		    (uint32)(txn->first_lsn >> 32), (uint32)(txn->first_lsn));
 #ifdef HAVE_REPLICATION_ORIGINS
-	    appendStringInfo(out, ", origin_lsn:\"%X/%X\"",
+	    appendStringInfo(out, ", \"origin_lsn\":\"%X/%X\"",
 		    (uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
 #endif
 	    if (txn->commit_time != 0)
-		appendStringInfo(out, ", commit_time:\"%s\"",
+		appendStringInfo(out, ", \"commit_time\":\"%s\"",
 			timestamptz_to_str(txn->commit_time));
 	}
 	appendStringInfoChar(out, '}');
@@ -93,9 +93,9 @@ pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data, ReorderBu
 	appendStringInfoString(out, "\"action\":\"C\"");
 	if (!data->client_no_txinfo)
 	{
-	    appendStringInfo(out, ", final_lsn:\"%X/%X\"",
+	    appendStringInfo(out, ", \"final_lsn\":\"%X/%X\"",
 		    (uint32)(txn->final_lsn >> 32), (uint32)(txn->final_lsn));
-	    appendStringInfo(out, ", end_lsn:\"%X/%X\"",
+	    appendStringInfo(out, ", \"end_lsn\":\"%X/%X\"",
 		    (uint32)(txn->end_lsn >> 32), (uint32)(txn->end_lsn));
 	}
 	appendStringInfoChar(out, '}');
