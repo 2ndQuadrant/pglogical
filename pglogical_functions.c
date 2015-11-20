@@ -25,6 +25,8 @@
 #include "commands/event_trigger.h"
 #include "commands/trigger.h"
 
+#include "executor/spi.h"
+
 #include "miscadmin.h"
 
 #include "nodes/makefuncs.h"
@@ -68,6 +70,7 @@ PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
 PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
 PG_FUNCTION_INFO_V1(pglogical_queue_truncate);
 PG_FUNCTION_INFO_V1(pglogical_truncate_trigger_add);
+PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 
 /*
  * Create new provider
@@ -251,7 +254,7 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 
-	replication_set_remove_table(repset->id, reloid);
+	replication_set_remove_table(repset->id, reloid, false);
 
 	PG_RETURN_BOOL(true);
 }
@@ -389,6 +392,96 @@ pglogical_truncate_trigger_add(PG_FUNCTION_ARGS)
 		create_truncate_trigger(nspname, stmt->relation->relname);
 
 		pfree(nspname);
+	}
+
+	PG_RETURN_VOID();
+}
+
+
+/*
+ * pglogical_dependency_check_trigger
+ *
+ * This function, which is called as an event trigger handler, does
+ * our custom dependency checking.
+ */
+Datum
+pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
+{
+	EventTriggerData   *trigdata = (EventTriggerData *) fcinfo->context;
+	const char	   *funcname = "dependency_check_trigger";
+	int				res,
+					i;
+	DropStmt	   *stmt;
+	StringInfoData	logdetail;
+	int				numDependentObjects = 0;
+
+	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+				 errmsg("function \"%s\" was not called by event trigger manager",
+						funcname)));
+
+	stmt = (DropStmt *)trigdata->parsetree;
+	initStringInfo(&logdetail);
+
+	SPI_connect();
+
+	res = SPI_execute("SELECT objid, object_identity "
+					  "FROM pg_event_trigger_dropped_objects() "
+					  "WHERE object_type = 'table'",
+					  false, 0);
+	if (res != SPI_OK_SELECT)
+		elog(ERROR, "SPI query failed: %d", res);
+
+	for (i = 0; i < SPI_processed; i++)
+	{
+		Oid		reloid;
+		char   *table_name;
+		bool	isnull;
+		List   *repsets;
+
+		reloid = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
+									 SPI_tuptable->tupdesc, 1, &isnull);
+		Assert(!isnull);
+		table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
+
+		repsets = get_relation_replication_sets(reloid);
+
+		if (list_length(repsets))
+		{
+			ListCell	   *lc;
+
+			foreach (lc, repsets)
+			{
+				PGLogicalRepSet	   *repset = (PGLogicalRepSet *) lfirst(lc);
+
+				if (numDependentObjects++)
+					appendStringInfoString(&logdetail, "\n");
+				appendStringInfo(&logdetail, "table %s in replication set %s",
+								 table_name, repset->name);
+
+				if (stmt->behavior == DROP_CASCADE)
+					replication_set_remove_table(repset->id, reloid, true);
+			}
+		}
+	}
+
+	SPI_finish();
+
+	if (numDependentObjects)
+	{
+		if (stmt->behavior != DROP_CASCADE)
+			ereport(ERROR,
+					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
+					 errmsg("cannot drop desired object(s) because other objects depend on them"),
+					 errdetail("%s", logdetail.data),
+					 errhint("Use DROP ... CASCADE to drop the dependent objects too.")));
+		else
+			ereport(NOTICE,
+					(errmsg_plural("drop cascades to %d other object",
+								   "drop cascades to %d other objects",
+								   numDependentObjects, numDependentObjects),
+					 errdetail("%s", logdetail.data)));
 	}
 
 	PG_RETURN_VOID();

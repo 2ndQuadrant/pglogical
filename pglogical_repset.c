@@ -108,7 +108,7 @@ repset_fromtuple(HeapTuple tuple)
  * Read the replication set.
  */
 PGLogicalRepSet *
-get_replication_set(int setid)
+get_replication_set(Oid setid)
 {
 	PGLogicalRepSet    *repset;
 	RangeVar	   *rv;
@@ -295,7 +295,7 @@ get_replication_sets(List *replication_set_names, bool missing_ok)
 	return replication_sets;
 }
 
-static List *
+List *
 get_relation_replication_sets(Oid reloid)
 {
 	RangeVar	   *rv;
@@ -314,7 +314,7 @@ get_relation_replication_sets(Oid reloid)
 	ScanKeyInit(&key[0],
 				Anum_repset_table_reloid,
 				BTEqualStrategyNumber, F_OIDEQ,
-				NameGetDatum(reloid));
+				ObjectIdGetDatum(reloid));
 
 	/* TODO: use index */
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
@@ -526,7 +526,7 @@ create_replication_set(PGLogicalRepSet *repset)
  * Remove all tables from replication set.
  */
 static void
-replication_set_remove_tables(int setid)
+replication_set_remove_tables(Oid setid)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -568,7 +568,7 @@ replication_set_remove_tables(int setid)
  * Delete the tuple from replication sets catalog.
  */
 void
-drop_replication_set(int setid)
+drop_replication_set(Oid setid)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -610,7 +610,7 @@ drop_replication_set(int setid)
  * The caller is responsible for ensuring the relation exists.
  */
 void
-replication_set_add_table(int setid, Oid reloid)
+replication_set_add_table(Oid setid, Oid reloid)
 {
 	RangeVar   *rv;
 	Relation	rel;
@@ -677,7 +677,7 @@ replication_set_add_table(int setid, Oid reloid)
  * Remove existing replication set / relation mapping.
  */
 void
-replication_set_remove_table(int setid, Oid reloid)
+replication_set_remove_table(Oid setid, Oid reloid, bool from_table_drop)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -685,7 +685,8 @@ replication_set_remove_table(int setid, Oid reloid)
 	HeapTuple		tuple;
 	ScanKeyData		key[2];
 
-	check_for_reserved_replication_set(setid);
+	if (!from_table_drop)
+		check_for_reserved_replication_set(setid);
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -703,14 +704,20 @@ replication_set_remove_table(int setid, Oid reloid)
 	scan = systable_beginscan(rel, 0, true, NULL, 2, key);
 	tuple = systable_getnext(scan);
 
-	if (!HeapTupleIsValid(tuple))
+	/*
+	 * Remove the tuple if found, if not found report error uless this function
+	 * was called as result of table drop.
+	 */
+	if (HeapTupleIsValid(tuple))
+		simple_heap_delete(rel, &tuple->t_self);
+	else if (!from_table_drop)
 		elog(ERROR, "replication set mapping %d:%d not found", setid, reloid);
 
-	/* Remove the tuple. */
-	simple_heap_delete(rel, &tuple->t_self);
+	/* We can only invalidate the relcache when relation still exists. */
+	if (!from_table_drop)
+		CacheInvalidateRelcacheByRelid(reloid);
 
 	/* Cleanup. */
-	CacheInvalidateRelcacheByRelid(reloid);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 }

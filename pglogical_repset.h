@@ -17,7 +17,7 @@
 
 typedef struct PGLogicalRepSet
 {
-	int			id;
+	Oid			id;
 	const char *name;
 	bool		replicate_insert;
 	bool		replicate_update;
@@ -47,20 +47,22 @@ typedef enum PGLogicalChangeType
 	PGLogicalChangeTruncate
 } PGLogicalChangeType;
 
-extern PGLogicalRepSet *get_replication_set(int setid);
+extern PGLogicalRepSet *get_replication_set(Oid setid);
 extern PGLogicalRepSet *get_replication_set_by_name(const char *setname,
 													bool missing_ok);
 
 extern List *get_replication_sets(List *replication_set_names, bool missing_ok);
+extern List *get_relation_replication_sets(Oid reloid);
 
 extern bool relation_is_replicated(Relation rel, List *replication_set_names,
 								   PGLogicalChangeType change_type);
 
 extern void create_replication_set(PGLogicalRepSet *repset);
-extern void drop_replication_set(int setid);
+extern void drop_replication_set(Oid setid);
 
-extern void replication_set_add_table(int setid, Oid reloid);
-extern void replication_set_remove_table(int setid, Oid reloid);
+extern void replication_set_add_table(Oid setid, Oid reloid);
+extern void replication_set_remove_table(Oid setid, Oid reloid,
+										 bool from_table_drop);
 
 extern PGLogicalChangeType to_pglogical_changetype(
 		enum ReorderBufferChangeType change);
