@@ -17,15 +17,19 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
+#include "access/xlog.h"
 
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 
+#include "commands/dbcommands.h"
 #include "commands/event_trigger.h"
 #include "commands/trigger.h"
 
 #include "executor/spi.h"
+
+#include "funcapi.h"
 
 #include "miscadmin.h"
 
@@ -74,6 +78,10 @@ PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
 PG_FUNCTION_INFO_V1(pglogical_queue_truncate);
 PG_FUNCTION_INFO_V1(pglogical_truncate_trigger_add);
 PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
+
+/* Internal utils */
+PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
+PG_FUNCTION_INFO_V1(pglogical_provider_info);
 
 /*
  * Create new provider
@@ -571,4 +579,53 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_VOID();
+}
+
+Datum
+pglogical_provider_info(PG_FUNCTION_ARGS)
+{
+	char	   *provider_name = NameStr(*PG_GETARG_NAME(0));
+	TupleDesc	tupdesc;
+	Datum		values[3];
+	bool		nulls[3];
+	HeapTuple	htup;
+	char		sysid[32];
+	List	   *repsets;
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+	tupdesc = BlessTupleDesc(tupdesc);
+
+	(void) get_provider_by_name(provider_name, false);
+
+	memset(nulls, 0, sizeof(nulls));
+
+	snprintf(sysid, sizeof(sysid), UINT64_FORMAT,
+			 GetSystemIdentifier());
+	repsets = get_all_replication_sets();
+
+	values[0] = CStringGetTextDatum(sysid);
+	values[1] = CStringGetTextDatum(get_database_name(MyDatabaseId));
+	values[2] = CStringGetTextDatum(repsets_to_identifierstr(repsets));
+
+	htup = heap_form_tuple(tupdesc, values, nulls);
+
+	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
+
+}
+
+Datum
+pglogical_gen_slot_name(PG_FUNCTION_ARGS)
+{
+	char	   *dbname = NameStr(*PG_GETARG_NAME(0));
+	char	   *provider_name = NameStr(*PG_GETARG_NAME(1));
+	char	   *subscriber_name = NameStr(*PG_GETARG_NAME(2));
+	Name		slot_name;
+
+	slot_name = (Name) palloc0(NAMEDATALEN);
+
+	gen_slot_name(slot_name, dbname, provider_name, subscriber_name, NULL);
+
+	PG_RETURN_NAME(slot_name);
 }

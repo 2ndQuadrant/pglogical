@@ -19,6 +19,7 @@
 
 #include "libpq-fe.h"
 
+#include "pglogical_fe.h"
 #include "pglogical_node.h"
 
 #define EXTENSION_NAME "pglogical"

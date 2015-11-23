@@ -1318,37 +1318,6 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		error_context_stack = errcallback.previous;
 }
 
-/*
- * Given a List of PGLogicalRepSet, return the names of the
- * sets as a comma-separated list, quoting identifiers
- * if needed.
- *
- * This is essentially the reverse of SplitIdentifierString
- * but with a PGLogicalRepSet input.
- *
- * The caller should free the result.
- */
-static char*
-repsets_to_identifierstr(List *repsets)
-{
-	ListCell *lc;
-	StringInfoData repsetnames;
-	bool first = true;
-
-	initStringInfo(&repsetnames);
-
-	foreach (lc, repsets)
-	{
-		PGLogicalRepSet *rs;
-		if (!first)
-			appendStringInfoChar(&repsetnames, ',');
-		rs = (PGLogicalRepSet*)lfirst(lc);
-		appendStringInfoString(&repsetnames, quote_identifier(rs->name));
-	}
-
-	return repsetnames.data;
-}
-
 
 void
 pglogical_apply_main(Datum main_arg)

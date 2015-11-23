@@ -51,6 +51,7 @@ extern PGLogicalRepSet *get_replication_set(Oid setid);
 extern PGLogicalRepSet *get_replication_set_by_name(const char *setname,
 													bool missing_ok);
 
+extern List *get_all_replication_sets(void);
 extern List *get_replication_sets(List *replication_set_names, bool missing_ok);
 extern List *get_relation_replication_sets(Oid reloid);
 
@@ -66,6 +67,8 @@ extern void replication_set_remove_table(Oid setid, Oid reloid,
 
 extern PGLogicalChangeType to_pglogical_changetype(
 		enum ReorderBufferChangeType change);
+
+extern char *repsets_to_identifierstr(List *repsets);
 
 #endif /* PGLOGICAL_REPSET_H */
 

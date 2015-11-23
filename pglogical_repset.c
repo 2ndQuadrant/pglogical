@@ -246,6 +246,35 @@ repset_relcache_init(void)
 }
 
 List *
+get_all_replication_sets(void)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	List		   *replication_sets = NIL;
+
+	Assert(IsTransactionState());
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		RepSetTableTuple	*t = (RepSetTableTuple *) GETSTRUCT(tuple);
+		PGLogicalRepSet	    *repset = get_replication_set(t->id);
+		replication_sets = lappend(replication_sets, repset);
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return replication_sets;
+}
+
+List *
 get_replication_sets(List *replication_set_names, bool missing_ok)
 {
 	RangeVar	   *rv;
@@ -304,7 +333,6 @@ get_relation_replication_sets(Oid reloid)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	List		   *replication_sets = NIL;
-	PGLogicalRepSet *repset;
 
 	Assert(IsTransactionState());
 
@@ -322,7 +350,7 @@ get_relation_replication_sets(Oid reloid)
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
 		RepSetTableTuple	*t = (RepSetTableTuple *) GETSTRUCT(tuple);
-		repset = get_replication_set(t->id);
+		PGLogicalRepSet	    *repset = get_replication_set(t->id);
 		replication_sets = lappend(replication_sets, repset);
 	}
 
@@ -720,4 +748,36 @@ replication_set_remove_table(Oid setid, Oid reloid, bool from_table_drop)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+}
+
+
+/*
+ * Given a List of PGLogicalRepSet, return the names of the
+ * sets as a comma-separated list, quoting identifiers
+ * if needed.
+ *
+ * This is essentially the reverse of SplitIdentifierString
+ * but with a PGLogicalRepSet input.
+ *
+ * The caller should free the result.
+ */
+char *
+repsets_to_identifierstr(List *repsets)
+{
+	ListCell *lc;
+	StringInfoData repsetnames;
+	bool first = true;
+
+	initStringInfo(&repsetnames);
+
+	foreach (lc, repsets)
+	{
+		PGLogicalRepSet *rs;
+		if (!first)
+			appendStringInfoChar(&repsetnames, ',');
+		rs = (PGLogicalRepSet*)lfirst(lc);
+		appendStringInfoString(&repsetnames, quote_identifier(rs->name));
+	}
+
+	return repsetnames.data;
 }
