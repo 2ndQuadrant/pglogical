@@ -1,12 +1,12 @@
 /* -------------------------------------------------------------------------
  *
- * bdr_init_copy.c
- *		Initialize a new bdr node from a physical base backup
+ * pglogical_create_subscriber.c
+ *		Initialize a new pglogical subscriber from a physical base backup
  *
  * Copyright (C) 2012-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		bdr_conflict_logging.c
+ *		pglogical_create_subscriber.c
  *
  * -------------------------------------------------------------------------
  */
@@ -25,8 +25,6 @@
 #include "postgres.h"
 
 #include "getopt_long.h"
-
-//#include "port.h"
 
 #include "libpq-fe.h"
 #include "libpq-int.h"
@@ -633,9 +631,6 @@ check_data_dir(char *data_dir, RemoteInfo *remoteinfo)
 
 /*
  * Initialize replication slots
- *
- * Get connection configs from bdr and use the info
- * to register replication slots for future use.
  */
 static void
 initialize_replication_slot(PGconn *conn, char *slot_name)
