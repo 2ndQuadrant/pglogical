@@ -91,6 +91,7 @@ static RemoteInfo *get_remote_info(PGconn* conn, char *provider_name);
 static char *gen_slot_name(PGconn *conn, char *dbname, char *provider_name, char *subscriber_name);
 
 static bool extension_exists(PGconn *conn, const char *extname);
+static void install_extension(PGconn *conn, const char *extname);
 
 static void initialize_data_dir(char *data_dir, char *connstr,
 					char *postgresql_conf, char *pg_hba_conf);
@@ -355,13 +356,16 @@ main(int argc, char **argv)
 	 */
 	pg_ctl_ret = run_pg_ctl("start -l \"pglogical_create_subscriber_postgres.log\" -o \"-c shared_preload_libraries=''\"");
 	if (pg_ctl_ret != 0)
-		die(_("postgres startup for restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
+		die(_("Postgres startup for restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
 
 	wait_postmaster_connection(subscriber_connstr);
 
 	/*
 	 * Clean any per-node data that were copied by pg_basebackup.
 	 */
+	print_msg(VERBOSITY_VERBOSE,
+			  _("Removing old pglogical configuration ...\n"));
+
 	subscriber_conn = connectdb(subscriber_connstr);
 	remove_unwanted_data(subscriber_conn);
 	PQfinish(subscriber_conn);
@@ -370,7 +374,7 @@ main(int argc, char **argv)
 	/* Stop Postgres so we can reset system id and start it with BDR loaded. */
 	pg_ctl_ret = run_pg_ctl("stop");
 	if (pg_ctl_ret != 0)
-		die(_("postgres stop after restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
+		die(_("Postgres stop after restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
 	wait_postmaster_shutdown();
 
 	/*
@@ -383,10 +387,15 @@ main(int argc, char **argv)
 
 	pg_ctl_ret = run_pg_ctl("start");
 	if (pg_ctl_ret != 0)
-		die(_("postgres restart with pglogical enabled failed with %d."), pg_ctl_ret);
+		die(_("Postgres restart with pglogical enabled failed with %d."), pg_ctl_ret);
 	wait_postmaster_connection(subscriber_connstr);
 
 	subscriber_conn = connectdb(subscriber_connstr);
+
+	/* Create the extension. */
+	print_msg(VERBOSITY_VERBOSE,
+			  _("Creating pglogical extension ...\n"));
+	install_extension(subscriber_conn, "pglogical");
 
 	/*
 	 * Create the identifier which is setup with the position to which we
@@ -749,6 +758,28 @@ extension_exists(PGconn *conn, const char *extname)
 	return ret;
 }
 
+/*
+ * Create extension.
+ */
+static void
+install_extension(PGconn *conn, const char *extname)
+{
+	PQExpBuffer		query = createPQExpBuffer();
+	PGresult	   *res;
+
+	printfPQExpBuffer(query, "CREATE EXTENSION IF NOT EXISTS %s;",
+					  PQescapeIdentifier(conn, extname, strlen(extname)));
+	res = PQexec(conn, query->data);
+
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		PQclear(res);
+		die(_("Could not install %s extension: %s\n"), extname, PQerrorMessage(conn));
+	}
+
+	PQclear(res);
+	destroyPQExpBuffer(query);
+}
 
 /*
  * Clean all the data that was copied from remote node but we don't
@@ -757,7 +788,7 @@ extension_exists(PGconn *conn, const char *extname)
 static void
 remove_unwanted_data(PGconn *conn)
 {
-	PGresult	   *res;
+	PGresult		   *res;
 
 	/* Remove replication identifiers. */
 	res = PQexec(conn, "SELECT pg_replication_origin_drop(external_id) FROM pg_replication_origin_status;");
@@ -765,6 +796,14 @@ remove_unwanted_data(PGconn *conn)
 	{
 		PQclear(res);
 		die(_("Could not remove existing replication origins: %s\n"), PQerrorMessage(conn));
+	}
+	PQclear(res);
+
+	res = PQexec(conn, "DROP EXTENSION pglogical CASCADE;");
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		die(_("Could not clean the pglogical extension, status %s: %s\n"),
+			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
 	}
 	PQclear(res);
 }
@@ -870,14 +909,13 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 		die(_("Could not create subscriber, status %s: %s\n"),
 			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
 	}
+	PQclear(res);
 
 	/* TODO */
 	resetPQExpBuffer(&query);
 	printfPQExpBuffer(&query,
 				  "UPDATE pglogical.subscriber SET subscriber_status = 'c' WHERE subscriber_name = %s",
 				  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)));
-
-	res = PQexec(conn, query.data);
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -912,10 +950,10 @@ validate_replication_set_input(char *replication_sets)
 		const char *cp;
 
 		if (strlen(name) == 0)
-			die(_("replication set name \"%s\" is too short\n"), name);
+			die(_("Replication set name \"%s\" is too short\n"), name);
 
 		if (strlen(name) > NAMEDATALEN)
-			die(_("replication set name \"%s\" is too long\n"), name);
+			die(_("Replication set name \"%s\" is too long\n"), name);
 
 		for (cp = name; *cp; cp++)
 		{
@@ -924,7 +962,7 @@ validate_replication_set_input(char *replication_sets)
 				  || (*cp == '_')
 				  || (*cp == '-')))
 			{
-				die(_("replication set name \"%s\" contains invalid character\n"),
+				die(_("Replication set name \"%s\" contains invalid character\n"),
 					name);
 			}
 		}
