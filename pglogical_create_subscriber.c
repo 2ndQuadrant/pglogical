@@ -78,15 +78,14 @@ static char *validate_replication_set_input(char *replication_sets);
 static void remove_unwanted_data(PGconn *conn);
 static void initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn);
 static char *create_restore_point(PGconn *conn, char *restore_point_name);
-static void initialize_replication_slot(PGconn *conn, char *slot_name);
+static char *initialize_replication_slot(PGconn *conn, char *dbname, char *provider_name,
+							char *subscriber_name, bool drop_slot_if_exists);
 static void pglogical_subscribe(PGconn *conn, char *subscriber_name,
 								char *subscriber_dsn, char *provider_name,
 								char *provider_connstr,
 								char *replication_sets);
 
 static RemoteInfo *get_remote_info(PGconn* conn, char *provider_name);
-
-static char *gen_slot_name(PGconn *conn, char *dbname, char *provider_name, char *subscriber_name);
 
 static bool extension_exists(PGconn *conn, const char *extname);
 static void install_extension(PGconn *conn, const char *extname);
@@ -141,6 +140,7 @@ main(int argc, char **argv)
 	RemoteInfo *remote_info;
 	char	   *remote_lsn;
 	bool		stop = false;
+	bool		drop_slot_if_exists = false;
 	int			optindex;
 	char	   *subscriber_name = NULL;
 	char	   *subscriber_connstr = NULL;
@@ -166,6 +166,7 @@ main(int argc, char **argv)
 		{"hba-conf", required_argument, NULL, 5},
 		{"recovery-conf", required_argument, NULL, 6},
 		{"stop", no_argument, NULL, 's'},
+		{"drop-slot-if-exists", no_argument, NULL, 7},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -237,6 +238,9 @@ main(int argc, char **argv)
 			case 's':
 				stop = true;
 				break;
+			case 7:
+				drop_slot_if_exists = true;
+				break;
 			default:
 				fprintf(stderr, _("Unknown option\n"));
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
@@ -305,14 +309,15 @@ main(int argc, char **argv)
 	/*
 	 * Start the cloning process
 	 */
-	slot_name = gen_slot_name(provider_conn, remote_info->dbname, provider_name, subscriber_name);
 
 	/*
 	 * Create replication slots on remote node.
 	 */
 	print_msg(VERBOSITY_NORMAL,
 			  _("Creating replication slot ...\n"));
-	initialize_replication_slot(provider_conn, slot_name);
+	slot_name = initialize_replication_slot(provider_conn, remote_info->dbname,
+											provider_name, subscriber_name,
+											drop_slot_if_exists);
 
 	/*
 	 * Create basebackup or use existing one
@@ -450,8 +455,8 @@ usage(void)
 	printf(_("  --subscriber-dsn=CONNSTR    connection string to the newly created subscriber\n"));
 	printf(_("  -p, --provider-name=NAME    name of the provider to subscribe to\n"));
 	printf(_("  --provider-dsn=CONNSTR      connection string to the provider\n"));
-
 	printf(_("  --replication-sets=SETS     comma separated list of replication set names\n"));
+	printf(_("  --drop-slot-if-exists       drop replication slot of conflicting name\n"));
 	printf(_("  -s, --stop                  stop the server once the initialization is done\n"));
 	printf(_("  -v                          increase logging verbosity\n"));
 	printf(_("\nConfiguration files override:\n"));
@@ -632,19 +637,72 @@ check_data_dir(char *data_dir, RemoteInfo *remoteinfo)
 /*
  * Initialize replication slots
  */
-static void
-initialize_replication_slot(PGconn *conn, char *slot_name)
+static char *
+initialize_replication_slot(PGconn *conn, char *dbname, char *provider_name,
+							char *subscriber_name, bool drop_slot_if_exists)
 {
-	PQExpBuffer	query = createPQExpBuffer();
-	PGresult   *res;
+	PQExpBufferData		query;
+	char			   *slot_name;
+	PGresult		   *res;
 
-	/* dboids are the same, because we just cloned... */
-	appendPQExpBuffer(query, "SELECT pg_create_logical_replication_slot(%s, '%s');",
+	/* Generate the slot name. */
+	initPQExpBuffer(&query);
+	printfPQExpBuffer(&query,
+					  "SELECT pglogical.pglogical_gen_slot_name(%s, %s, %s)",
+					  PQescapeLiteral(conn, dbname, strlen(dbname)),
+					  PQescapeLiteral(conn, provider_name, strlen(provider_name)),
+					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)));
+
+	res = PQexec(conn, query.data);
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		die(_("Could generate slot name: %s\n"), PQerrorMessage(provider_conn));
+
+	slot_name = pstrdup(PQgetvalue(res, 0, 0));
+
+	PQclear(res);
+	resetPQExpBuffer(&query);
+
+	/* Check if the current slot exists. */
+	printfPQExpBuffer(&query,
+					  "SELECT 1 FROM pg_catalog.pg_replication_slots WHERE slot_name = %s",
+					  PQescapeLiteral(conn, slot_name, strlen(slot_name)));
+
+	res = PQexec(conn, query.data);
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		die(_("Could fetch existing slot information: %s\n"), PQerrorMessage(provider_conn));
+
+	/* Drop the existing slot when asked for it or error if it already exists. */
+	if (PQntuples(res) > 0)
+	{
+		PQclear(res);
+		resetPQExpBuffer(&query);
+
+		if (!drop_slot_if_exists)
+			die(_("Slot %s already exists, drop it or use --drop-slot-if-exists drop it automatically.\n"),
+				slot_name);
+
+		print_msg(VERBOSITY_VERBOSE,
+				  _("Droping existing slot %s ...\n"), slot_name);
+
+		printfPQExpBuffer(&query,
+						  "SELECT pg_catalog.pg_drop_replication_slot(%s)",
+						  PQescapeLiteral(conn, slot_name, strlen(slot_name)));
+
+		res = PQexec(conn, query.data);
+		if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			die(_("Could not drop existing slot %s: %s\n"), slot_name,
+				PQerrorMessage(provider_conn));
+	}
+
+	PQclear(res);
+	resetPQExpBuffer(&query);
+
+	/* And finally, create the slot. */
+	appendPQExpBuffer(&query, "SELECT pg_create_logical_replication_slot(%s, '%s');",
 					  PQescapeLiteral(conn, slot_name, strlen(slot_name)),
 					  "pglogical_output");
 
-	res = PQexec(conn, query->data);
-
+	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
 		die(_("Could not create replication slot, status %s: %s\n"),
@@ -652,7 +710,9 @@ initialize_replication_slot(PGconn *conn, char *slot_name)
 	}
 
 	PQclear(res);
-	destroyPQExpBuffer(query);
+	termPQExpBuffer(&query);
+
+	return slot_name;
 }
 
 /*
@@ -692,37 +752,6 @@ get_remote_info(PGconn* conn, char *provider_name)
 	termPQExpBuffer(&query);
 
 	return ri;
-}
-
-/*
- * Generate the slot name
- */
-static char *
-gen_slot_name(PGconn *conn, char *dbname, char *provider_name,
-			  char *subscriber_name)
-{
-	PQExpBufferData		query;
-	char			   *slot_name;
-	PGresult		   *res;
-
-	initPQExpBuffer(&query);
-	printfPQExpBuffer(&query,
-					  "SELECT pglogical.pglogical_gen_slot_name(%s, %s, %s)",
-					  PQescapeLiteral(conn, dbname, strlen(dbname)),
-					  PQescapeLiteral(conn, provider_name, strlen(provider_name)),
-					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)));
-
-	res = PQexec(conn, query.data);
-
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		die(_("Could generate slot name: %s\n"), PQerrorMessage(provider_conn));
-
-	slot_name = pstrdup(PQgetvalue(res, 0, 0));
-
-	PQclear(res);
-	termPQExpBuffer(&query);
-
-	return slot_name;
 }
 
 /*
