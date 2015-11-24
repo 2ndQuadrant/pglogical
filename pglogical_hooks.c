@@ -144,11 +144,6 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 		/* Special case - queue table */
 		return true;
 	}
-	else if (rowfilter_args->changed_rel->rd_rel->relkind != 'r')
-	{
-		/* Special case - not a relation (most likely matview refresh) */
-		return false;
-	}
 
 	/* Normal case - use replication sets. */
 	ret = relation_is_replicated(rowfilter_args->changed_rel,
