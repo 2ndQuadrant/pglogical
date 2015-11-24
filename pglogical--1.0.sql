@@ -7,12 +7,12 @@ CREATE TABLE pglogical.provider (
 CREATE UNIQUE INDEX provider_onlyone ON pglogical.provider ((true));
 
 CREATE FUNCTION pglogical.create_provider(provider_name name)
-RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_provider';
+RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_provider';
 CREATE FUNCTION pglogical.drop_provider(provider_name name, ifexists boolean DEFAULT false)
-RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_provider';
+RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_provider';
 
 CREATE FUNCTION pglogical.drop_provider(provider_name name)
-RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_provider';
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_provider';
 
 
 CREATE TABLE pglogical.subscriber (
@@ -30,12 +30,12 @@ CREATE TABLE pglogical.subscriber (
 
 CREATE FUNCTION pglogical.create_subscriber(subscriber_name name, local_dsn text, provider_name name, provider_dsn text,
 	replication_sets text[] = '{default}', synchronize_schema boolean = true, syncrhonize_data boolean = true)
-RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscriber';
+RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscriber';
 CREATE FUNCTION pglogical.drop_subscriber(subscriber_name name, ifexists boolean DEFAULT false)
-RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscriber';
+RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscriber';
 
 CREATE FUNCTION pglogical.drop_subscriber(subscriber_name name)
-RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscriber';
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscriber';
 
 CREATE FUNCTION pglogical.wait_for_subscriber_ready(subscriber_name name)
 RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_subscriber_ready';
@@ -104,14 +104,18 @@ CREATE VIEW pglogical.tables AS
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
 	replicate_insert boolean = true, replicate_update boolean = true,
 	replicate_delete boolean = true, replicate_truncate boolean = true)
-RETURNS oid STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_replication_set';
+RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_replication_set';
+CREATE FUNCTION pglogical.alter_replication_set(set_name name,
+	replicate_insert boolean DEFAULT NULL, replicate_update boolean DEFAULT NULL,
+	replicate_delete boolean DEFAULT NULL, replicate_truncate boolean DEFAULT NULL)
+RETURNS oid CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_replication_set';
 CREATE FUNCTION pglogical.drop_replication_set(set_name name, ifexists boolean DEFAULT false)
-RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
 
 CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass)
-RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
 CREATE FUNCTION pglogical.replication_set_remove_table(set_name name, relation regclass)
-RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
 
 
 CREATE TABLE pglogical.queue (
@@ -123,7 +127,7 @@ CREATE TABLE pglogical.queue (
 );
 
 CREATE FUNCTION pglogical.replicate_ddl_command(command text)
-RETURNS boolean STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replicate_ddl_command';
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replicate_ddl_command';
 
 CREATE OR REPLACE FUNCTION pglogical.queue_truncate()
 RETURNS trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_queue_truncate';

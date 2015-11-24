@@ -69,6 +69,7 @@ PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_enable);
 
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
+PG_FUNCTION_INFO_V1(pglogical_alter_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_drop_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_add_table);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
@@ -265,7 +266,7 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 	if (list_length(providers) == 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("replication sets can be only created on provider"),
+				 errmsg("replication sets can be only manipulated on provider"),
 				 errhint("create provider first")));
 
 	repset.id = InvalidOid;
@@ -283,6 +284,44 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Alter existing replication set.
+ */
+Datum
+pglogical_alter_replication_set(PG_FUNCTION_ARGS)
+{
+	PGLogicalRepSet	   *repset;
+	List			   *providers;
+
+	if (PG_ARGISNULL(0))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("set_name cannot be NULL")));
+
+
+	providers = get_providers();
+	if (list_length(providers) == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("replication sets can be only manipulated on provider"),
+				 errhint("create provider first")));
+
+	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+
+	if (!PG_ARGISNULL(1))
+		repset->replicate_insert = PG_GETARG_BOOL(1);
+	if (!PG_ARGISNULL(2))
+		repset->replicate_update = PG_GETARG_BOOL(2);
+	if (!PG_ARGISNULL(3))
+		repset->replicate_delete = PG_GETARG_BOOL(3);
+	if (!PG_ARGISNULL(4))
+		repset->replicate_truncate = PG_GETARG_BOOL(4);
+
+	alter_replication_set(repset);
+
+	PG_RETURN_OID(repset->id);
+}
+
+/*
  * Drop existing replication set.
  */
 Datum
@@ -297,7 +336,7 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 	if (list_length(providers) == 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("replication sets can be only dropped on provider"),
+				 errmsg("replication sets can be only manipulated on provider"),
 				 errhint("run the command on a provider")));
 
 	repset = get_replication_set_by_name(set_name, !ifexists);

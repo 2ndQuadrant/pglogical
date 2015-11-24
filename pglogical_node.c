@@ -390,7 +390,7 @@ alter_subscriber(PGLogicalSubscriber *subscriber)
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
-	memset(replaces, true, sizeof(nulls));
+	memset(replaces, true, sizeof(replaces));
 
 	replaces[Anum_subscriber_id - 1] = false;
 	replaces[Anum_subscriber_name - 1] = false;
@@ -413,15 +413,15 @@ alter_subscriber(PGLogicalSubscriber *subscriber)
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
-	/* Insert the tuple to the catalog. */
+	/* Update the tuple in catalog. */
 	simple_heap_update(rel, &oldtup->t_self, newtup);
 
 	/* Update the indexes. */
 	CatalogUpdateIndexes(rel, newtup);
 
 	/* Cleanup. */
-	heap_freetuple(oldtup);
 	heap_freetuple(newtup);
+	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
 	pglogical_connections_changed();

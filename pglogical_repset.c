@@ -551,6 +551,121 @@ create_replication_set(PGLogicalRepSet *repset)
 }
 
 /*
+ * Alter the existing replication set.
+ */
+void
+alter_replication_set(PGLogicalRepSet *repset)
+{
+	RangeVar	   *rv;
+	SysScanDesc		scan;
+	ScanKeyData		key[1];
+	Relation		rel;
+	TupleDesc		tupDesc;
+	HeapTuple		oldtup,
+					newtup;
+	Datum			values[Natts_repset];
+	bool			nulls[Natts_repset];
+	bool			replaces[Natts_repset];
+
+	check_for_reserved_replication_set(repset->id);
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Search for repset record. */
+	ScanKeyInit(&key[0],
+				Anum_repset_id,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(repset->id));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	oldtup = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "replication set %u not found", repset->id);
+
+	/*
+	 * Validate that replication is not being changed to replicate UPDATEs
+	 * and DELETEs if it contains any tables without replication identity.
+	 */
+	if (repset->replicate_update || repset->replicate_delete)
+	{
+		RangeVar	   *tablesrv;
+		Relation		tablesrel;
+		SysScanDesc		tablesscan;
+		HeapTuple		tablestup;
+		ScanKeyData		tableskey[1];
+
+		tablesrv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
+		tablesrel = heap_openrv(tablesrv, RowExclusiveLock);
+
+		/* Search for the record. */
+		ScanKeyInit(&tableskey[0],
+					Anum_repset_table_setid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(repset->id));
+
+		tablesscan = systable_beginscan(tablesrel, 0, true, NULL, 1, tableskey);
+
+		/* Process every individual table in the set. */
+		while (HeapTupleIsValid(tablestup = systable_getnext(tablesscan)))
+		{
+			RepSetTableTuple   *t = (RepSetTableTuple *) GETSTRUCT(tablestup);
+			Relation			targetrel;
+
+			targetrel = heap_open(t->reloid, AccessShareLock);
+
+			/* Check of relation has replication index. */
+			if (targetrel->rd_indexvalid == 0)
+				RelationGetIndexList(targetrel);
+			if (!OidIsValid(targetrel->rd_replidindex) &&
+				(repset->replicate_update || repset->replicate_delete))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("replication set %s cannot be altered to "
+								"replicate UPDATEs or DELETEs because it "
+								"contains tables without PRIMARY KEY",
+								repset->name)));
+
+			heap_close(targetrel, NoLock);
+		}
+
+		systable_endscan(tablesscan);
+		heap_close(tablesrel, RowExclusiveLock);
+	}
+
+	/* Everything ok, form a new tuple. */
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, true, sizeof(replaces));
+
+	replaces[Anum_repset_id - 1] = false;
+	replaces[Anum_repset_name - 1] = false;
+
+	values[Anum_repset_replicate_insert - 1] =
+		BoolGetDatum(repset->replicate_insert);
+	values[Anum_repset_replicate_update - 1] =
+		BoolGetDatum(repset->replicate_update);
+	values[Anum_repset_replicate_delete - 1] =
+		BoolGetDatum(repset->replicate_delete);
+	values[Anum_repset_replicate_truncate - 1] =
+		BoolGetDatum(repset->replicate_truncate);
+
+	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+
+	/* Update the tuple in catalog. */
+	simple_heap_update(rel, &oldtup->t_self, newtup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, newtup);
+
+	/* Cleanup. */
+	heap_freetuple(newtup);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
  * Remove all tables from replication set.
  */
 static void
@@ -574,7 +689,6 @@ replication_set_remove_tables(Oid setid)
 				ObjectIdGetDatum(setid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
-	tuple = systable_getnext(scan);
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
@@ -621,7 +735,7 @@ drop_replication_set(Oid setid)
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "replication set %d not found", setid);
+		elog(ERROR, "replication set %u not found", setid);
 
 	/* Remove the tuple. */
 	simple_heap_delete(rel, &tuple->t_self);

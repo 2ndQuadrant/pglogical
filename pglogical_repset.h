@@ -59,6 +59,7 @@ extern bool relation_is_replicated(Relation rel, List *replication_set_names,
 								   PGLogicalChangeType change_type);
 
 extern void create_replication_set(PGLogicalRepSet *repset);
+extern void alter_replication_set(PGLogicalRepSet *repset);
 extern void drop_replication_set(Oid setid);
 
 extern void replication_set_add_table(Oid setid, Oid reloid);
