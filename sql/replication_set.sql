@@ -44,10 +44,6 @@ SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', repli
 -- check the replication sets
 SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
 
-
--- make sure reserved names can't be set
-SELECT * FROM pglogical.replication_set_add_table('all', 'test_publicschema');
-
 --too short
 SELECT pglogical.create_replication_set('');
 

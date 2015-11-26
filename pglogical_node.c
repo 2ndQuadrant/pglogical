@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pglogical_node.c
- *		pglogical node and connection catalog manipulation functions
+ *		pglogical node and subscription catalog manipulation functions
  *
  * TODO: caching
  *
@@ -38,73 +38,98 @@
 #include "pglogical_worker.h"
 #include "pglogical.h"
 
-#define CATALOG_PROVIDER	"provider"
-#define CATALOG_SUBSCRIBER	"subscriber"
+#define CATALOG_NODE			"node"
+#define CATALOG_LOCAL_NODE		"local_node"
+#define CATALOG_NODE_INTERFACE	"node_interface"
+#define CATALOG_SUBSCRIPTION	"subscription"
 
-typedef struct SubscriberTuple
+typedef struct NodeTuple
 {
-	Oid			subscriber_id;
-	NameData	subscriber_name;
-	bool		subscriber_enabled;
-	char		subscriber_status;
-	NameData	subscriber_provider_name;
-	text		subscriber_provider_dsn;
-	text		subscriber_local_dsn;
-} SubscriberTuple;
+	Oid			node_id;
+	NameData	node_name;
+} NodeTuple;
 
-#define Natts_subscriber					8
-#define Anum_subscriber_id					1
-#define Anum_subscriber_name				2
-#define Anum_subscriber_enabled				3
-#define Anum_subscriber_status				4
-#define Anum_subscriber_provider_name		5
-#define Anum_subscriber_provider_dsn		6
-#define Anum_subscriber_local_dsn			7
-#define Anum_subscriber_replication_sets	8
+#define Natts_node			4
+#define Anum_node_id		1
+#define Anum_node_name		2
 
-typedef struct ProviderTuple
+#define Natts_local_node			2
+#define Anum_node_local_id			1
+#define Anum_node_local_interface	2
+
+typedef struct NodeInterfaceTuple
 {
-	Oid			provider_id;
-	NameData	provider_name;
-} ProviderTuple;
+	Oid			if_id;
+	NameData	if_name;
+	Oid			if_nodeid;
+	text		if_dsn;
+} NodeInterfaceTuple;
 
-#define	Natts_provider		2
-#define Anum_provider_id	1
-#define Anum_provider_name	2
+#define Natts_node_inteface	4
+#define Anum_if_id			1
+#define Anum_if_name		2
+#define Anum_if_nodeid		3
+#define Anum_if_dsn			4
+
+typedef struct SubscriptionTuple
+{
+	Oid			sub_id;
+	NameData	sub_name;
+	Oid			sub_origin;
+	Oid			sub_target;
+    Oid			sub_origin_if;
+	Oid			sub_target_if;
+	bool		sub_enabled;
+	bool		sub_sync_structure;
+	bool		sub_sync_data;
+	text		sub_replication_sets[1];
+} SubscriptionTuple;
+
+#define Natts_subscription			10
+#define Anum_sub_id					1
+#define Anum_sub_name				2
+#define Anum_sub_origin				3
+#define Anum_sub_target				4
+#define Anum_sub_origin_if			5
+#define Anum_sub_target_if			6
+#define Anum_sub_enabled			7
+#define Anum_sub_sync_structure		8
+#define Anum_sub_sync_data			9
+#define Anum_sub_replication_sets	10
 
 /*
- * Add new tuple to the provider catalog.
+ * Add new node to catalog.
  */
 void
-create_provider(PGLogicalProvider *provider)
+create_node(PGLogicalNode *node)
 {
 	RangeVar   *rv;
 	Relation	rel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
-	Datum		values[Natts_provider];
-	bool		nulls[Natts_provider];
-	NameData	provider_name;
+	Datum		values[Natts_node];
+	bool		nulls[Natts_node];
+	NameData	node_name;
 
-	if (get_provider_by_name(provider->name, true) != NULL)
-		elog(ERROR, "provider %s already exists", provider->name);
+	if (get_node_by_name(node->name, true) != NULL)
+		elog(ERROR, "node %s already exists", node->name);
 
 	/* Generate new id unless one was already specified. */
-	if (provider->id == InvalidOid)
-		provider->id =
-			DatumGetUInt32(hash_any((const unsigned char *) provider->name,
-									strlen(provider->name)));
+	if (node->id == InvalidOid)
+		node->id =
+			DatumGetUInt32(hash_any((const unsigned char *) node->name,
+									strlen(node->name)));
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_PROVIDER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_provider_id - 1] = ObjectIdGetDatum(provider->id);
-	namestrcpy(&provider_name, provider->name);
-	values[Anum_provider_name - 1] = NameGetDatum(&provider_name);
+	values[Anum_node_id - 1] = ObjectIdGetDatum(node->id);
+	namestrcpy(&node_name, node->name);
+	values[Anum_node_name - 1] = NameGetDatum(&node_name);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -112,20 +137,18 @@ create_provider(PGLogicalProvider *provider)
 	simple_heap_insert(rel, tup);
 
 	/* Update the indexes. */
-	//CatalogUpdateIndexes(rel, tup);
+	CatalogUpdateIndexes(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
-
-	pglogical_connections_changed();
 }
 
 /*
- * Delete the tuple from provider catalog.
+ * Delete node from the catalog.
  */
 void
-drop_provider(Oid providerid)
+drop_node(Oid nodeid)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -133,20 +156,20 @@ drop_provider(Oid providerid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_PROVIDER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_provider_id,
+				Anum_node_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(providerid));
+				ObjectIdGetDatum(nodeid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "provider %u not found", providerid);
+		elog(ERROR, "node %u not found", nodeid);
 
 	/* Remove the tuple. */
 	simple_heap_delete(rel, &tuple->t_self);
@@ -158,72 +181,72 @@ drop_provider(Oid providerid)
 	pglogical_connections_changed();
 }
 
-static PGLogicalProvider *
-provider_fromtuple(HeapTuple tuple)
+static PGLogicalNode *
+node_fromtuple(HeapTuple tuple)
 {
-	ProviderTuple *providertup = (ProviderTuple *) GETSTRUCT(tuple);
-	PGLogicalProvider *provider
-		= (PGLogicalProvider *) palloc(sizeof(PGLogicalProvider));
-	provider->id = providertup->provider_id;
-	provider->name = pstrdup(NameStr(providertup->provider_name));
-	return provider;
+	NodeTuple *nodetup = (NodeTuple *) GETSTRUCT(tuple);
+	PGLogicalNode *node
+		= (PGLogicalNode *) palloc(sizeof(PGLogicalNode));
+	node->id = nodetup->node_id;
+	node->name = pstrdup(NameStr(nodetup->node_name));
+	return node;
 }
 
 /*
- * Load the info for specific provider.
+ * Load the info for specific node.
  */
-PGLogicalProvider *
-get_provider(Oid providerid)
+PGLogicalNode *
+get_node(Oid nodeid)
 {
-	PGLogicalProvider  *provider;
+	PGLogicalNode  *node;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_PROVIDER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_provider_id,
+				Anum_node_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(providerid));
+				ObjectIdGetDatum(nodeid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "provider %u not found", providerid);
+		elog(ERROR, "node %u not found", nodeid);
 
-	provider = provider_fromtuple(tuple);
+	node = node_fromtuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
-	return provider;
+	return node;
 }
 
 /*
- * Load the info for specific provider.
+ * Load the info for specific node.
  */
-PGLogicalProvider *
-get_provider_by_name(const char *name, bool missing_ok)
+PGLogicalNode *
+get_node_by_name(const char *name, bool missing_ok)
 {
-	PGLogicalProvider  *provider;
+	PGLogicalNode  *node;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_PROVIDER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_provider_name,
+				Anum_node_name,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(name));
 
@@ -239,98 +262,353 @@ get_provider_by_name(const char *name, bool missing_ok)
 			return NULL;
 		}
 
-		elog(ERROR, "provider %s not found", name);
+		elog(ERROR, "node %s not found", name);
 	}
 
-	provider = provider_fromtuple(tuple);
+	node = node_fromtuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
-	return provider;
+	return node;
 }
 
 /*
- * Return all local providers.
- */
-List *
-get_providers(void)
-{
-	PGLogicalProvider    *provider;
-	RangeVar	   *rv;
-	Relation		rel;
-	SysScanDesc		scan;
-	HeapTuple		tuple;
-	List		   *res = NIL;
-
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_PROVIDER, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
-
-	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
-
-	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
-	{
-		provider = provider_fromtuple(tuple);
-
-		res = lappend(res, provider);
-	}
-
-	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
-
-	return res;
-}
-
-
-/*
- * Add new tuple to the subsriber catalog.
+ * Add local node record to catalog.
  */
 void
-create_subscriber(PGLogicalSubscriber *subscriber)
+create_local_node(Oid nodeid, Oid ifid)
 {
 	RangeVar   *rv;
 	Relation	rel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
-	Datum		values[Natts_subscriber];
-	bool		nulls[Natts_subscriber];
-	NameData	subscriber_name;
-	NameData	subscriber_provider_name;
+	Datum		values[Natts_local_node];
+	bool		nulls[Natts_local_node];
 
-	if (get_subscriber_by_name(subscriber->name, true) != NULL)
-		elog(ERROR, "subscriber %s already exists", subscriber->name);
-
-	/* Generate new id unless one was already specified. */
-	if (subscriber->id == InvalidOid)
-		subscriber->id =
-			DatumGetUInt32(hash_any((const unsigned char *) subscriber->name,
-									strlen(subscriber->name)));
-
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
-	values[Anum_subscriber_id - 1] = ObjectIdGetDatum(subscriber->id);
-	namestrcpy(&subscriber_name, subscriber->name);
-	values[Anum_subscriber_name - 1] = NameGetDatum(&subscriber_name);
-	values[Anum_subscriber_enabled - 1] = BoolGetDatum(subscriber->enabled);
-	values[Anum_subscriber_status - 1] = CharGetDatum(subscriber->status);
-	namestrcpy(&subscriber_provider_name, subscriber->provider_name);
-	values[Anum_subscriber_provider_name - 1] =
-		NameGetDatum(&subscriber_provider_name);
-	values[Anum_subscriber_provider_dsn - 1] =
-		CStringGetTextDatum(subscriber->provider_dsn);
-	values[Anum_subscriber_local_dsn - 1] =
-		CStringGetTextDatum(subscriber->local_dsn);
+	values[Anum_node_local_id - 1] = ObjectIdGetDatum(nodeid);
+	values[Anum_node_local_interface - 1] = ObjectIdGetDatum(ifid);
 
-	if (list_length(subscriber->replication_sets) > 0)
-		values[Anum_subscriber_replication_sets - 1] =
-			PointerGetDatum(strlist_to_textarray(subscriber->replication_sets));
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. TODO */
+//	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Drop local node record from catalog.
+ */
+void
+drop_local_node(void)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Find the local node tuple. */
+	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
+	tuple = systable_getnext(scan);
+
+	/* No local node record found. */
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("local node not found")));
+
+	/* Remove the tuple. */
+	simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Return local node.
+ */
+PGLogicalLocalNode *
+get_local_node(bool missing_ok)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	TupleDesc		desc;
+	Oid				nodeid;
+	Oid				nodeifid;
+	bool			isnull;
+	PGLogicalLocalNode *res;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Find the local node tuple. */
+	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
+	tuple = systable_getnext(scan);
+
+	/* No local node record found. */
+	if (!HeapTupleIsValid(tuple))
+	{
+		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
+			return NULL;
+		}
+
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("local node not found")));
+	}
+
+	desc = RelationGetDescr(rel);
+
+	nodeid = DatumGetObjectId(fastgetattr(tuple, Anum_node_local_id, desc,
+										  &isnull));
+	nodeifid = DatumGetObjectId(fastgetattr(tuple, Anum_node_local_interface,
+											desc, &isnull));
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	res = (PGLogicalLocalNode *) palloc(sizeof(PGLogicalLocalNode));
+	res->node = get_node(nodeid);
+	res->interface = get_node_interface(nodeifid);
+
+	return res;
+}
+
+/*
+ * Add new node interface to catalog.
+ */
+void
+create_node_interface(PGlogicalInterface *nodeif)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_node_inteface];
+	bool		nulls[Natts_node_inteface];
+	NameData	nodeif_name;
+
+	/* Generate new id unless one was already specified. */
+	if (nodeif->id == InvalidOid)
+	{
+		uint32	hashinput[2];
+
+		hashinput[0] = nodeif->nodeid;
+		hashinput[1] = DatumGetUInt32(hash_any((const unsigned char *) nodeif->name,
+											   strlen(nodeif->name)));
+
+		nodeif->id = DatumGetUInt32(hash_any((const unsigned char *) hashinput,
+											 (int) sizeof(hashinput)));
+	}
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE_INTERFACE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_if_id - 1] = ObjectIdGetDatum(nodeif->id);
+	namestrcpy(&nodeif_name, nodeif->name);
+	values[Anum_if_name - 1] = NameGetDatum(&nodeif_name);
+	values[Anum_if_nodeid - 1] = ObjectIdGetDatum(nodeif->nodeid);
+	values[Anum_if_dsn - 1] = CStringGetTextDatum(nodeif->dsn);
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Delete node interface from the catalog.
+ */
+void
+drop_node_interface(Oid ifid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE_INTERFACE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for node record. */
+	ScanKeyInit(&key[0],
+				Anum_if_id,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ifid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "node interface %u not found", ifid);
+
+	/* Remove the tuple. */
+	simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
+}
+
+/*
+ * Delete all node interfaces from the catalog.
+ */
+void
+drop_node_interfaces(Oid nodeid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE_INTERFACE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for node record. */
+	ScanKeyInit(&key[0],
+				Anum_if_nodeid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(nodeid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	/* Remove tuples. */
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+		simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	pglogical_connections_changed();
+}
+
+/*
+ * Get the node interface from the catalog.
+ */
+PGlogicalInterface *
+get_node_interface(Oid ifid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+	NodeInterfaceTuple *iftup;
+	PGlogicalInterface *nodeif;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE_INTERFACE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for node record. */
+	ScanKeyInit(&key[0],
+				Anum_if_id,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ifid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "node interface %u not found", ifid);
+
+	iftup = (NodeInterfaceTuple *) GETSTRUCT(tuple);
+	nodeif = (PGlogicalInterface *) palloc(sizeof(PGlogicalInterface));
+	nodeif->id = iftup->if_id;
+	nodeif->name = pstrdup(NameStr(iftup->if_name));
+	nodeif->nodeid = iftup->if_nodeid;
+	nodeif->dsn = pstrdup(text_to_cstring(&iftup->if_dsn));
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return nodeif;
+}
+
+/*
+ * Add new subscription to catalog.
+ */
+void
+create_subscription(PGLogicalSubscription *sub)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_subscription];
+	bool		nulls[Natts_subscription];
+	NameData	sub_name;
+
+	if (get_subscription_by_name(sub->name, true) != NULL)
+		elog(ERROR, "subscription %s already exists", sub->name);
+
+	/* Generate new id unless one was already specified. */
+	if (sub->id == InvalidOid)
+		sub->id =
+			DatumGetObjectId(hash_any((const unsigned char *) sub->name,
+									  strlen(sub->name)));
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_sub_id - 1] = ObjectIdGetDatum(sub->id);
+	namestrcpy(&sub_name, sub->name);
+	values[Anum_sub_name - 1] = NameGetDatum(&sub_name);
+	values[Anum_sub_origin - 1] = ObjectIdGetDatum(sub->origin_if->nodeid);
+	values[Anum_sub_target - 1] = ObjectIdGetDatum(sub->target_if->nodeid);
+	values[Anum_sub_origin_if - 1] = ObjectIdGetDatum(sub->origin_if->id);
+	values[Anum_sub_target_if - 1] = ObjectIdGetDatum(sub->target_if->id);
+	values[Anum_sub_enabled - 1] = BoolGetDatum(sub->enabled);
+	values[Anum_sub_sync_structure - 1] = BoolGetDatum(sub->sync_structure);
+	values[Anum_sub_sync_data - 1] = BoolGetDatum(sub->sync_data);
+
+	if (list_length(sub->replication_sets) > 0)
+		values[Anum_sub_replication_sets - 1] =
+			PointerGetDatum(strlist_to_textarray(sub->replication_sets));
 	else
-		nulls[Anum_subscriber_replication_sets - 1] = true;
+		nulls[Anum_sub_replication_sets - 1] = true;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -348,68 +626,65 @@ create_subscriber(PGLogicalSubscriber *subscriber)
 }
 
 /*
- * Change the subscriber tuple.
+ * Change the subscription tuple.
  */
 void
-alter_subscriber(PGLogicalSubscriber *subscriber)
+alter_subscription(PGLogicalSubscription *sub)
 {
 	RangeVar   *rv;
 	Relation	rel;
 	TupleDesc	tupDesc;
 	SysScanDesc	scan;
-	SubscriberTuple	*oldsub;
+	SubscriptionTuple	*oldsub;
 	HeapTuple	oldtup,
 				newtup;
 	ScanKeyData	key[1];
-	Datum		values[Natts_subscriber];
-	bool		nulls[Natts_subscriber];
-	bool		replaces[Natts_subscriber];
-	NameData	subscriber_provider_name;
+	Datum		values[Natts_subscription];
+	bool		nulls[Natts_subscription];
+	bool		replaces[Natts_subscription];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_subscriber_id,
+				Anum_sub_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(subscriber->id));
+				ObjectIdGetDatum(sub->id));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	oldtup = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(oldtup))
-		elog(ERROR, "subscriber %u not found", subscriber->id);
+		elog(ERROR, "subscription %u not found", sub->id);
 
-	oldsub = (SubscriberTuple *) GETSTRUCT(oldtup);
-	if (strcmp(NameStr(oldsub->subscriber_name), subscriber->name) != 0)
+	oldsub = (SubscriptionTuple *) GETSTRUCT(oldtup);
+	if (strcmp(NameStr(oldsub->sub_name), sub->name) != 0)
 		ereport(LOG,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("subscriber name change not is not supported")));
+				 errmsg("subscription name change not is not supported")));
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 	memset(replaces, true, sizeof(replaces));
 
-	replaces[Anum_subscriber_id - 1] = false;
-	replaces[Anum_subscriber_name - 1] = false;
+	replaces[Anum_sub_id - 1] = false;
+	replaces[Anum_sub_name - 1] = false;
 
-	values[Anum_subscriber_enabled - 1] = BoolGetDatum(subscriber->enabled);
-	values[Anum_subscriber_status - 1] = CharGetDatum(subscriber->status);
-	namestrcpy(&subscriber_provider_name, subscriber->provider_name);
-	values[Anum_subscriber_provider_name - 1] =
-		NameGetDatum(&subscriber_provider_name);
-	values[Anum_subscriber_provider_dsn - 1] =
-		CStringGetTextDatum(subscriber->provider_dsn);
-	values[Anum_subscriber_local_dsn - 1] =
-		CStringGetTextDatum(subscriber->local_dsn);
+	values[Anum_sub_origin - 1] = ObjectIdGetDatum(sub->origin_if->nodeid);
+	values[Anum_sub_target - 1] = ObjectIdGetDatum(sub->target_if->nodeid);
+	values[Anum_sub_origin_if - 1] = ObjectIdGetDatum(sub->origin_if->id);
+	values[Anum_sub_target_if - 1] = ObjectIdGetDatum(sub->target_if->id);
+	values[Anum_sub_enabled - 1] = BoolGetDatum(sub->enabled);
+	values[Anum_sub_sync_structure - 1] = BoolGetDatum(sub->sync_structure);
+	values[Anum_sub_sync_data - 1] = BoolGetDatum(sub->sync_data);
 
-	if (list_length(subscriber->replication_sets) > 0)
-		values[Anum_subscriber_replication_sets - 1] =
-			PointerGetDatum(strlist_to_textarray(subscriber->replication_sets));
+	if (list_length(sub->replication_sets) > 0)
+		values[Anum_sub_replication_sets - 1] =
+			PointerGetDatum(strlist_to_textarray(sub->replication_sets));
 	else
-		nulls[Anum_subscriber_replication_sets - 1] = true;
+		nulls[Anum_sub_replication_sets - 1] = true;
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -428,10 +703,10 @@ alter_subscriber(PGLogicalSubscriber *subscriber)
 }
 
 /*
- * Delete the tuple from subsriber catalog.
+ * Delete the tuple from subsription catalog.
  */
 void
-drop_subscriber(Oid subscriberid)
+drop_subscription(Oid subid)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -439,20 +714,20 @@ drop_subscriber(Oid subscriberid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_subscriber_id,
+				Anum_sub_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(subscriberid));
+				ObjectIdGetDatum(subid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "subscriber %u not found", subscriberid);
+		elog(ERROR, "subscription %u not found", subid);
 
 	/* Remove the tuple. */
 	simple_heap_delete(rel, &tuple->t_self);
@@ -465,38 +740,35 @@ drop_subscriber(Oid subscriberid)
 }
 
 
-static PGLogicalSubscriber*
-subscriber_fromtuple(HeapTuple tuple, TupleDesc desc)
+static PGLogicalSubscription*
+subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 {
-	SubscriberTuple *subtup = (SubscriberTuple *) GETSTRUCT(tuple);
+	SubscriptionTuple *subtup = (SubscriptionTuple *) GETSTRUCT(tuple);
 	Datum d;
 	bool isnull;
 
-	PGLogicalSubscriber *sub =
-		(PGLogicalSubscriber *) palloc(sizeof(PGLogicalSubscriber));
-	sub->id = subtup->subscriber_id;
-	sub->name = pstrdup(NameStr(subtup->subscriber_name));
-	sub->enabled = subtup->subscriber_enabled;
-	sub->status = subtup->subscriber_status;
-	sub->provider_name = pstrdup(NameStr(subtup->subscriber_provider_name));
+	PGLogicalSubscription *sub =
+		(PGLogicalSubscription *) palloc(sizeof(PGLogicalSubscription));
+	sub->id = subtup->sub_id;
+	sub->name = pstrdup(NameStr(subtup->sub_name));
+	sub->enabled = subtup->sub_enabled;
+	sub->sync_structure = subtup->sub_sync_structure;
+	sub->sync_data = subtup->sub_sync_data;
 
-	d = heap_getattr(tuple, Anum_subscriber_provider_dsn, desc, &isnull);
-	Assert(!isnull);
-	sub->provider_dsn = pstrdup(TextDatumGetCString(d));
-
-	d = heap_getattr(tuple, Anum_subscriber_local_dsn, desc, &isnull);
-	Assert(!isnull);
-	sub->local_dsn = pstrdup(TextDatumGetCString(d));
+	sub->origin = get_node(subtup->sub_origin);
+	sub->target = get_node(subtup->sub_target);
+	sub->origin_if = get_node_interface(subtup->sub_origin_if);
+	sub->target_if = get_node_interface(subtup->sub_target_if);
 
 	/* Get replication sets. */
-	d = heap_getattr(tuple, Anum_subscriber_replication_sets, desc, &isnull);
+	d = heap_getattr(tuple, Anum_sub_replication_sets, desc, &isnull);
 	if (isnull)
 		sub->replication_sets = NIL;
 	else
 	{
 		List		   *repset_names;
 		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
-		sub->replication_sets = get_replication_sets(repset_names, true);
+		sub->replication_sets = repset_names;
 	}
 
 	return sub;
@@ -505,10 +777,10 @@ subscriber_fromtuple(HeapTuple tuple, TupleDesc desc)
 /*
  * Load the info for specific subscriber.
  */
-PGLogicalSubscriber *
-get_subscriber(Oid subscriberid)
+PGLogicalSubscription *
+get_subscription(Oid subid)
 {
-	PGLogicalSubscriber    *sub;
+	PGLogicalSubscription    *sub;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
@@ -516,23 +788,23 @@ get_subscriber(Oid subscriberid)
 	TupleDesc		desc;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_subscriber_id,
+				Anum_sub_id,
 				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(subscriberid));
+				ObjectIdGetDatum(subid));
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "subscriber %u not found", subscriberid);
+		elog(ERROR, "subscription %u not found", subid);
 
 	desc = RelationGetDescr(rel);
-	sub = subscriber_fromtuple(tuple, desc);
+	sub = subscription_fromtuple(tuple, desc);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -543,10 +815,10 @@ get_subscriber(Oid subscriberid)
 /*
  * Load the info for specific subscriber.
  */
-PGLogicalSubscriber *
-get_subscriber_by_name(const char *name, bool missing_ok)
+PGLogicalSubscription *
+get_subscription_by_name(const char *name, bool missing_ok)
 {
-	PGLogicalSubscriber    *sub;
+	PGLogicalSubscription    *sub;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
@@ -554,12 +826,12 @@ get_subscriber_by_name(const char *name, bool missing_ok)
 	TupleDesc		desc;
 	ScanKeyData		key[1];
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 
 	/* Search for node record. */
 	ScanKeyInit(&key[0],
-				Anum_subscriber_name,
+				Anum_sub_name,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(name));
 
@@ -579,7 +851,7 @@ get_subscriber_by_name(const char *name, bool missing_ok)
 	}
 
 	desc = RelationGetDescr(rel);
-	sub = subscriber_fromtuple(tuple, desc);
+	sub = subscription_fromtuple(tuple, desc);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -588,28 +860,34 @@ get_subscriber_by_name(const char *name, bool missing_ok)
 }
 
 /*
- * Return all local subscribers.
+ * Return all local subscriptions.
  */
 List *
-get_subscribers(void)
+get_node_subscriptions(Oid nodeid)
 {
-	PGLogicalSubscriber    *sub;
+	PGLogicalSubscription    *sub;
 	RangeVar	   *rv;
 	Relation		rel;
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	TupleDesc		desc;
+	ScanKeyData		key[1];
 	List		   *res = NIL;
 
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	desc = RelationGetDescr(rel);
 
-	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
+	ScanKeyInit(&key[0],
+				Anum_sub_target,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(nodeid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		sub = subscriber_fromtuple(tuple, desc);
+		sub = subscription_fromtuple(tuple, desc);
 
 		res = lappend(res, sub);
 	}
@@ -618,73 +896,4 @@ get_subscribers(void)
 	heap_close(rel, RowExclusiveLock);
 
 	return res;
-}
-
-
-/*
- * Update the status of a subscriber.
- */
-void
-set_subscriber_status(int subscriberid, char status)
-{
-	RangeVar	   *rv;
-	Relation		rel;
-	SysScanDesc		scan;
-	HeapTuple		tuple;
-	ScanKeyData		key[1];
-	bool			tx_started = false;
-
-	if (!IsTransactionState())
-	{
-		tx_started = true;
-		StartTransactionCommand();
-	}
-
-	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIBER, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
-
-	/* Find the node tuple */
-	ScanKeyInit(&key[0],
-				Anum_subscriber_id,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(subscriberid));
-
-	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
-	tuple = systable_getnext(scan);
-
-	/* If found update otherwise throw error. */
-	if (HeapTupleIsValid(tuple))
-	{
-		HeapTuple	newtuple;
-		Datum	   *values;
-		bool	   *nulls;
-		TupleDesc	tupDesc;
-
-		tupDesc = RelationGetDescr(rel);
-
-		values = (Datum *) palloc(tupDesc->natts * sizeof(Datum));
-		nulls = (bool *) palloc(tupDesc->natts * sizeof(bool));
-
-		heap_deform_tuple(tuple, tupDesc, values, nulls);
-
-		values[Anum_subscriber_status - 1] = CharGetDatum(status);
-
-		newtuple = heap_form_tuple(RelationGetDescr(rel),
-								   values, nulls);
-		simple_heap_update(rel, &tuple->t_self, newtuple);
-		CatalogUpdateIndexes(rel, newtuple);
-	}
-	else
-		elog(ERROR, "subscriber %d not found.", subscriberid);
-
-	systable_endscan(scan);
-
-	/* Make the change visible to our tx. */
-	CommandCounterIncrement();
-
-	/* Release the lock */
-	heap_close(rel, RowExclusiveLock);
-
-	if (tx_started)
-		CommitTransactionCommand();
 }

@@ -36,7 +36,8 @@ void pglogical_manager_main(Datum main_arg);
 static void
 manage_apply_workers(void)
 {
-	List	   *subscribers;
+	PGLogicalLocalNode *node;
+	List	   *subscriptions;
 	List	   *workers;
 	ListCell   *slc,
 			   *wlc;
@@ -46,14 +47,20 @@ manage_apply_workers(void)
 	workers = pglogical_apply_find_all(MyPGLogicalWorker->dboid);
 	LWLockRelease(PGLogicalCtx->lock);
 
-	/* Get list of subscribers. */
 	StartTransactionCommand();
-	subscribers = get_subscribers();
+
+	/* Get local node, exit if no found. */
+	node = get_local_node(true);
+	if (!node)
+		proc_exit(0);
+
+	/* Get list of subscribers. */
+	subscriptions = get_node_subscriptions(node->node->id);
 
 	/* Register apply worker for each subscriber. */
-	foreach (slc, subscribers)
+	foreach (slc, subscriptions)
 	{
-		PGLogicalSubscriber	   *sub = (PGLogicalSubscriber *) lfirst(slc);
+		PGLogicalSubscription  *sub = (PGLogicalSubscription *) lfirst(slc);
 		PGLogicalWorker			apply;
 		ListCell			   *next,
 							   *prev;
@@ -76,7 +83,7 @@ manage_apply_workers(void)
 			/* We might delete the cell so advance it now. */
 			next = lnext(wlc);
 
-			if (worker->worker.apply.subscriberid == sub->id)
+			if (worker->worker.apply.subid == sub->id)
 			{
 				workers = list_delete_cell(workers, wlc, prev);
 				found = true;
@@ -93,7 +100,7 @@ manage_apply_workers(void)
 		memset(&apply, 0, sizeof(PGLogicalWorker));
 		apply.worker_type = PGLOGICAL_WORKER_APPLY;
 		apply.dboid = MyPGLogicalWorker->dboid;
-		apply.worker.apply.subscriberid = sub->id;
+		apply.worker.apply.subid = sub->id;
 
 		pglogical_worker_register(&apply);
 	}
@@ -108,7 +115,7 @@ manage_apply_workers(void)
 	}
 
 	/* No subscribers, exit. */
-	if (list_length(subscribers) == 0)
+	if (list_length(subscriptions) == 0)
 		proc_exit(0);
 }
 
@@ -120,7 +127,6 @@ pglogical_manager_main(Datum main_arg)
 {
 	int			slot = DatumGetInt32(main_arg);
 	Oid			extoid;
-	List	   *subscribers;
 	MemoryContext	saved_ctx;
 
 	/* Setup shmem. */
@@ -143,16 +149,8 @@ pglogical_manager_main(Datum main_arg)
 
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 
-	subscribers = get_subscribers();
-
-	/* No subscribers, exit. */
-	if (list_length(subscribers) == 0)
-		proc_exit(0);
-
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
-
-	/* TODO: check that there is only one subscriber with node status != 'r' */
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
 

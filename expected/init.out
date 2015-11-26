@@ -21,28 +21,40 @@ END;$FUNC$ LANGUAGE plpgsql;
 GRANT ALL ON SCHEMA public TO nonsuper;
 \c regression
 CREATE EXTENSION pglogical;
-SELECT * FROM pglogical.create_provider(provider_name := 'test_provider');
- create_provider 
------------------
-      2689511696
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
+ create_node 
+-------------
+  2689511696
 (1 row)
 
 \c postgres
 CREATE EXTENSION pglogical;
-SELECT * FROM pglogical.create_subscriber(
-    subscriber_name := 'test_subscriber',
-    local_dsn := 'dbname=postgres user=super',
-    provider_name := 'test_provider',
-    provider_dsn := 'dbname=regression user=super');
- create_subscriber 
--------------------
-        1755434425
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
+ create_node 
+-------------
+  1755434425
 (1 row)
 
-SELECT pglogical.wait_for_subscriber_ready('test_subscriber');
- wait_for_subscriber_ready 
----------------------------
- t
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription',
+    origin_dsn := 'dbname=regression user=super');
+ create_subscription 
+---------------------
+          3848008564
+(1 row)
+
+DO $$
+BEGIN
+	LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
+			EXIT;
+		END IF;
+	END LOOP;
+END;$$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
+-----------+------------+--------------+--------------+-------------
+ f         | 3848008564 |              |              | r
 (1 row)
 
 -- Make sure we see the slot and active connection

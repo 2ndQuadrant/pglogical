@@ -117,7 +117,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
 				 "pglogical sync %s %d:%d",
 				 NameStr(worker->worker.sync.relname),
-				 worker->dboid, worker->worker.sync.apply.subscriberid);
+				 worker->dboid, worker->worker.sync.apply.subid);
 	}
 	else
 	{
@@ -125,7 +125,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 				 "pglogical_apply_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
 				 "pglogical apply %d:%d", worker->dboid,
-				 worker->worker.apply.subscriberid);
+				 worker->worker.apply.subid);
 	}
 
 	bgw.bgw_restart_time = BGW_NEVER_RESTART;
@@ -237,7 +237,7 @@ pglogical_apply_find(Oid dboid, Oid subscriberid)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
 			dboid == PGLogicalCtx->workers[i].dboid &&
-			subscriberid == PGLogicalCtx->workers[i].worker.apply.subscriberid)
+			subscriberid == PGLogicalCtx->workers[i].worker.apply.subid)
 			return &PGLogicalCtx->workers[i];
 	}
 

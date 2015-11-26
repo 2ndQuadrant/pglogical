@@ -23,7 +23,7 @@ typedef enum {
 
 typedef struct PGLogicalApplyWorker
 {
-	Oid			subscriberid;	/* Subscriber id for apply worker. */
+	Oid			subid;				/* Subscription id for apply worker. */
 	XLogRecPtr	replay_stop_lsn;	/* Replay should stop here if defined. */
 } PGLogicalApplyWorker;
 

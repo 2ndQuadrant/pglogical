@@ -53,19 +53,24 @@
 #include "pglogical_node.h"
 #include "pglogical_queue.h"
 #include "pglogical_repset.h"
+#include "pglogical_rpc.h"
+#include "pglogical_sync.h"
 #include "pglogical_worker.h"
 
 #include "pglogical.h"
 
 /* Node management. */
-PG_FUNCTION_INFO_V1(pglogical_create_provider);
-PG_FUNCTION_INFO_V1(pglogical_drop_provider);
-PG_FUNCTION_INFO_V1(pglogical_create_subscriber);
-PG_FUNCTION_INFO_V1(pglogical_drop_subscriber);
-PG_FUNCTION_INFO_V1(pglogical_wait_for_subscriber_ready);
+PG_FUNCTION_INFO_V1(pglogical_create_node);
+PG_FUNCTION_INFO_V1(pglogical_drop_node);
+PG_FUNCTION_INFO_V1(pglogical_alter_node_disable);
+PG_FUNCTION_INFO_V1(pglogical_alter_node_enable);
 
-PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_disable);
-PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_enable);
+/* Subscription management. */
+PG_FUNCTION_INFO_V1(pglogical_create_subscription);
+PG_FUNCTION_INFO_V1(pglogical_drop_subscription);
+
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_disable);
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_enable);
 
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
@@ -82,68 +87,143 @@ PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 
 /* Internal utils */
 PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
-PG_FUNCTION_INFO_V1(pglogical_provider_info);
+PG_FUNCTION_INFO_V1(pglogical_node_info);
 
 /*
- * Create new provider
+ * Create new node
  */
 Datum
-pglogical_create_provider(PG_FUNCTION_ARGS)
+pglogical_create_node(PG_FUNCTION_ARGS)
 {
-	PGLogicalProvider	provider;
+	PGLogicalNode	node;
+	PGlogicalInterface	nodeif;
+	PGLogicalRepSet		repset;
 
-	provider.id = InvalidOid;
-	provider.name = NameStr(*PG_GETARG_NAME(0));
+	node.id = InvalidOid;
+	node.name = NameStr(*PG_GETARG_NAME(0));
+	create_node(&node);
 
-	create_provider(&provider);
+	nodeif.id = InvalidOid;
+	nodeif.name = node.name;
+	nodeif.nodeid = node.id;
+	nodeif.dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	create_node_interface(&nodeif);
 
-	PG_RETURN_OID(provider.id);
+	repset.id = InvalidOid;
+	repset.nodeid = node.id;
+	repset.name = DEFAULT_REPSET_NAME;
+	repset.replicate_insert = true;
+	repset.replicate_update = true;
+	repset.replicate_delete = true;
+	repset.replicate_truncate = true;
+	create_replication_set(&repset);
+
+	create_local_node(node.id, nodeif.id);
+
+	PG_RETURN_OID(node.id);
 }
 
 /*
  * Drop the named node.
+ *
+ * TODO: drop subscriptions
  */
 Datum
-pglogical_drop_provider(PG_FUNCTION_ARGS)
+pglogical_drop_node(PG_FUNCTION_ARGS)
 {
-	char	   *provider_name = NameStr(*PG_GETARG_NAME(0));
+	char	   *node_name = NameStr(*PG_GETARG_NAME(0));
 	bool		ifexists = PG_GETARG_BOOL(1);
-	PGLogicalProvider  *provider;
+	PGLogicalNode  *node;
 
-	provider = get_provider_by_name(provider_name, !ifexists);
+	node = get_node_by_name(node_name, !ifexists);
 
-	if (provider != NULL)
+	if (node != NULL)
 	{
-		drop_provider(provider->id);
+		PGLogicalLocalNode *local_node;
+
+		/* Drop all the interfaces. */
+		drop_node_interfaces(node->id);
+
+		/* If the node is local node, drop the record as well. */
+		local_node = get_local_node(true);
+		if (local_node && local_node->node->id == node->id)
+			drop_local_node();
+
+		/* Drop the node itself. */
+		drop_node(node->id);
+
 		pglogical_connections_changed();
 	}
 
-	PG_RETURN_BOOL(provider != NULL);
+	PG_RETURN_BOOL(node != NULL);
 }
 
 /*
  * Connect two existing nodes.
- *
- * TODO: handle different sync modes correctly.
  */
 Datum
-pglogical_create_subscriber(PG_FUNCTION_ARGS)
+pglogical_create_subscription(PG_FUNCTION_ARGS)
 {
-	PGLogicalSubscriber		sub;
-//	bool			sync_schema = PG_GET_BOOL(5);
-//	bool			sync_data = PG_GET_BOOL(6);
+	PGconn				   *conn;
+	PGLogicalSubscription	sub;
+	PGLogicalSyncStatus		sync;
+	char				   *origin_dsn;
+	bool					sync_structure = PG_GETARG_BOOL(3);
+	bool					sync_data = PG_GETARG_BOOL(4);
+	PGLogicalNode			origin;
+	PGlogicalInterface		originif;
+	PGLogicalLocalNode     *localnode;
+	PGlogicalInterface		targetif;
 
+	/* Check that this is actually a node. */
+	localnode = get_local_node(true);
+
+	/* Now, fetch info about remote node. */
+	origin_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	conn = pglogical_connect(origin_dsn, "create_subscription");
+	pglogical_remote_node_info(conn, &origin.id, &origin.name, NULL, NULL, NULL);
+	PQfinish(conn);
+
+	/* Next, create local representation of remote node and interface. */
+	create_node(&origin);
+
+	originif.id = InvalidOid;
+	originif.name = origin.name;
+	originif.nodeid = origin.id;
+	originif.dsn = origin_dsn;
+	create_node_interface(&originif);
+
+	/*
+	 * Next, create subscription.
+	 *
+	 * Note for now we don't care much about the target interface so we fake
+	 * it here to be invalid.
+	 */
+	targetif.id = localnode->interface->id;
+	targetif.nodeid = localnode->node->id;
 	sub.id = InvalidOid;
 	sub.name = NameStr(*PG_GETARG_NAME(0));
-	sub.local_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
-	sub.provider_name = NameStr(*PG_GETARG_NAME(2));
-	sub.provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(3));
-	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(4));
-
+	sub.origin_if = &originif;
+	sub.target_if = &targetif;
+	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(2));
 	sub.enabled = true;
-	sub.status = SUBSCRIBER_STATUS_INIT;
+	create_subscription(&sub);
 
-	create_subscriber(&sub);
+	/* Create synchronization status for the subscription. */
+	if (sync_structure && sync_data)
+		sync.kind = 'f';
+	else if (sync_structure)
+		sync.kind = 's';
+	else if (sync_data)
+		sync.kind = 'd';
+	else
+		sync.kind = 'i';
+
+	sync.subid = sub.id;
+	sync.nspname = NULL;
+	sync.relname = NULL;
+	sync.status = SYNC_STATUS_INIT;
+	create_subscription_sync_status(&sync);
 
 	pglogical_connections_changed();
 
@@ -151,20 +231,26 @@ pglogical_create_subscriber(PG_FUNCTION_ARGS)
 }
 
 /*
- * Remove subscriber.
+ * Remove subscribption.
+ *
+ * TODO: kill connections
  */
 Datum
-pglogical_drop_subscriber(PG_FUNCTION_ARGS)
+pglogical_drop_subscription(PG_FUNCTION_ARGS)
 {
 	char	   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool		ifexists = PG_GETARG_BOOL(1);
-	PGLogicalSubscriber	   *sub;
+	PGLogicalSubscription  *sub;
 
-	sub = get_subscriber_by_name(sub_name, !ifexists);
+	sub = get_subscription_by_name(sub_name, !ifexists);
 
 	if (sub != NULL)
 	{
-		drop_subscriber(sub->id);
+		/* First drop the status. */
+		drop_subscription_sync_status(sub->id);
+
+		/* Drop the actual subscription. */
+		drop_subscription(sub->id);
 		pglogical_connections_changed();
 	}
 
@@ -172,46 +258,18 @@ pglogical_drop_subscriber(PG_FUNCTION_ARGS)
 }
 
 /*
- * Wait until local node is ready.
+ * Disable subscription.
  */
 Datum
-pglogical_wait_for_subscriber_ready(PG_FUNCTION_ARGS)
-{
-	char	   *sub_name = NameStr(*PG_GETARG_NAME(0));
-
-	for (;;)
-	{
-		PGLogicalSubscriber *sub = get_subscriber_by_name(sub_name, false);
-
-		if (sub->status == SUBSCRIBER_STATUS_READY)
-			break;
-
-		pfree(sub);
-
-		CHECK_FOR_INTERRUPTS();
-
-		(void) WaitLatch(&MyProc->procLatch,
-						 WL_LATCH_SET | WL_TIMEOUT, 1000L);
-
-        ResetLatch(&MyProc->procLatch);
-	}
-
-	PG_RETURN_BOOL(true);
-}
-
-/*
- * Disable ssubscriber.
- */
-Datum
-pglogical_alter_subscriber_disable(PG_FUNCTION_ARGS)
+pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
-	PGLogicalSubscriber	   *sub = get_subscriber_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 
 	sub->enabled = false;
 
-	alter_subscriber(sub);
+	alter_subscription(sub);
 
 	if (immediate)
 	{
@@ -230,15 +288,15 @@ pglogical_alter_subscriber_disable(PG_FUNCTION_ARGS)
  * Enable subscriber.
  */
 Datum
-pglogical_alter_subscriber_enable(PG_FUNCTION_ARGS)
+pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
-	PGLogicalSubscriber	   *sub = get_subscriber_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 
 	sub->enabled = true;
 
-	alter_subscriber(sub);
+	alter_subscription(sub);
 
 	if (immediate)
 	{
@@ -260,17 +318,18 @@ Datum
 pglogical_create_replication_set(PG_FUNCTION_ARGS)
 {
 	PGLogicalRepSet		repset;
-	List			   *providers;
+	PGLogicalLocalNode *node;
 
-	providers = get_providers();
-	if (list_length(providers) == 0)
+	node = get_local_node(true);
+	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("replication sets can be only manipulated on provider"),
-				 errhint("create provider first")));
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
 
 	repset.id = InvalidOid;
 
+	repset.nodeid = node->node->id;
 	repset.name = NameStr(*PG_GETARG_NAME(0));
 
 	repset.replicate_insert = PG_GETARG_BOOL(1);
@@ -290,22 +349,22 @@ Datum
 pglogical_alter_replication_set(PG_FUNCTION_ARGS)
 {
 	PGLogicalRepSet	   *repset;
-	List			   *providers;
+	PGLogicalLocalNode *node;
 
 	if (PG_ARGISNULL(0))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("set_name cannot be NULL")));
 
-
-	providers = get_providers();
-	if (list_length(providers) == 0)
+	node = get_local_node(true);
+	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("replication sets can be only manipulated on provider"),
-				 errhint("create provider first")));
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
 
-	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	repset = get_replication_set_by_name(node->node->id,
+										 NameStr(*PG_GETARG_NAME(0)), false);
 
 	if (!PG_ARGISNULL(1))
 		repset->replicate_insert = PG_GETARG_BOOL(1);
@@ -330,16 +389,16 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 	char	   *set_name = NameStr(*PG_GETARG_NAME(0));
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalRepSet    *repset;
-	List			   *providers;
+	PGLogicalLocalNode *node;
 
-	providers = get_providers();
-	if (list_length(providers) == 0)
+	node = get_local_node(true);
+	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("replication sets can be only manipulated on provider"),
-				 errhint("run the command on a provider")));
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
 
-	repset = get_replication_set_by_name(set_name, !ifexists);
+	repset = get_replication_set_by_name(node->node->id, set_name, !ifexists);
 
 	if (repset != NULL)
 		drop_replication_set(repset->id);
@@ -356,9 +415,18 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	Oid			reloid = PG_GETARG_OID(1);
 	PGLogicalRepSet    *repset;
 	Relation			rel;
+	PGLogicalLocalNode *node;
+
+	node = get_local_node(true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
 
 	/* Find the replication set. */
-	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	repset = get_replication_set_by_name(node->node->id,
+										 NameStr(*PG_GETARG_NAME(0)), false);
 
 	/* Make sure the relation exists. */
 	rel = heap_open(reloid, AccessShareLock);
@@ -381,11 +449,19 @@ Datum
 pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 {
 	Oid			reloid = PG_GETARG_OID(1);
-
 	PGLogicalRepSet    *repset;
+	PGLogicalLocalNode *node;
+
+	node = get_local_node(true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
 
 	/* Find the replication set. */
-	repset = get_replication_set_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+	repset = get_replication_set_by_name(node->node->id,
+										 NameStr(*PG_GETARG_NAME(0)), false);
 
 	replication_set_remove_table(repset->id, reloid, false);
 
@@ -547,12 +623,18 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 	DropStmt	   *stmt;
 	StringInfoData	logdetail;
 	int				numDependentObjects = 0;
+	PGLogicalLocalNode *node;
 
 	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
 		ereport(ERROR,
 				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
 				 errmsg("function \"%s\" was not called by event trigger manager",
 						funcname)));
+
+	/* No local node? */
+	node = get_local_node(true);
+	if (!node)
+		PG_RETURN_VOID();
 
 	stmt = (DropStmt *)trigdata->parsetree;
 	initStringInfo(&logdetail);
@@ -578,7 +660,7 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 		Assert(!isnull);
 		table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
 
-		repsets = get_relation_replication_sets(reloid);
+		repsets = get_relation_replication_sets(node->node->id, reloid);
 
 		if (list_length(repsets))
 		{
@@ -621,32 +703,34 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 }
 
 Datum
-pglogical_provider_info(PG_FUNCTION_ARGS)
+pglogical_node_info(PG_FUNCTION_ARGS)
 {
-	char	   *provider_name = NameStr(*PG_GETARG_NAME(0));
 	TupleDesc	tupdesc;
-	Datum		values[3];
-	bool		nulls[3];
+	Datum		values[5];
+	bool		nulls[5];
 	HeapTuple	htup;
 	char		sysid[32];
 	List	   *repsets;
+	PGLogicalLocalNode *node;
 
 	/* Build a tuple descriptor for our result type */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		elog(ERROR, "return type must be a row type");
 	tupdesc = BlessTupleDesc(tupdesc);
 
-	(void) get_provider_by_name(provider_name, false);
+	node = get_local_node(false);
 
 	memset(nulls, 0, sizeof(nulls));
 
 	snprintf(sysid, sizeof(sysid), UINT64_FORMAT,
 			 GetSystemIdentifier());
-	repsets = get_all_replication_sets();
+	repsets = get_node_replication_sets(node->node->id);
 
-	values[0] = CStringGetTextDatum(sysid);
-	values[1] = CStringGetTextDatum(get_database_name(MyDatabaseId));
-	values[2] = CStringGetTextDatum(repsets_to_identifierstr(repsets));
+	values[0] = ObjectIdGetDatum(node->node->id);
+	values[1] = CStringGetTextDatum(node->node->name);
+	values[2] = CStringGetTextDatum(sysid);
+	values[3] = CStringGetTextDatum(get_database_name(MyDatabaseId));
+	values[4] = CStringGetTextDatum(stringlist_to_identifierstr(repsets));
 
 	htup = heap_form_tuple(tupdesc, values, nulls);
 

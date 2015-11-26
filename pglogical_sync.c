@@ -17,7 +17,13 @@
 
 #include "miscadmin.h"
 
+#include "access/genam.h"
+#include "access/heapam.h"
+#include "access/skey.h"
+#include "access/stratnum.h"
 #include "access/xact.h"
+
+#include "catalog/indexing.h"
 
 #include "commands/dbcommands.h"
 
@@ -35,7 +41,9 @@
 #include "storage/proc.h"
 
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/pg_lsn.h"
+#include "utils/rel.h"
 #include "utils/resowner.h"
 
 #include "pglogical_repset.h"
@@ -43,13 +51,23 @@
 #include "pglogical_worker.h"
 #include "pglogical.h"
 
+#define CATALOG_LOCAL_SYNC_STATUS	"local_sync_status"
+
+#define Natts_local_sync_state	5
+#define Anum_sync_kind			1
+#define Anum_sync_subid			2
+#define Anum_sync_nspname		3
+#define Anum_sync_relname		4
+#define Anum_sync_status		5
+
+
 void pglogical_sync_main(Datum main_arg);
 
 static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
 
 static void
-dump_structure(PGLogicalSubscriber *sub, const char *snapshot)
+dump_structure(PGLogicalSubscription *sub, const char *snapshot)
 {
 	char		pg_dump[MAXPGPATH];
 	uint32		version;
@@ -68,7 +86,7 @@ dump_structure(PGLogicalSubscriber *sub, const char *snapshot)
 	initStringInfo(&command);
 	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
 					 pg_dump, snapshot, EXTENSION_NAME, "/tmp/pglogical.dump",
-					 sub->provider_dsn);
+					 sub->origin_if->dsn);
 
 	res = system(command.data);
 	if (res != 0)
@@ -80,7 +98,7 @@ dump_structure(PGLogicalSubscriber *sub, const char *snapshot)
 
 /* TODO: switch to SPI? */
 static void
-restore_structure(PGLogicalSubscriber *sub, const char *section)
+restore_structure(PGLogicalSubscription *sub, const char *section)
 {
 	char		pg_restore[MAXPGPATH];
 	uint32		version;
@@ -99,7 +117,7 @@ restore_structure(PGLogicalSubscriber *sub, const char *section)
 	initStringInfo(&command);
 	appendStringInfo(&command,
 					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
-					 pg_restore, section, sub->local_dsn,
+					 pg_restore, section, sub->target_if->dsn,
 					 "/tmp/pglogical.dump");
 
 	res = system(command.data);
@@ -246,7 +264,7 @@ finish_copy_target_tx(PGconn *conn)
  */
 static void
 copy_table_data(PGconn *origin_conn, PGconn *target_conn,
-				const char *schemaname, const char *relname)
+				const char *nspname, const char *relname)
 {
 	PGresult   *res;
 	int			bytes;
@@ -256,8 +274,8 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	/* Build COPY TO query. */
 	initStringInfo(&query);
 	appendStringInfo(&query, "COPY %s.%s TO stdout",
-					 PQescapeIdentifier(origin_conn, schemaname,
-										strlen(schemaname)),
+					 PQescapeIdentifier(origin_conn, nspname,
+										strlen(nspname)),
 					 PQescapeIdentifier(origin_conn, relname,
 										strlen(relname)));
 
@@ -274,8 +292,8 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	/* Build COPY FROM query. */
 	resetStringInfo(&query);
 	appendStringInfo(&query, "COPY %s.%s FROM stdin",
-					 PQescapeIdentifier(origin_conn, schemaname,
-										strlen(schemaname)),
+					 PQescapeIdentifier(origin_conn, nspname,
+										strlen(nspname)),
 					 PQescapeIdentifier(origin_conn, relname,
 										strlen(relname)));
 
@@ -456,19 +474,43 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 }
 
 void
-pglogical_copy_database(PGLogicalSubscriber *sub)
+pglogical_sync_subscription(Oid subid)
 {
+	PGLogicalSyncStatus *sync;
+	PGLogicalSubscription *sub;
 	XLogRecPtr	lsn;
 	char		status;
+	MemoryContext	myctx,
+					oldctx;
 
-	status = sub->status;
+	myctx = AllocSetContextCreate(CurrentMemoryContext,
+								   "pglogical_sync_subscription cxt",
+								   ALLOCSET_DEFAULT_MINSIZE,
+								   ALLOCSET_DEFAULT_INITSIZE,
+								   ALLOCSET_DEFAULT_MAXSIZE);
+
+	StartTransactionCommand();
+	oldctx = MemoryContextSwitchTo(myctx);
+	sync = get_subscription_sync_status(subid);
+
+	status = sync->status;
+	if (status == SYNC_STATUS_READY)
+	{
+		MemoryContextSwitchTo(oldctx);
+		MemoryContextDelete(myctx);
+		CommitTransactionCommand();
+		return;
+	}
+
+	sub = get_subscription(subid);
+	MemoryContextSwitchTo(oldctx);
+	CommitTransactionCommand();
 
 	switch (status)
 	{
 		/* We can recover from crashes during these. */
-		case SUBSCRIBER_STATUS_INIT:
-		case SUBSCRIBER_STATUS_SYNC_SCHEMA:
-		case SUBSCRIBER_STATUS_CATCHUP:
+		case SYNC_STATUS_INIT:
+		case SYNC_STATUS_CATCHUP:
 			break;
 		default:
 			elog(ERROR,
@@ -477,21 +519,21 @@ pglogical_copy_database(PGLogicalSubscriber *sub)
 			break;
 	}
 
-	if (status == SUBSCRIBER_STATUS_INIT)
+	if (status == SYNC_STATUS_INIT)
 	{
 		PGconn	   *origin_conn_repl;
 		RepOriginId	originid;
 		char	   *snapshot;
 		NameData	slot_name;
 
-		elog(INFO, "initializing subscriber");
+		elog(INFO, "initializing subscriber %s", sub->name);
 
 		StartTransactionCommand();
 
 		gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-					  sub->provider_name, sub->name, NULL);
+					  sub->origin->name, sub->name, NULL);
 
-		origin_conn_repl = pglogical_connect_replica(sub->provider_dsn,
+		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 													 EXTENSION_NAME "_snapshot");
 
 		snapshot = ensure_replication_slot_snapshot(origin_conn_repl, &slot_name,
@@ -501,73 +543,120 @@ pglogical_copy_database(PGLogicalSubscriber *sub)
 
 		CommitTransactionCommand();
 
-		status = SUBSCRIBER_STATUS_SYNC_SCHEMA;
-		set_subscriber_status(sub->id, status);
+		if (SyncKindStructure(sync->kind))
+		{
+			elog(INFO, "synchronizing structure");
 
-		elog(INFO, "synchronizing schemas");
+			status = SYNC_STATUS_STRUCTURE;
+			StartTransactionCommand();
+			set_subscription_sync_status(sub->id, status);
+			CommitTransactionCommand();
 
-		/* Dump structure to temp storage. */
-		dump_structure(sub, snapshot);
+			/* Dump structure to temp storage. */
+			dump_structure(sub, snapshot);
 
-		/* Restore base pre-data structure (types, tables, etc). */
-		restore_structure(sub, "pre-data");
+			/* Restore base pre-data structure (types, tables, etc). */
+			restore_structure(sub, "pre-data");
+		}
 
 		/* Copy data. */
-		copy_replication_sets_data(sub->provider_dsn, sub->local_dsn,
-								   snapshot, sub->replication_sets);
+		if (SyncKindData(sync->kind))
+		{
+			elog(INFO, "synchronizing data");
+
+			status = SYNC_STATUS_DATA;
+			StartTransactionCommand();
+			set_subscription_sync_status(sub->id, status);
+			CommitTransactionCommand();
+
+			copy_replication_sets_data(sub->origin_if->dsn,
+									   sub->target_if->dsn, snapshot,
+									   sub->replication_sets);
+		}
 
 		/* Restore post-data structure (indexes, constraints, etc). */
-		restore_structure(sub, "post-data");
+		if (SyncKindStructure(sync->kind))
+		{
+			elog(INFO, "synchronizing constraints");
+
+			status = SYNC_STATUS_CONSTAINTS;
+			StartTransactionCommand();
+			set_subscription_sync_status(sub->id, status);
+			CommitTransactionCommand();
+
+			restore_structure(sub, "post-data");
+		}
 
 		PQfinish(origin_conn_repl);
 
-		status = SUBSCRIBER_STATUS_CATCHUP;
-		set_subscriber_status(sub->id, status);
+		status = SYNC_STATUS_CATCHUP;
+		StartTransactionCommand();
+		set_subscription_sync_status(sub->id, status);
+		CommitTransactionCommand();
 	}
 
-	if (status == SUBSCRIBER_STATUS_CATCHUP)
+	if (status == SYNC_STATUS_CATCHUP)
 	{
 		/* Nothing to do here yet. */
-		status = SUBSCRIBER_STATUS_READY;
-		set_subscriber_status(sub->id, status);
+		status = SYNC_STATUS_READY;
+		StartTransactionCommand();
+		set_subscription_sync_status(sub->id, status);
+		CommitTransactionCommand();
 
-		elog(INFO, "finished init_replica, ready to enter normal replication");
+		elog(INFO, "finished synchronization of subsriber %s, ready to enter normal replication", sub->name);
 	}
+
+	MemoryContextDelete(myctx);
 }
 
 
 void
-pglogical_copy_table(PGLogicalSubscriber *sub, RangeVar *table)
+pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 {
 	XLogRecPtr	lsn;
 	PGconn	   *origin_conn_repl;
 	RepOriginId	originid;
 	char	   *snapshot;
 	NameData	slot_name;
-
-	if (sub->status != SUBSCRIBER_STATUS_READY)
-	{
-		elog(ERROR,
-			 "subscriber %s is not ready, cannot copy tables", sub->name);
-	}
+	PGLogicalSyncStatus *sync;
 
 	StartTransactionCommand();
 
-	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->provider_name, sub->name, table->relname);
+	/* Sanity check. */
+	sync = get_subscription_sync_status(sub->id);
+	if (sync->status != SYNC_STATUS_READY)
+	{
+		elog(ERROR,
+			 "subscriber %s is not ready, cannot synchronzie individual tables", sub->name);
+	}
 
-	origin_conn_repl = pglogical_connect_replica(sub->provider_dsn,
+	/* Check current state of the table. */
+	sync = get_table_sync_status(sub->id, table->schemaname, table->relname);
+
+	if (sync->status == SYNC_STATUS_READY)
+		return;
+
+	/* If previous sync attempt failed, we need to start from beginning. */
+	if (sync->status != SYNC_STATUS_INIT)
+		set_table_sync_status(sub->id, table->schemaname, table->relname, SYNC_STATUS_INIT);
+
+	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
+				  sub->origin->name, sub->name, table->relname);
+	CommitTransactionCommand();
+
+	origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 												 EXTENSION_NAME "_copy");
 
 	snapshot = ensure_replication_slot_snapshot(origin_conn_repl, &slot_name,
 												&lsn);
+
+	StartTransactionCommand();
 	originid = ensure_replication_origin(&slot_name);
 	replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
-
 	CommitTransactionCommand();
 
 	/* Copy data. */
-	copy_tables_data(sub->provider_dsn, sub->local_dsn, snapshot,
+	copy_tables_data(sub->origin_if->dsn,sub->target_if->dsn, snapshot,
 					 list_make1(table));
 
 	PQfinish(origin_conn_repl);
@@ -582,7 +671,7 @@ pglogical_sync_main(Datum main_arg)
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
 	NameData		slot_name;
-	PGLogicalSubscriber	   *sub;
+	PGLogicalSubscription	   *sub;
 	RangeVar	   *copytable = NULL;
 	MemoryContext	saved_ctx;
 	char		   *tablename;
@@ -597,7 +686,7 @@ pglogical_sync_main(Datum main_arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Should never happen. */
-	if (MySyncWorker->status == TABLE_SYNC_STATUS_NONE)
+	if (MySyncWorker->status == SYNC_STATUS_NONE)
 		elog(ERROR, "sync worker started without table");
 
 	/* Attach to dsm segment. */
@@ -609,7 +698,7 @@ pglogical_sync_main(Datum main_arg)
 
 	StartTransactionCommand();
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-	sub = get_subscriber(MySyncWorker->apply.subscriberid);
+	sub = get_subscription(MySyncWorker->apply.subid);
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
@@ -619,21 +708,21 @@ pglogical_sync_main(Datum main_arg)
 	elog(LOG, "starting sync of table %s.%s for subscriber %s",
 		 copytable->schemaname, copytable->relname, sub->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
-		 sub->provider_name, sub->provider_dsn);
+		 sub->origin_if->name, sub->origin_if->dsn);
 
 	/* COPY data if requested. */
-	if (MySyncWorker->status == TABLE_SYNC_STATUS_INIT ||
-		MySyncWorker->status == TABLE_SYNC_STATUS_DATA)
+	if (MySyncWorker->status == SYNC_STATUS_INIT ||
+		MySyncWorker->status == SYNC_STATUS_DATA)
 	{
-		MySyncWorker->status = TABLE_SYNC_STATUS_DATA;
-		pglogical_copy_table(sub, copytable);
+		MySyncWorker->status = SYNC_STATUS_DATA;
+		pglogical_sync_table(sub, copytable);
 	}
 
 	StartTransactionCommand();
 
 	/* Setup the origin and get the starting position for the replication. */
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->provider_name, sub->name,
+				  sub->origin->name, sub->name,
 				  NameStr(MySyncWorker->relname));
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
@@ -643,11 +732,11 @@ pglogical_sync_main(Datum main_arg)
 	CommitTransactionCommand();
 
 	MySyncWorker->apply.replay_stop_lsn = origin_startpos;
-	MySyncWorker->status = TABLE_SYNC_STATUS_SYNCWAIT;
-	wait_for_sync_status_change(MyPGLogicalWorker, TABLE_SYNC_STATUS_CATCHUP);
+	MySyncWorker->status = SYNC_STATUS_SYNCWAIT;
+	wait_for_sync_status_change(MyPGLogicalWorker, SYNC_STATUS_CATCHUP);
 
 	/* Start the replication. */
-	streamConn = pglogical_connect_replica(sub->provider_dsn, sub->name);
+	streamConn = pglogical_connect_replica(sub->origin_if->dsn, sub->name);
 
 	tablename = quote_qualified_identifier(copytable->schemaname,
 										   copytable->relname);
@@ -664,4 +753,295 @@ pglogical_sync_main(Datum main_arg)
 	 * explicitly asked to do so.
 	 */
 	proc_exit(1);
+}
+
+
+/* Catalog access */
+
+/* Create subscription sync status record in catalog. */
+void
+create_subscription_sync_status(PGLogicalSyncStatus *sync)
+{
+	RangeVar   *rv;
+	Relation	rel;
+	TupleDesc	tupDesc;
+	HeapTuple	tup;
+	Datum		values[Natts_local_sync_state];
+	bool		nulls[Natts_local_sync_state];
+	NameData	nspname;
+	NameData	relname;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	/* Form a tuple. */
+	memset(nulls, false, sizeof(nulls));
+
+	values[Anum_sync_kind - 1] = CharGetDatum(sync->kind);
+	values[Anum_sync_subid - 1] = ObjectIdGetDatum(sync->subid);
+	if (sync->nspname)
+	{
+		namestrcpy(&nspname, sync->nspname);
+		values[Anum_sync_nspname - 1] = NameGetDatum(&nspname);
+	}
+	else
+		nulls[Anum_sync_nspname - 1] = true;
+	if (sync->relname)
+	{
+		namestrcpy(&relname, sync->relname);
+		values[Anum_sync_relname - 1] = NameGetDatum(&relname);
+	}
+	else
+		nulls[Anum_sync_relname - 1] = true;
+	values[Anum_sync_status - 1] = CharGetDatum(sync->status);
+
+	tup = heap_form_tuple(tupDesc, values, nulls);
+
+	/* Insert the tuple to the catalog. */
+	simple_heap_insert(rel, tup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
+	/* Cleanup. */
+	heap_freetuple(tup);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/* Remove subscription sync status record from catalog. */
+void
+drop_subscription_sync_status(Oid subid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	/* Remove the tuples. */
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+		simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+}
+
+/* Get the sync status for a subscription. */
+PGLogicalSyncStatus *
+get_subscription_sync_status(Oid subid)
+{
+	PGLogicalSyncStatus	   *sync;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+	TupleDesc		tupDesc;
+	bool			isnull;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		if (heap_attisnull(tuple, Anum_sync_nspname) &&
+			heap_attisnull(tuple, Anum_sync_relname))
+			break;
+	}
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "subscription %u status not found", subid);
+
+	sync = (PGLogicalSyncStatus *) palloc(sizeof(PGLogicalSyncStatus));
+	sync->kind = DatumGetChar(fastgetattr(tuple, Anum_sync_kind, tupDesc,
+										  &isnull));
+	Assert(!isnull);
+	sync->subid = subid;
+	sync->nspname = NULL;
+	sync->relname = NULL;
+	sync->status = DatumGetChar(fastgetattr(tuple, Anum_sync_status, tupDesc,
+											&isnull));
+	Assert(!isnull);
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return sync;
+}
+
+/* Set the sync status for a subscription. */
+void
+set_subscription_sync_status(Oid subid, char status)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	TupleDesc		tupDesc;
+	SysScanDesc		scan;
+	HeapTuple		oldtup,
+					newtup;
+	ScanKeyData		key[1];
+	Datum			values[Natts_local_sync_state];
+	bool			nulls[Natts_local_sync_state];
+	bool			replaces[Natts_local_sync_state];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
+	{
+		if (heap_attisnull(oldtup, Anum_sync_nspname) &&
+			heap_attisnull(oldtup, Anum_sync_relname))
+			break;
+	}
+
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "subscription %u status not found", subid);
+
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, false, sizeof(replaces));
+
+	values[Anum_sync_status - 1] = CharGetDatum(status);
+	replaces[Anum_sync_status - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+
+	/* Update the tuple in catalog. */
+	simple_heap_update(rel, &oldtup->t_self, newtup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, newtup);
+
+	/* Cleanup. */
+	heap_freetuple(newtup);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
+
+/* Get the sync status for a table. */
+PGLogicalSyncStatus *
+get_table_sync_status(Oid subid, const char *nspname, const char *relname)
+{
+	PGLogicalSyncStatus	   *sync;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[3];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+	ScanKeyInit(&key[1],
+				Anum_sync_nspname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(nspname));
+	ScanKeyInit(&key[2],
+				Anum_sync_relname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(relname));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 3, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "subscription %u table %s.%s status not found", subid,
+			 nspname, relname);
+
+	sync = (PGLogicalSyncStatus *) GETSTRUCT(tuple);
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return sync;
+}
+
+/* Set the sync status for a table. */
+void
+set_table_sync_status(Oid subid, const char *nspname, const char *relname,
+					  char status)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	TupleDesc	tupDesc;
+	SysScanDesc		scan;
+	HeapTuple		oldtup,
+					newtup;
+	ScanKeyData		key[3];
+	Datum			values[Natts_local_sync_state];
+	bool			nulls[Natts_local_sync_state];
+	bool			replaces[Natts_local_sync_state];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+	ScanKeyInit(&key[1],
+				Anum_sync_nspname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(nspname));
+	ScanKeyInit(&key[2],
+				Anum_sync_relname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(relname));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 3, key);
+	oldtup = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(oldtup))
+		elog(ERROR, "subscription %u table %s.%s status not found", subid,
+			 nspname, relname);
+
+	memset(nulls, false, sizeof(nulls));
+	memset(replaces, false, sizeof(replaces));
+
+	values[Anum_sync_status - 1] = CharGetDatum(status);
+	replaces[Anum_sync_status - 1] = true;
+
+	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+
+	/* Update the tuple in catalog. */
+	simple_heap_update(rel, &oldtup->t_self, newtup);
+
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, newtup);
+
+	/* Cleanup. */
+	heap_freetuple(newtup);
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
 }

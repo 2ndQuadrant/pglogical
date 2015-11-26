@@ -54,6 +54,7 @@ bool pglogical_txn_filter_hook(struct PGLogicalTxnFilterArgs *txnfilter_args);
 typedef struct PGLogicalHooksPrivate
 {
     const char *forward_origin;
+	Oid			local_node_id;
 	/* List of PGLogicalRepSet */
 	List	   *replication_sets;
 	RangeVar   *replicate_only_table;
@@ -62,14 +63,19 @@ typedef struct PGLogicalHooksPrivate
 void
 pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 {
-	PGLogicalHooksPrivate *private;
-	ListCell *option;
+	PGLogicalHooksPrivate  *private;
+	ListCell			   *option;
+	PGLogicalLocalNode	   *node;
 
 	/* pglogical_output assures us that we'll be called in a tx */
 	Assert(IsTransactionState());
 
+	node = get_local_node(false);
+
 	/* Allocated in hook memory context, scoped to the logical decoding session: */
 	startup_args->private_data = private = (PGLogicalHooksPrivate*)palloc0(sizeof(PGLogicalHooksPrivate));
+
+	private->local_node_id = node->node->id;
 
 	foreach(option, startup_args->in_params)
 	{
@@ -97,7 +103,9 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 			if (!SplitIdentifierString(strVal(elem->arg), ',', &replication_set_names))
 				elog(ERROR, "Could not parse replication set name list %s", strVal(elem->arg));
 
-			private->replication_sets = get_replication_sets(replication_set_names, false);
+			private->replication_sets =
+				get_replication_sets(private->local_node_id,
+									 replication_set_names, false);
 
 			continue;
 		}
@@ -147,8 +155,9 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 
 	/* Normal case - use replication sets. */
 	ret = relation_is_replicated(rowfilter_args->changed_rel,
-		private->replication_sets,
-		to_pglogical_changetype(rowfilter_args->change_type));
+								 private->local_node_id,
+								 private->replication_sets,
+						 to_pglogical_changetype(rowfilter_args->change_type));
 
 	return ret;
 }

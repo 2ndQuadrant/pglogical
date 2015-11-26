@@ -20,7 +20,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 SELECT * FROM pglogical.create_replication_set('repset_test');
  create_replication_set 
 ------------------------
-             2959628982
+             2154402640
 (1 row)
 
 -- move tables to replication set that is not subscribed
@@ -86,6 +86,14 @@ BEGIN
 	END LOOP;
 END;
 $$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
+-----------+------------+-------------------+--------------------+-------------
+ d         | 3848008564 | public            | test_publicschema  | i
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | i
+ f         | 3848008564 |                   |                    | r
+(3 rows)
+
 \c regression
 INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');

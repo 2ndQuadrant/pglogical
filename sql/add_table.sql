@@ -48,6 +48,8 @@ BEGIN
 END;
 $$;
 
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+
 \c regression
 INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');

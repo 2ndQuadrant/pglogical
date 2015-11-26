@@ -28,18 +28,27 @@ GRANT ALL ON SCHEMA public TO nonsuper;
 \c regression
 CREATE EXTENSION pglogical;
 
-SELECT * FROM pglogical.create_provider(provider_name := 'test_provider');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
 
 \c postgres
 CREATE EXTENSION pglogical;
 
-SELECT * FROM pglogical.create_subscriber(
-    subscriber_name := 'test_subscriber',
-    local_dsn := 'dbname=postgres user=super',
-    provider_name := 'test_provider',
-    provider_dsn := 'dbname=regression user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
 
-SELECT pglogical.wait_for_subscriber_ready('test_subscriber');
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription',
+    origin_dsn := 'dbname=regression user=super');
+
+DO $$
+BEGIN
+	LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
+			EXIT;
+		END IF;
+	END LOOP;
+END;$$;
+
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 -- Make sure we see the slot and active connection
 \c regression

@@ -24,14 +24,10 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
  set_name |      nspname      |      relname       
 ----------+-------------------+--------------------
- all      | normalschema      | test_normalschema
- all      | public            | test_nopkey
- all      | public            | test_publicschema
- all      | strange.schema-IS | test_strangeschema
  default  | normalschema      | test_normalschema
  default  | public            | test_publicschema
  default  | strange.schema-IS | test_strangeschema
-(7 rows)
+(3 rows)
 
 -- not existing replication set
 SELECT * FROM pglogical.replication_set_add_table('nonexisting', 'test_publicschema');
@@ -40,19 +36,19 @@ ERROR:  replication set nonexisting not found
 SELECT * FROM pglogical.create_replication_set('repset_replicate_all');
  create_replication_set 
 ------------------------
-             1746339162
+             1767380104
 (1 row)
 
 SELECT * FROM pglogical.create_replication_set('repset_replicate_instrunc', replicate_update := false, replicate_delete := false);
  create_replication_set 
 ------------------------
-             4251154896
+              348382733
 (1 row)
 
 SELECT * FROM pglogical.create_replication_set('repset_replicate_insupd', replicate_delete := false, replicate_truncate := false);
  create_replication_set 
 ------------------------
-             2088548767
+              128878480
 (1 row)
 
 -- add tables
@@ -97,7 +93,7 @@ SELECT * FROM pglogical.replication_set_add_table('repset_replicate_instrunc', '
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_insupd', replicate_truncate := true);
  alter_replication_set 
 -----------------------
-            2088548767
+             128878480
 (1 row)
 
 -- fail again
@@ -113,20 +109,13 @@ ERROR:  replication set repset_replicate_instrunc cannot be altered to replicate
 SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
          set_name          |      nspname      |      relname       
 ---------------------------+-------------------+--------------------
- all                       | normalschema      | test_normalschema
- all                       | public            | test_nopkey
- all                       | public            | test_publicschema
- all                       | strange.schema-IS | test_strangeschema
  repset_replicate_all      | public            | test_publicschema
  repset_replicate_instrunc | normalschema      | test_normalschema
  repset_replicate_instrunc | public            | test_nopkey
  repset_replicate_insupd   | normalschema      | test_normalschema
  repset_replicate_insupd   | strange.schema-IS | test_strangeschema
-(9 rows)
+(5 rows)
 
--- make sure reserved names can't be set
-SELECT * FROM pglogical.replication_set_add_table('all', 'test_publicschema');
-ERROR:  replication set 'all' is reserved and cannot be manipulated
 --too short
 SELECT pglogical.create_replication_set('');
 ERROR:  replication set name cannot be empty
@@ -176,9 +165,8 @@ CONTEXT:  during execution of queued SQL statement:
 
 \c postgres
 SELECT * FROM pglogical.replication_set;
-   set_id   | set_name | replicate_insert | replicate_update | replicate_delete | replicate_truncate 
-------------+----------+------------------+------------------+------------------+--------------------
- 4294967295 | default  | t                | t                | t                | t
- 4294967294 | all      | f                | f                | f                | f
-(2 rows)
+  set_id   | set_nodeid | set_name | replicate_insert | replicate_update | replicate_delete | replicate_truncate 
+-----------+------------+----------+------------------+------------------+------------------+--------------------
+ 828867312 | 1755434425 | default  | t                | t                | t                | t
+(1 row)
 

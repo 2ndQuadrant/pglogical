@@ -13,46 +13,61 @@
 #ifndef PGLOGICAL_NODE_H
 #define PGLOGICAL_NODE_H
 
-typedef struct PGLogicalProvider
+typedef struct PGLogicalNode
 {
 	Oid			id;
-	const char *name;
-} PGLogicalProvider;
+	char	   *name;
+} PGLogicalNode;
 
-typedef struct PGLogicalSubscriber
+typedef struct PGlogicalInterface
+{
+	Oid				id;
+	const char	   *name;
+	Oid				nodeid;
+	const char	   *dsn;
+} PGlogicalInterface;
+
+typedef struct PGLogicalLocalNode
+{
+	PGLogicalNode	*node;
+	PGlogicalInterface *interface;
+} PGLogicalLocalNode;
+
+typedef struct PGLogicalSubscription
 {
 	Oid			id;
-	const char *name;
+	char	   *name;
+	PGLogicalNode	   *origin;
+   	PGLogicalNode	   *target;
+	PGlogicalInterface *origin_if;
+	PGlogicalInterface *target_if;
 	bool		enabled;
-	char		status;
-	const char *provider_name;
-	const char *provider_dsn;
-	const char *local_dsn;
+	bool		sync_structure;
+	bool		sync_data;
 	List	   *replication_sets;
-} PGLogicalSubscriber;
+} PGLogicalSubscription;
 
-#define SUBSCRIBER_STATUS_INIT				'i'
-#define SUBSCRIBER_STATUS_SYNC_SCHEMA		's'
-#define SUBSCRIBER_STATUS_SYNC_DATA			'd'
-#define SUBSCRIBER_STATUS_SYNC_CONSTRAINTS	'o'
-#define SUBSCRIBER_STATUS_SLOTS				'l'
-#define SUBSCRIBER_STATUS_CATCHUP			'c'
-#define SUBSCRIBER_STATUS_READY				'r'
+extern void create_node(PGLogicalNode *node);
+extern void drop_node(Oid nodeid);
 
-extern void create_provider(PGLogicalProvider *provider);
-extern void drop_provider(Oid providerid);
+extern PGLogicalNode *get_node(Oid nodeid);
+extern PGLogicalNode *get_node_by_name(const char *name, bool missing_ok);
 
-extern void create_subscriber(PGLogicalSubscriber *subscriber);
-extern void alter_subscriber(PGLogicalSubscriber *subscriber);
-extern void drop_subscriber(Oid subscriberid);
+extern void create_node_interface(PGlogicalInterface *node);
+extern void drop_node_interface(Oid ifid);
+extern void drop_node_interfaces(Oid nodeid);
+extern PGlogicalInterface *get_node_interface(Oid ifid);
 
-extern PGLogicalProvider *get_provider(Oid providerid);
-extern PGLogicalProvider *get_provider_by_name(const char *name, bool missing_ok);
-extern List *get_providers(void);
+extern void create_local_node(Oid nodeid, Oid ifid);
+extern void drop_local_node(void);
+extern PGLogicalLocalNode *get_local_node(bool missing_ok);
 
-extern PGLogicalSubscriber *get_subscriber(Oid subscriberid);
-extern PGLogicalSubscriber *get_subscriber_by_name(const char *name, bool missing_ok);
-extern List *get_subscribers(void);
-extern void set_subscriber_status(int subscriberid, char status);
+extern void create_subscription(PGLogicalSubscription *sub);
+extern void alter_subscription(PGLogicalSubscription *sub);
+extern void drop_subscription(Oid subid);
+
+extern PGLogicalSubscription *get_subscription(Oid subid);
+extern PGLogicalSubscription *get_subscription_by_name(const char *name, bool missing_ok);
+extern List *get_node_subscriptions(Oid nodeid);
 
 #endif /* PGLOGICAL_NODE_H */

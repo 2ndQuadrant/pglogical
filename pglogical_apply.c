@@ -169,34 +169,34 @@ handle_commit(StringInfo s)
 			PGLogicalWorker	   *apply;
 			NameData			slot_name;
 			PGconn			   *origin_conn;
-			PGLogicalSubscriber	   *sub;
+			PGLogicalSubscription  *sub;
 
-			MyPGLogicalWorker->worker.sync.status = TABLE_SYNC_STATUS_READY;
+			MyPGLogicalWorker->worker.sync.status = SYNC_STATUS_READY;
 			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 			apply = pglogical_apply_find(MyPGLogicalWorker->dboid,
-										 MyApplyWorker->subscriberid);
+										 MyApplyWorker->subid);
 			if (apply)
 			{
 				SetLatch(&apply->proc->procLatch);
 				LWLockRelease(PGLogicalCtx->lock);
 
 				wait_for_sync_status_change(MyPGLogicalWorker,
-											TABLE_SYNC_STATUS_NONE);
+											SYNC_STATUS_NONE);
 			}
 			else
 				LWLockRelease(PGLogicalCtx->lock);
 
 			StartTransactionCommand();
-			sub = get_subscriber(MyApplyWorker->subscriberid);
+			sub = get_subscription(MyApplyWorker->subid);
 			gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-						  sub->provider_name, sub->name,
+						  sub->origin->name, sub->name,
 						  NameStr(MyPGLogicalWorker->worker.sync.relname));
 
 			/* Disconnect from the slot so we can drop it. */
 			PQfinish(applyconn);
 
 			/* Drop the slot on the remote side. */
-			origin_conn = pglogical_connect(sub->provider_dsn, sub->name);
+			origin_conn = pglogical_connect(sub->origin_if->dsn, sub->name);
 			pglogical_drop_remote_slot(origin_conn, NameStr(slot_name));
 			PQfinish(origin_conn);
 
@@ -229,8 +229,7 @@ handle_commit(StringInfo s)
 
 			/* Sanity check. */
 			if (worker->worker_type != PGLOGICAL_WORKER_SYNC ||
-				worker->worker.sync.apply.subscriberid !=
-				MyApplyWorker->subscriberid)
+				worker->worker.sync.apply.subid != MyApplyWorker->subid)
 			{
 				LWLockRelease(PGLogicalCtx->lock);
 				continue;
@@ -244,24 +243,24 @@ handle_commit(StringInfo s)
 			 * Process worker which is waiting for synchronization. But let
 			 * it synchronize only if we are not behind it.
 			 */
-			if (worker->worker.sync.status == TABLE_SYNC_STATUS_SYNCWAIT &&
+			if (worker->worker.sync.status == SYNC_STATUS_SYNCWAIT &&
 				end_lsn >= worker->worker.sync.apply.replay_stop_lsn)
 			{
 				XLogFlush(GetXLogWriteRecPtr());
 				worker->worker.sync.apply.replay_stop_lsn = end_lsn;
-				worker->worker.sync.status = TABLE_SYNC_STATUS_CATCHUP;
+				worker->worker.sync.status = SYNC_STATUS_CATCHUP;
 				SetLatch(&worker->proc->procLatch);
-				wait_for_sync_status_change(worker, TABLE_SYNC_STATUS_READY);
+				wait_for_sync_status_change(worker, SYNC_STATUS_READY);
 			}
 
 			/* We fall through here intentionally. */
-			if (worker->worker.sync.status == TABLE_SYNC_STATUS_READY)
+			if (worker->worker.sync.status == SYNC_STATUS_READY)
 			{
 				RangeVar   *rv = makeRangeVar(NameStr(worker->worker.sync.nspname),
 											  NameStr(worker->worker.sync.relname),
 											  -1);
 
-				worker->worker.sync.status = TABLE_SYNC_STATUS_NONE;
+				worker->worker.sync.status = SYNC_STATUS_NONE;
 				MySyncWorkers = list_delete_int(MySyncWorkers, slot);
 				/* TODO: this leaks. */
 				SyncingTables = list_delete(SyncingTables, rv);
@@ -866,21 +865,31 @@ handle_table_copy(QueuedMessage *queued_message)
 {
 	RangeVar	   *rv;
 	int				slot;
-	PGLogicalSubscriber	   *sub;
+	PGLogicalSubscription  *sub;
 	PGLogicalWorker			worker;
-	MemoryContext	oldcontext;
+	MemoryContext			oldcontext;
+	PGLogicalSyncStatus		sync;
 
 	rv = parse_relation_message(queued_message->message);
 
-	sub = get_subscriber(MyApplyWorker->subscriberid);
+	sub = get_subscription(MyApplyWorker->subid);
 
+	/* Create synchronization status for the subscription. */
+	sync.kind = 'd';
+	sync.subid = sub->id;
+	sync.nspname = rv->schemaname;
+	sync.relname = rv->relname;
+	sync.status = SYNC_STATUS_INIT;
+	create_subscription_sync_status(&sync);
+
+	/* Start the sync worker. */
 	memset(&worker, 0, sizeof(PGLogicalWorker));
 	worker.worker_type = PGLOGICAL_WORKER_SYNC;
 	worker.dboid = MyPGLogicalWorker->dboid;
-	worker.worker.apply.subscriberid = sub->id;
+	worker.worker.apply.subid = sub->id;
 
-	/* Tell the apply to stop at current position. */
-	worker.worker.sync.status = TABLE_SYNC_STATUS_INIT;
+	/* Tell the worker to stop at current position. */
+	worker.worker.sync.status = SYNC_STATUS_INIT;
 	worker.worker.sync.apply.replay_stop_lsn = replorigin_session_origin_lsn;
 	namestrcpy(&worker.worker.sync.nspname, rv->schemaname);
 	namestrcpy(&worker.worker.sync.relname, rv->relname);
@@ -1327,7 +1336,7 @@ pglogical_apply_main(Datum main_arg)
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
 	NameData		slot_name;
-	PGLogicalSubscriber	   *sub;
+	PGLogicalSubscription  *sub;
 	MemoryContext	saved_ctx;
 	char		   *repsets;
 
@@ -1343,30 +1352,23 @@ pglogical_apply_main(Datum main_arg)
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
 
-
 	/* Connect to our database. */
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
+
+	/* If the subscription isn't initialized yet, initialize it. */
+	pglogical_sync_subscription(MyApplyWorker->subid);
+
+	/* Load the subscription. */
 	StartTransactionCommand();
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-	sub = get_subscriber(MyApplyWorker->subscriberid);
+	sub = get_subscription(MyApplyWorker->subid);
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
-	/* If the node isn't initialized yet, initialize it. */
-	if (sub->status != SUBSCRIBER_STATUS_READY)
-	{
-		pglogical_copy_database(sub);
-		StartTransactionCommand();
-		saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-		sub = get_subscriber(MyApplyWorker->subscriberid);
-		MemoryContextSwitchTo(saved_ctx);
-		CommitTransactionCommand();
-	}
-
-	elog(DEBUG1, "starting apply for subscriber %s", sub->name);
+	elog(LOG, "starting apply for subscription %s", sub->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
-		 sub->provider_name, sub->provider_dsn);
+		 sub->origin->name, sub->origin_if->dsn);
 
 	/*
 	 * Cache the queue relation id.
@@ -1377,7 +1379,7 @@ pglogical_apply_main(Datum main_arg)
 
 	/* Setup the origin and get the starting position for the replication. */
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->provider_name, sub->name, NULL);
+				  sub->origin->name, sub->name, NULL);
 
 	originid = replorigin_by_name(NameStr(slot_name), false);
 	replorigin_session_setup(originid);
@@ -1385,9 +1387,9 @@ pglogical_apply_main(Datum main_arg)
 	origin_startpos = replorigin_session_get_progress(false);
 
 	/* Start the replication. */
-	streamConn = pglogical_connect_replica(sub->provider_dsn, sub->name);
+	streamConn = pglogical_connect_replica(sub->origin_if->dsn, sub->name);
 
-	repsets = repsets_to_identifierstr(sub->replication_sets);
+	repsets = stringlist_to_identifierstr(sub->replication_sets);
 	pglogical_start_replication(streamConn, NameStr(slot_name),
 								origin_startpos, "all", repsets, NULL);
 	pfree(repsets);
