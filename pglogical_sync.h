@@ -13,6 +13,8 @@
 #ifndef PGLOGICAL_SYNC_H
 #define PGLOGICAL_SYNC_H
 
+#include "libpq-fe.h"
+
 #include "nodes/primnodes.h"
 #include "pglogical_node.h"
 
@@ -45,6 +47,8 @@ typedef struct PGLogicalSyncStatus
 #define SYNC_STATUS_CATCHUP		'u'		/* Catching up. */
 #define SYNC_STATUS_READY		'r'		/* Done. */
 
+extern void pglogical_sync_worker_finish(PGconn *applyconn);
+
 extern void pglogical_sync_subscription(PGLogicalSubscription *sub);
 extern void pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table);
 
@@ -59,6 +63,10 @@ extern PGLogicalSyncStatus *get_table_sync_status(Oid subid,
 												  const char *relname);
 extern void set_table_sync_status(Oid subid, const char *schemaname,
 								  const char *relname, char status);
+extern List *get_unsynced_tables(Oid subid);
+
+extern bool wait_for_sync_status_change(Oid subid, char *nspname,
+										char *relname, char desired_state);
 
 #endif /* PGLOGICAL_SYNC_H */
 

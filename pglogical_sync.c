@@ -47,6 +47,7 @@
 #include "utils/resowner.h"
 
 #include "pglogical_repset.h"
+#include "pglogical_rpc.h"
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
 #include "pglogical.h"
@@ -482,6 +483,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 	MemoryContext	myctx,
 					oldctx;
 
+	/* We need our own context for keeping things between transactions. */
 	myctx = AllocSetContextCreate(CurrentMemoryContext,
 								   "pglogical_sync_subscription cxt",
 								   ALLOCSET_DEFAULT_MINSIZE,
@@ -495,11 +497,13 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 	CommitTransactionCommand();
 
 	status = sync->status;
-	if (status == SYNC_STATUS_READY)
-		return;
 
 	switch (status)
 	{
+		/* Already synced, nothing to do except cleanup. */
+		case SYNC_STATUS_READY:
+			MemoryContextDelete(myctx);
+			return;
 		/* We can recover from crashes during these. */
 		case SYNC_STATUS_INIT:
 		case SYNC_STATUS_CATCHUP:
@@ -610,7 +614,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	RepOriginId	originid;
 	char	   *snapshot;
 	NameData	slot_name;
-	PGLogicalSyncStatus *sync;
+	PGLogicalSyncStatus	   *sync;
 
 	StartTransactionCommand();
 
@@ -625,8 +629,9 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	/* Check current state of the table. */
 	sync = get_table_sync_status(sub->id, table->schemaname, table->relname);
 
+	/* Already synchronized, nothing to do here. */
 	if (sync->status == SYNC_STATUS_READY)
-		return;
+		proc_exit(0);
 
 	/* If previous sync attempt failed, we need to start from beginning. */
 	if (sync->status != SYNC_STATUS_INIT)
@@ -634,6 +639,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
 				  sub->origin->name, sub->name, table->relname);
+
 	CommitTransactionCommand();
 
 	origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
@@ -645,6 +651,8 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	StartTransactionCommand();
 	originid = ensure_replication_origin(&slot_name);
 	replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
+
+	set_table_sync_status(sub->id, table->schemaname, table->relname, SYNC_STATUS_DATA);
 	CommitTransactionCommand();
 
 	/* Copy data. */
@@ -654,6 +662,52 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	PQfinish(origin_conn_repl);
 }
 
+void
+pglogical_sync_worker_finish(PGconn *applyconn)
+{
+	PGLogicalWorker	   *apply;
+	NameData			slot_name;
+	PGconn			   *origin_conn;
+	PGLogicalSubscription  *sub;
+
+	StartTransactionCommand();
+	sub = get_subscription(MyApplyWorker->subid);
+	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
+				  sub->origin->name, sub->name,
+				  NameStr(MyPGLogicalWorker->worker.sync.relname));
+
+	/* Disconnect from the slot so we can drop it. */
+	if (applyconn)
+		PQfinish(applyconn);
+
+	/* Mark local table as ready. */
+	set_table_sync_status(MyApplyWorker->subid,
+						  NameStr(MyPGLogicalWorker->worker.sync.nspname),
+						  NameStr(MyPGLogicalWorker->worker.sync.relname),
+						  SYNC_STATUS_READY);
+
+	/* Drop the slot on the remote side. */
+	origin_conn = pglogical_connect(sub->origin_if->dsn, sub->name);
+	pglogical_drop_remote_slot(origin_conn, NameStr(slot_name));
+	PQfinish(origin_conn);
+
+	/* Drop the origin tracking locally. */
+	replorigin_session_reset();
+	replorigin_drop(replorigin_session_origin);
+	replorigin_session_origin = InvalidRepOriginId;
+	CommitTransactionCommand();
+
+	/*
+	 * In case there is apply process running, it might be waiting
+	 * for the table status change so tell it to check.
+	 */
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+	apply = pglogical_apply_find(MyPGLogicalWorker->dboid,
+								 MyApplyWorker->subid);
+	if (apply)
+		SetLatch(&apply->proc->procLatch);
+	LWLockRelease(PGLogicalCtx->lock);
+}
 
 void
 pglogical_sync_main(Datum main_arg)
@@ -677,10 +731,6 @@ pglogical_sync_main(Datum main_arg)
 	pqsignal(SIGTERM, handle_sigterm);
 	BackgroundWorkerUnblockSignals();
 
-	/* Should never happen. */
-	if (MySyncWorker->status == SYNC_STATUS_NONE)
-		elog(ERROR, "sync worker started without table");
-
 	/* Attach to dsm segment. */
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical sync");
@@ -702,17 +752,20 @@ pglogical_sync_main(Datum main_arg)
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
 		 sub->origin_if->name, sub->origin_if->dsn);
 
-	/* COPY data if requested. */
-	if (MySyncWorker->status == SYNC_STATUS_INIT ||
-		MySyncWorker->status == SYNC_STATUS_DATA)
-	{
-		MySyncWorker->status = SYNC_STATUS_DATA;
-		pglogical_sync_table(sub, copytable);
-	}
+	/* Do the initial sync first. */
+	pglogical_sync_table(sub, copytable);
 
+	/* Wait for ack from the main apply thread. */
 	StartTransactionCommand();
+	set_table_sync_status(sub->id, copytable->schemaname, copytable->relname,
+						  SYNC_STATUS_SYNCWAIT);
+	CommitTransactionCommand();
+
+	wait_for_sync_status_change(sub->id, copytable->schemaname,
+								copytable->relname, SYNC_STATUS_CATCHUP);
 
 	/* Setup the origin and get the starting position for the replication. */
+	StartTransactionCommand();
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
 				  sub->origin->name, sub->name,
 				  NameStr(MySyncWorker->relname));
@@ -720,12 +773,14 @@ pglogical_sync_main(Datum main_arg)
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
-
 	CommitTransactionCommand();
 
-	MySyncWorker->apply.replay_stop_lsn = origin_startpos;
-	MySyncWorker->status = SYNC_STATUS_SYNCWAIT;
-	wait_for_sync_status_change(MyPGLogicalWorker, SYNC_STATUS_CATCHUP);
+	/* In case there is nothing to catchup, finish immediately. */
+	if (origin_startpos >= MyApplyWorker->replay_stop_lsn)
+	{
+		pglogical_sync_worker_finish(NULL);
+		proc_exit(0);
+	}
 
 	/* Start the replication. */
 	streamConn = pglogical_connect_replica(sub->origin_if->dsn, sub->name);
@@ -738,6 +793,7 @@ pglogical_sync_main(Datum main_arg)
 
 	pfree(tablename);
 
+	/* Leave it to standard apply code to do the replication. */
 	apply_work(streamConn);
 
 	/*
@@ -831,6 +887,45 @@ drop_subscription_sync_status(Oid subid)
 
 }
 
+static PGLogicalSyncStatus *
+syncstatus_fromtuple(HeapTuple tuple, TupleDesc desc)
+{
+	PGLogicalSyncStatus	   *sync;
+	Datum					d;
+	bool					isnull;
+
+	sync = (PGLogicalSyncStatus *) palloc(sizeof(PGLogicalSyncStatus));
+
+	d = fastgetattr(tuple, Anum_sync_kind, desc, &isnull);
+	Assert(!isnull);
+	sync->kind = DatumGetChar(d);
+
+	d = fastgetattr(tuple, Anum_sync_subid, desc, &isnull);
+	Assert(!isnull);
+	sync->subid = DatumGetObjectId(d);
+
+	d = fastgetattr(tuple, Anum_sync_nspname, desc, &isnull);
+	if (isnull)
+		sync->nspname = NULL;
+	else
+		sync->nspname = pstrdup(NameStr(*DatumGetName(d)));
+
+	d = fastgetattr(tuple, Anum_sync_relname, desc, &isnull);
+	if (isnull)
+		sync->relname = NULL;
+	else
+		sync->relname = pstrdup(NameStr(*DatumGetName(d)));
+
+	d = fastgetattr(tuple, Anum_sync_status, desc, &isnull);
+	Assert(!isnull);
+	sync->status = DatumGetChar(d);
+
+	sync->nspname = NULL;
+	sync->relname = NULL;
+
+	return sync;
+}
+
 /* Get the sync status for a subscription. */
 PGLogicalSyncStatus *
 get_subscription_sync_status(Oid subid)
@@ -842,7 +937,6 @@ get_subscription_sync_status(Oid subid)
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
 	TupleDesc		tupDesc;
-	bool			isnull;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -864,16 +958,7 @@ get_subscription_sync_status(Oid subid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "subscription %u status not found", subid);
 
-	sync = (PGLogicalSyncStatus *) palloc(sizeof(PGLogicalSyncStatus));
-	sync->kind = DatumGetChar(fastgetattr(tuple, Anum_sync_kind, tupDesc,
-										  &isnull));
-	Assert(!isnull);
-	sync->subid = subid;
-	sync->nspname = NULL;
-	sync->relname = NULL;
-	sync->status = DatumGetChar(fastgetattr(tuple, Anum_sync_status, tupDesc,
-											&isnull));
-	Assert(!isnull);
+	sync = syncstatus_fromtuple(tuple, tupDesc);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -946,9 +1031,11 @@ get_table_sync_status(Oid subid, const char *nspname, const char *relname)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[3];
+	TupleDesc		tupDesc;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
 
 	ScanKeyInit(&key[0],
 				Anum_sync_subid,
@@ -970,12 +1057,51 @@ get_table_sync_status(Oid subid, const char *nspname, const char *relname)
 		elog(ERROR, "subscription %u table %s.%s status not found", subid,
 			 nspname, relname);
 
-	sync = (PGLogicalSyncStatus *) GETSTRUCT(tuple);
+	sync = syncstatus_fromtuple(tuple, tupDesc);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
 	return sync;
+}
+
+/* Get the sync status for a table. */
+List *
+get_unsynced_tables(Oid subid)
+{
+	PGLogicalSyncStatus	   *sync;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+	List		   *res = NIL;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		if (heap_attisnull(tuple, Anum_sync_nspname) &&
+			heap_attisnull(tuple, Anum_sync_relname))
+			continue;
+
+		sync = (PGLogicalSyncStatus *) GETSTRUCT(tuple);
+		if (sync->status != SYNC_STATUS_READY)
+			res = lappend(res, makeRangeVar(sync->nspname, sync->relname, -1));
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return res;
 }
 
 /* Set the sync status for a table. */
@@ -1036,4 +1162,51 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
 	heap_freetuple(newtup);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Wait until the table sync status has changed desired one.
+ *
+ * We also exit if the worker is no longer recognized as sync worker as
+ * that means something bad happened to it.
+ */
+bool
+wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
+							char desired_state)
+{
+	int rc;
+
+	while (!got_SIGTERM)
+	{
+		PGLogicalWorker		   *worker;
+		PGLogicalSyncStatus	   *sync;
+
+		StartTransactionCommand();
+		sync = get_table_sync_status(subid, nspname, relname);
+		if (sync->status == desired_state)
+		{
+			CommitTransactionCommand();
+			return true;
+		}
+		CommitTransactionCommand();
+
+		/* Check if the worker is still alive - no point waiting if it died. */
+		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+		worker = pglogical_sync_find(MyDatabaseId, subid, nspname, relname);
+		LWLockRelease(PGLogicalCtx->lock);
+		if (!worker)
+			return false;
+
+		rc = WaitLatch(&MyProc->procLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   60000L);
+
+        ResetLatch(&MyProc->procLatch);
+
+		/* emergency bailout if postmaster has died */
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+	}
+
+	return false; /* Silence compiler. */
 }

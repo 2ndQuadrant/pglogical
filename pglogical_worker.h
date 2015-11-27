@@ -30,7 +30,6 @@ typedef struct PGLogicalApplyWorker
 typedef struct PGLogicalSyncWorker
 {
 	PGLogicalApplyWorker	apply; /* Apply worker info, must be first. */
-	char		status;		/* Status of synchronization */
 	NameData	nspname;	/* Name of the schema of table to copy if any. */
 	NameData	relname;	/* Name of the table to copy if any. */
 } PGLogicalSyncWorker;
@@ -84,9 +83,11 @@ extern void pglogical_worker_detach(bool signal_supervisor);
 extern PGLogicalWorker *pglogical_manager_find(Oid dboid);
 extern PGLogicalWorker *pglogical_apply_find(Oid dboid, Oid subscriberid);
 extern List *pglogical_apply_find_all(Oid dboid);
-extern PGLogicalWorker *pglogical_get_worker(int slot);
 
-extern void wait_for_sync_status_change(PGLogicalWorker *worker,
-										char desired_state);
+extern PGLogicalWorker *pglogical_sync_find(Oid dboid, Oid subid,
+											char *nspname, char *relname);
+extern List *pglogical_sync_find_all(Oid dboid, Oid subscriberid);
+
+extern PGLogicalWorker *pglogical_get_worker(int slot);
 
 #endif /* PGLOGICAL_WORKER_H */

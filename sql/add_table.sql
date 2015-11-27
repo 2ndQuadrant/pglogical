@@ -40,7 +40,7 @@ DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF EXISTS(SELECT 1 FROM public.test_publicschema) THEN
+		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_publicschema', 'test_strangeschema')) > 1 THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);

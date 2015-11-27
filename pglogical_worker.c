@@ -266,6 +266,52 @@ pglogical_apply_find_all(Oid dboid)
 }
 
 /*
+ * Find the sync worker for given subscription and table
+ */
+PGLogicalWorker *
+pglogical_sync_find(Oid dboid, Oid subscriberid, char *nspname, char *relname)
+{
+	int i;
+
+	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
+
+	for (i = 0; i < PGLogicalCtx->total_workers; i++)
+	{
+		PGLogicalWorker *w = &PGLogicalCtx->workers[i];
+		if (w->worker_type == PGLOGICAL_WORKER_SYNC && dboid == w->dboid &&
+			subscriberid == w->worker.apply.subid &&
+			strcmp(NameStr(w->worker.sync.nspname), nspname) == 0 &&
+			strcmp(NameStr(w->worker.sync.relname), relname) == 0)
+			return w;
+	}
+
+	return NULL;
+}
+
+
+/*
+ * Find the sync worker for given subscription
+ */
+List *
+pglogical_sync_find_all(Oid dboid, Oid subscriberid)
+{
+	int			i;
+	List	   *res = NIL;
+
+	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
+
+	for (i = 0; i < PGLogicalCtx->total_workers; i++)
+	{
+		PGLogicalWorker *w = &PGLogicalCtx->workers[i];
+		if (w->worker_type == PGLOGICAL_WORKER_SYNC && dboid == w->dboid &&
+			subscriberid == w->worker.apply.subid)
+			res = lappend(res, w);
+	}
+
+	return res;
+}
+
+/*
  * Get worker based on slot
  */
 PGLogicalWorker *
@@ -273,36 +319,6 @@ pglogical_get_worker(int slot)
 {
 	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
 	return &PGLogicalCtx->workers[slot];
-}
-
-/*
- * Wait until the sync worker has changed the state to desired one.
- *
- * We also exit if the worker is no longer recognized as sync worker as
- * that means somebody bad happened to it.
- */
-void
-wait_for_sync_status_change(PGLogicalWorker *worker, char desired_state)
-{
-	int rc;
-
-	while (!got_SIGTERM)
-	{
-		pg_memory_barrier();
-		if (worker->worker_type != PGLOGICAL_WORKER_SYNC ||
-			worker->worker.sync.status == desired_state)
-			return;
-
-		rc = WaitLatch(&MyProc->procLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   180000L);
-
-        ResetLatch(&MyProc->procLatch);
-
-		/* emergency bailout if postmaster has died */
-		if (rc & WL_POSTMASTER_DEATH)
-			proc_exit(1);
-	}
 }
 
 static void
