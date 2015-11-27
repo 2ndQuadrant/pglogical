@@ -1355,16 +1355,15 @@ pglogical_apply_main(Datum main_arg)
 	/* Connect to our database. */
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
-
-	/* If the subscription isn't initialized yet, initialize it. */
-	pglogical_sync_subscription(MyApplyWorker->subid);
-
 	/* Load the subscription. */
 	StartTransactionCommand();
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 	sub = get_subscription(MyApplyWorker->subid);
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
+
+	/* If the subscription isn't initialized yet, initialize it. */
+	pglogical_sync_subscription(sub);
 
 	elog(LOG, "starting apply for subscription %s", sub->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",

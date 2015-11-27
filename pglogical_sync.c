@@ -474,12 +474,11 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 }
 
 void
-pglogical_sync_subscription(Oid subid)
+pglogical_sync_subscription(PGLogicalSubscription *sub)
 {
 	PGLogicalSyncStatus *sync;
-	PGLogicalSubscription *sub;
-	XLogRecPtr	lsn;
-	char		status;
+	XLogRecPtr		lsn;
+	char			status;
 	MemoryContext	myctx,
 					oldctx;
 
@@ -491,20 +490,13 @@ pglogical_sync_subscription(Oid subid)
 
 	StartTransactionCommand();
 	oldctx = MemoryContextSwitchTo(myctx);
-	sync = get_subscription_sync_status(subid);
+	sync = get_subscription_sync_status(sub->id);
+	MemoryContextSwitchTo(oldctx);
+	CommitTransactionCommand();
 
 	status = sync->status;
 	if (status == SYNC_STATUS_READY)
-	{
-		MemoryContextSwitchTo(oldctx);
-		MemoryContextDelete(myctx);
-		CommitTransactionCommand();
 		return;
-	}
-
-	sub = get_subscription(subid);
-	MemoryContextSwitchTo(oldctx);
-	CommitTransactionCommand();
 
 	switch (status)
 	{

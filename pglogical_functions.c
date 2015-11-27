@@ -232,8 +232,6 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 
 /*
  * Remove subscribption.
- *
- * TODO: kill connections
  */
 Datum
 pglogical_drop_subscription(PG_FUNCTION_ARGS)
@@ -251,6 +249,8 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 
 		/* Drop the actual subscription. */
 		drop_subscription(sub->id);
+
+		/* This will make manager kill the apply worker on commit. */
 		pglogical_connections_changed();
 	}
 
