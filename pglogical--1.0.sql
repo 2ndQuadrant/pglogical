@@ -174,6 +174,6 @@ CREATE FUNCTION pglogical.pglogical_node_info(OUT node_id oid, OUT node_name tex
 RETURNS record
 STABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';
 
-CREATE FUNCTION pglogical.pglogical_gen_slot_name(name, name, name)
+CREATE FUNCTION pglogical.pglogical_gen_slot_name(name)
 RETURNS name
 IMMUTABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';

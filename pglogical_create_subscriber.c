@@ -39,6 +39,8 @@
 #include "pglogical_fe.h"
 
 typedef struct RemoteInfo {
+	Oid			nodeid;
+	char	   *node_name;
 	char	   *sysid;
 	char	   *dbname;
 	char	   *replication_sets;
@@ -78,14 +80,14 @@ static char *validate_replication_set_input(char *replication_sets);
 static void remove_unwanted_data(PGconn *conn);
 static void initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn);
 static char *create_restore_point(PGconn *conn, char *restore_point_name);
-static char *initialize_replication_slot(PGconn *conn, char *dbname, char *provider_name,
-							char *subscriber_name, bool drop_slot_if_exists);
+static char *initialize_replication_slot(PGconn *conn, char *subscriber_name,
+										 bool drop_slot_if_exists);
 static void pglogical_subscribe(PGconn *conn, char *subscriber_name,
-								char *subscriber_dsn, char *provider_name,
+								char *subscriber_dsn,
 								char *provider_connstr,
 								char *replication_sets);
 
-static RemoteInfo *get_remote_info(PGconn* conn, char *provider_name);
+static RemoteInfo *get_remote_info(PGconn* conn);
 
 static bool extension_exists(PGconn *conn, const char *extname);
 static void install_extension(PGconn *conn, const char *extname);
@@ -145,7 +147,6 @@ main(int argc, char **argv)
 	char	   *subscriber_name = NULL;
 	char	   *subscriber_connstr = NULL;
 	char	   *provider_connstr = NULL;
-	char	   *provider_name = NULL;
 	char	   *replication_sets = NULL;
 	char	   *postgresql_conf = NULL,
 			   *pg_hba_conf = NULL,
@@ -158,7 +159,6 @@ main(int argc, char **argv)
 	static struct option long_options[] = {
 		{"subscriber-name", required_argument, NULL, 'n'},
 		{"pgdata", required_argument, NULL, 'D'},
-		{"provider-name", required_argument, NULL, 'p'},
 		{"provider-dsn", required_argument, NULL, 1},
 		{"subscriber-dsn", required_argument, NULL, 2},
 		{"replication-sets", required_argument, NULL, 3},
@@ -198,9 +198,6 @@ main(int argc, char **argv)
 				break;
 			case 'n':
 				subscriber_name = pg_strdup(optarg);
-				break;
-			case 'p':
-				provider_name = pg_strdup(optarg);
 				break;
 			case 1:
 				provider_connstr = pg_strdup(optarg);
@@ -264,12 +261,6 @@ main(int argc, char **argv)
 		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 		exit(1);
 	}
-	else if (provider_name == NULL)
-	{
-		fprintf(stderr, _("No provider name specified\n"));
-		fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
-		exit(1);
-	}
 
 	provider_connstr = get_connstr(provider_connstr, NULL);
 	subscriber_connstr = get_connstr(subscriber_connstr, NULL);
@@ -298,7 +289,7 @@ main(int argc, char **argv)
 	print_msg(VERBOSITY_NORMAL,
 			  _("Getting remote server identification ...\n"));
 	provider_conn = connectdb(provider_connstr);
-	remote_info = get_remote_info(provider_conn, provider_name);
+	remote_info = get_remote_info(provider_conn);
 
 	use_existing_data_dir = check_data_dir(data_dir, remote_info);
 
@@ -315,8 +306,8 @@ main(int argc, char **argv)
 	 */
 	print_msg(VERBOSITY_NORMAL,
 			  _("Creating replication slot ...\n"));
-	slot_name = initialize_replication_slot(provider_conn, remote_info->dbname,
-											provider_name, subscriber_name,
+	slot_name = initialize_replication_slot(provider_conn,
+											subscriber_name,
 											drop_slot_if_exists);
 
 	/*
@@ -416,7 +407,7 @@ main(int argc, char **argv)
 	print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s"), replication_sets);
 
 	pglogical_subscribe(subscriber_conn, subscriber_name, subscriber_connstr,
-						provider_name, provider_connstr, replication_sets);
+						provider_connstr, replication_sets);
 
 	PQfinish(subscriber_conn);
 	subscriber_conn = NULL;
@@ -638,8 +629,8 @@ check_data_dir(char *data_dir, RemoteInfo *remoteinfo)
  * Initialize replication slots
  */
 static char *
-initialize_replication_slot(PGconn *conn, char *dbname, char *provider_name,
-							char *subscriber_name, bool drop_slot_if_exists)
+initialize_replication_slot(PGconn *conn, char *subscriber_name,
+							bool drop_slot_if_exists)
 {
 	PQExpBufferData		query;
 	char			   *slot_name;
@@ -648,9 +639,7 @@ initialize_replication_slot(PGconn *conn, char *dbname, char *provider_name,
 	/* Generate the slot name. */
 	initPQExpBuffer(&query);
 	printfPQExpBuffer(&query,
-					  "SELECT pglogical.pglogical_gen_slot_name(%s, %s, %s)",
-					  PQescapeLiteral(conn, dbname, strlen(dbname)),
-					  PQescapeLiteral(conn, provider_name, strlen(provider_name)),
+					  "SELECT pglogical.pglogical_gen_slot_name(%s)",
 					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)));
 
 	res = PQexec(conn, query.data);
@@ -717,39 +706,38 @@ initialize_replication_slot(PGconn *conn, char *dbname, char *provider_name,
 
 /*
  * Read replication info about remote connection
+ *
+ * TODO: unify with pglogical_remote_node_info in pglogical_rpc
  */
 static RemoteInfo *
-get_remote_info(PGconn* conn, char *provider_name)
+get_remote_info(PGconn* conn)
 {
 	RemoteInfo		    *ri = (RemoteInfo *)pg_malloc0(sizeof(RemoteInfo));
-	PQExpBufferData		query;
-	PGresult		   *res;
+	PGresult	   *res;
 
 	if (!extension_exists(conn, "pglogical"))
 		die(_("The remote node is not configured as a pglogical provider.\n"));
 
-	initPQExpBuffer(&query);
-	printfPQExpBuffer(&query,
-					  "SELECT * FROM pglogical.pglogical_provider_info(%s)",
-					  PQescapeLiteral(conn, provider_name, strlen(provider_name)));
-
-	res = PQexec(conn, query.data);
+	res = PQexec(conn, "SELECT node_id, node_name, sysid, dbname, replication_sets FROM pglogical.pglogical_node_info()");
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		die(_("Could fetch provider info: %s\n"), PQerrorMessage(provider_conn));
+		die(_("could fetch remote node info: %s\n"), PQerrorMessage(conn));
 
 	/* No nodes found? */
 	if (PQntuples(res) == 0)
-		die(_("The remote node is not configured as a pglogical provider.\n"));
+		die(_("The remote database is not configured as a pglogical node.\n"));
 
 	if (PQntuples(res) > 1)
-		die(_("The remote node has multiple providers configured. That is not supported with current version of this tool.\n"));
+		die(_("The remote database has multiple nodes configured. That is not supported with current version of pglogical.\n"));
 
-	ri->sysid = pstrdup(PQgetvalue(res, 0, 0));
-	ri->dbname = pstrdup(PQgetvalue(res, 0, 1));
-	ri->replication_sets = pg_strdup(PQgetvalue(res, 0, 2));
+#define atooid(x)  ((Oid) strtoul((x), NULL, 10))
+
+	ri->nodeid = atooid(PQgetvalue(res, 0, 0));
+	ri->node_name = pstrdup(PQgetvalue(res, 0, 1));
+	ri->sysid = pstrdup(PQgetvalue(res, 0, 2));
+	ri->dbname = pstrdup(PQgetvalue(res, 0, 3));
+	ri->replication_sets = pstrdup(PQgetvalue(res, 0, 4));
 
 	PQclear(res);
-	termPQExpBuffer(&query);
 
 	return ri;
 }
@@ -903,52 +891,61 @@ create_restore_point(PGconn *conn, char *restore_point_name)
 
 static void
 pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
-					char *provider_name, char *provider_connstr,
-					char *replication_sets)
+					char *provider_dsn, char *replication_sets)
 {
 	PQExpBufferData		query;
 	PQExpBufferData		repsets;
 	PGresult		   *res;
 
+					  PQescapeLiteral(conn, subscriber_dsn, strlen(subscriber_dsn)),
+
 	initPQExpBuffer(&query);
+
+	printfPQExpBuffer(&query,
+					  "SELECT pglogical.create_node(node_name := %s, dsn := %s);",
+					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
+					  PQescapeLiteral(conn, subscriber_dsn, strlen(subscriber_dsn)));
+
+	res = PQexec(conn, query.data);
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		die(_("Could not create local node, status %s: %s\n"),
+			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
+	}
+	PQclear(res);
+
+	resetPQExpBuffer(&query);
 	initPQExpBuffer(&repsets);
 
 	printfPQExpBuffer(&repsets, "{%s}", replication_sets);
-
 	printfPQExpBuffer(&query,
-					  "SELECT pglogical.create_subscriber("
-					  "subscriber_name := %s, local_dsn := %s, "
-					  "provider_name := %s, provider_dsn := %s, "
-					  "synchronize_schema := false, syncrhonize_data := false, "
-					  "replication_sets := %s);",
+					  "SELECT pglogical.create_subscription("
+					  "subscription_name := %s, origin_dsn := %s, "
+					  "replication_sets := %s, "
+					  "synchronize_structure := false, "
+					  "synchronize_data := false);",
 					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
-					  PQescapeLiteral(conn, subscriber_dsn, strlen(subscriber_dsn)),
-					  PQescapeLiteral(conn, provider_name, strlen(provider_name)),
-					  PQescapeLiteral(conn, provider_connstr, strlen(provider_connstr)),
+					  PQescapeLiteral(conn, provider_dsn, strlen(provider_dsn)),
 					  PQescapeLiteral(conn, repsets.data, repsets.len));
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
-		die(_("Could not create subscriber, status %s: %s\n"),
+		die(_("Could not create subscription, status %s: %s\n"),
 			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
 	}
 	PQclear(res);
 
 	/* TODO */
-	resetPQExpBuffer(&query);
-	printfPQExpBuffer(&query,
-				  "UPDATE pglogical.subscriber SET subscriber_status = 'c' WHERE subscriber_name = %s",
-				  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)));
-
-	res = PQexec(conn, query.data);
+	res = PQexec(conn, "UPDATE pglogical.local_sync_status SET sync_status = 'r'");
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 	{
-		die(_("Could not create subscriber, status %s: %s\n"),
+		die(_("Could not update subscription, status %s: %s\n"),
 			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
 	}
 
 	PQclear(res);
+
 	termPQExpBuffer(&repsets);
 	termPQExpBuffer(&query);
 }

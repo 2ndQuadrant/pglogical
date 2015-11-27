@@ -741,14 +741,15 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 Datum
 pglogical_gen_slot_name(PG_FUNCTION_ARGS)
 {
-	char	   *dbname = NameStr(*PG_GETARG_NAME(0));
-	char	   *provider_name = NameStr(*PG_GETARG_NAME(1));
-	char	   *subscriber_name = NameStr(*PG_GETARG_NAME(2));
+	char	   *subscriber_name = NameStr(*PG_GETARG_NAME(0));
 	Name		slot_name;
+	PGLogicalLocalNode *node;
+
+	node = get_local_node(false);
 
 	slot_name = (Name) palloc0(NAMEDATALEN);
 
-	gen_slot_name(slot_name, dbname, provider_name, subscriber_name, NULL);
+	gen_slot_name(slot_name, get_database_name(MyDatabaseId), node->node->name, subscriber_name, NULL);
 
 	PG_RETURN_NAME(slot_name);
 }
