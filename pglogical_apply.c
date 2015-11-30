@@ -33,7 +33,11 @@
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
 
+#include "optimizer/planner.h"
+
 #include "replication/origin.h"
+
+#include "rewrite/rewriteHandler.h"
 
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
@@ -229,11 +233,22 @@ create_estate_for_relation(Relation rel)
 {
 	EState	   *estate;
 	ResultRelInfo *resultRelInfo;
+	RangeTblEntry *rte;
 
 	estate = CreateExecutorState();
 
+	rte = makeNode(RangeTblEntry);
+	rte->rtekind = RTE_RELATION;
+	rte->relid = RelationGetRelid(rel);
+	rte->relkind = rel->rd_rel->relkind;
+	estate->es_range_table = list_make1(rte);
+
 	resultRelInfo = makeNode(ResultRelInfo);
-	resultRelInfo->ri_RangeTableIndex = 1;		/* dummy */
+/*	InitResultRelInfo(resultRelInfo,
+					  rel,
+					  1,
+					  0);*/
+	resultRelInfo->ri_RangeTableIndex = 1;
 	resultRelInfo->ri_RelationDesc = rel;
 	resultRelInfo->ri_TrigInstrument = NULL;
 
@@ -272,6 +287,69 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 	}
 }
 
+static bool
+physatt_in_attmap(PGLogicalRelation *rel, int attid)
+{
+	AttrNumber	i;
+
+	for (i = 0; i < rel->natts; i++)
+		if (rel->attmap[i] == attid)
+			return true;
+
+	return false;
+}
+
+/*
+ * Executes default values for columns for which we didn't get any data.
+ *
+ * TODO: this needs caching, it's not exactly fast.
+ */
+static void
+fill_tuple_defaults(PGLogicalRelation *rel, ExprContext *econtext,
+							  PGLogicalTupleData *tuple)
+{
+	TupleDesc	desc = RelationGetDescr(rel->rel);
+	AttrNumber	num_phys_attrs = desc->natts;
+	int			i;
+	AttrNumber	attnum,
+				num_defaults = 0;
+	int		   *defmap;
+	ExprState **defexprs;
+
+	defmap = (int *) palloc(num_phys_attrs * sizeof(int));
+	defexprs = (ExprState **) palloc(num_phys_attrs * sizeof(ExprState *));
+
+	for (attnum = 0; attnum < num_phys_attrs; attnum++)
+	{
+		Expr	   *defexpr;
+
+		if (desc->attrs[attnum]->attisdropped)
+			continue;
+
+		if (physatt_in_attmap(rel, attnum))
+			continue;
+
+		defexpr = (Expr *) build_column_default(rel->rel, attnum + 1);
+
+		if (defexpr != NULL)
+		{
+			/* Run the expression through planner */
+			defexpr = expression_planner(defexpr);
+
+			/* Initialize executable expression in copycontext */
+			defexprs[num_defaults] = ExecInitExpr(defexpr, NULL);
+			defmap[num_defaults] = attnum;
+			num_defaults++;
+		}
+
+	}
+
+	for (i = 0; i < num_defaults; i++)
+		tuple->values[defmap[i]] = ExecEvalExpr(defexprs[i],
+												econtext,
+												&tuple->nulls[defmap[i]],
+												NULL);
+}
 
 static void
 handle_insert(StringInfo s)
@@ -298,6 +376,7 @@ handle_insert(StringInfo s)
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
+	fill_tuple_defaults(rel, GetPerTupleExprContext(estate), &newtup);
 	localslot = ExecInitExtraTupleSlot(estate);
 	applyslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
@@ -328,6 +407,11 @@ handle_insert(StringInfo s)
 		if (apply)
 		{
 			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
+			/* Check the constraints of the tuple */
+			if (rel->rel->rd_att->constr)
+				ExecConstraints(estate->es_result_relation_info, applyslot,
+								estate);
+
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
 							   applytuple);
 			/* TODO: check for HOT update? */
@@ -338,6 +422,11 @@ handle_insert(StringInfo s)
 	{
 		/* No conflict, insert the tuple. */
 		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
+		/* Check the constraints of the tuple */
+		if (rel->rel->rd_att->constr)
+			ExecConstraints(estate->es_result_relation_info, applyslot,
+							estate);
+
 		simple_heap_insert(rel->rel, remotetuple);
 		UserTableUpdateOpenIndexes(estate, applyslot);
 	}
@@ -414,6 +503,7 @@ handle_update(StringInfo s)
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
+	fill_tuple_defaults(rel, GetPerTupleExprContext(estate), &newtup);
 	localslot = ExecInitExtraTupleSlot(estate);
 	applyslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
@@ -469,6 +559,11 @@ handle_update(StringInfo s)
 		if (apply)
 		{
 			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
+			/* Check the constraints of the tuple */
+			if (rel->rel->rd_att->constr)
+				ExecConstraints(estate->es_result_relation_info, applyslot,
+								estate);
+
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
 							   applytuple);
 

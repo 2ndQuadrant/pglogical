@@ -27,6 +27,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c postgres
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
+ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
 \c regression
 -- check basic insert replication
 INSERT INTO basic_dml(other, data, something)
@@ -102,14 +103,14 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c postgres
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data |     something      
-----+-------+------+--------------------
-  1 |     1 | foo1 | @ 50 secs
-  2 |     2 | bar2 | @ 84 days -10 secs
-  3 |     3 | baz3 | @ 2 years 1 hour
-  4 |     4 |      | @ 3 days 10 secs
-  5 |     5 |      | 
+SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
+ id | other | data |     something      | subonly | subonly_def 
+----+-------+------+--------------------+---------+-------------
+  1 |     1 | foo1 | @ 50 secs          |         |          99
+  2 |     2 | bar2 | @ 84 days -10 secs |         |          99
+  3 |     3 | baz3 | @ 2 years 1 hour   |         |          99
+  4 |     4 |      | @ 3 days 10 secs   |         |          99
+  5 |     5 |      |                    |         |          99
 (5 rows)
 
 -- delete one row

@@ -16,6 +16,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c postgres
 
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
+ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
 
 \c regression
 
@@ -49,7 +50,7 @@ UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval 
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c postgres
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
 
 -- delete one row
 \c regression
