@@ -409,50 +409,85 @@ get_repset_relation(Oid nodeid, Oid reloid, List *subs_replication_sets)
 	/* Get replication sets for a table. */
 	table_replication_sets = get_relation_replication_sets(nodeid, reloid);
 
-	/* Build union of the repsets and cache the computed info. */
-	foreach(slc, subs_replication_sets)
+	/* If table is not in any replication set, we apply "default" one to it. */
+	if (list_length(table_replication_sets) == 0)
 	{
-		PGLogicalRepSet	   *srepset = lfirst(slc);
-		ListCell		   *tlc;
-
-		if (list_length(table_replication_sets) == 0 &&
-			strcmp(srepset->name, DEFAULT_REPSET_NAME) == 0)
-		{
-			if (srepset->replicate_insert)
-				entry->replicate_insert = true;
-			if (srepset->replicate_update)
-				entry->replicate_update = true;
-			if (srepset->replicate_delete)
-				entry->replicate_delete = true;
-			if (srepset->replicate_truncate)
-				entry->replicate_truncate = true;
-		}
-
-		/* Standard set matching. */
-		foreach (tlc, table_replication_sets)
-		{
-			PGLogicalRepSet	   *trepset = lfirst(tlc);
-
-			if (trepset->id == srepset->id)
-			{
-				if (trepset->replicate_insert)
-					entry->replicate_insert = true;
-				if (trepset->replicate_update)
-					entry->replicate_update = true;
-				if (trepset->replicate_delete)
-					entry->replicate_delete = true;
-				if (trepset->replicate_truncate)
-					entry->replicate_truncate = true;
-			}
-		}
+		char	   *relname = get_rel_name(reloid);
+		Oid			oid;
 
 		/*
-		 * Now we now everything is replicated, no point in trying to check
-		 * more replication sets.
+		 * Special case, table rewrite.
+		 * We can't handle table rewrites in pglogical yet, so we filter out
+		 * changes made by table rewrite.
 		 */
-		if (entry->replicate_insert && entry->replicate_update &&
-			entry->replicate_delete && entry->replicate_truncate)
-			break;
+		if (sscanf(relname, "pg_temp_%u", &oid) == 1)
+		{
+			entry->replicate_insert = false;
+			entry->replicate_update = false;
+			entry->replicate_delete = false;
+			entry->replicate_truncate = false;
+		}
+		else
+		{
+			/*
+			 * Normal table.
+			 * Try to find "default" replication set in list of subscribed
+			 * replication sets.
+			 */
+			foreach(slc, subs_replication_sets)
+			{
+				PGLogicalRepSet	   *srepset = lfirst(slc);
+
+				if (strcmp(srepset->name, DEFAULT_REPSET_NAME) == 0)
+				{
+					if (srepset->replicate_insert)
+						entry->replicate_insert = true;
+					if (srepset->replicate_update)
+						entry->replicate_update = true;
+					if (srepset->replicate_delete)
+						entry->replicate_delete = true;
+					if (srepset->replicate_truncate)
+						entry->replicate_truncate = true;
+				}
+			}
+		}
+	}
+	else
+	{
+		/*
+		 * Table has replication sets, build union of the table repsets and
+		 * subscription repsets.
+		 */
+		foreach(slc, subs_replication_sets)
+		{
+			PGLogicalRepSet	   *srepset = lfirst(slc);
+			ListCell		   *tlc;
+
+			foreach (tlc, table_replication_sets)
+			{
+				PGLogicalRepSet	   *trepset = lfirst(tlc);
+
+				if (trepset->id == srepset->id)
+				{
+					if (trepset->replicate_insert)
+						entry->replicate_insert = true;
+					if (trepset->replicate_update)
+						entry->replicate_update = true;
+					if (trepset->replicate_delete)
+						entry->replicate_delete = true;
+					if (trepset->replicate_truncate)
+						entry->replicate_truncate = true;
+				}
+			}
+
+			/*
+			 * Now we now everything is replicated, no point in trying to check
+			 * more replication sets.
+			 */
+			if (entry->replicate_insert && entry->replicate_update &&
+				entry->replicate_delete && entry->replicate_truncate)
+				break;
+		}
 	}
 
 	entry->isvalid = true;
