@@ -37,7 +37,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbna
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    origin_dsn := 'dbname=regression user=super');
+    provider_dsn := 'dbname=regression user=super');
 
 DO $$
 BEGIN

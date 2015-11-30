@@ -42,12 +42,12 @@ First the PostgreSQL server has to be properly configured to support logical
 decoding:
 
     wal_level = 'logical'
-    max_worker_processes = 10	# one per database needed on provider node
-								# one per node needed on subscriber node
-    max_replication_slots = 10	# one per node needed on provider node
-    max_wal_senders = 10		# one per node needed on provider node
+    max_worker_processes = 10   # one per database needed on provider node
+                                # one per node needed on subscriber node
+    max_replication_slots = 10  # one per node needed on provider node
+    max_wal_senders = 10        # one per node needed on provider node
     shared_preload_libraries = 'pglogical'
-    track_commit_timestamp = on	# needed for last/first update wins conflict resolution
+    track_commit_timestamp = on # needed for last/first update wins conflict resolution
 
 Next the `pglogical` extension has to be installed on all nodes:
 
@@ -55,8 +55,9 @@ Next the `pglogical` extension has to be installed on all nodes:
 
 Now create the provider node:
 
-    SELECT pglogical.create_provider(
-        provider_name := 'provider1',
+    SELECT pglogical.create_node(
+        node_name := 'provider1',
+        dsn := 'host=providerhost port=5432 dbname=db'
     );
 
 Optionally you can also create replication sets and add tables to them (see
@@ -64,55 +65,77 @@ Optionally you can also create replication sets and add tables to them (see
 
 Once the provider node is setup, subscribers can be subscribed to it:
 
-	SELECT pglogical.create_subscriber(
-		subscriber_name := 'subscriber1',
-        provider_name := 'provider1',
-        local_dsn := 'host=thishost port=5432 dbname=db',
+    SELECT pglogical.create_node(
+        node_name := 'subscriber1',
+        dsn := 'host=thishost port=5432 dbname=db'
+    );
+
+    SELECT pglogical.create_subscription(
+        subscription_name := 'subscription1',
         provider_dsn := 'host=providerhost port=5432 dbname=db'
-	);
+    );
 (run this on the subscriber node)
 
 ### Node management
 
 Nodes can be added and removed dynamically using the SQL interfaces.
 
-- `pglogical.create_provider(provider_name name)`
-  Creates a provider node.
+- `pglogical.create_node(node_name name, dsn text)`
+  Creates a node.
 
   Parameters:
-  - `provider_name` - name of the new provider, currently only one provider
-    is allowed per database
+  - `node_name` - name of the new node, only one node is allowed per database
+  - `dsn` - connection string to the node, for nodes that are supposed to be
+    providers, this should be reacheble from outside
 
-- `pglogical.create_subscriber(subscriber_name name, local_dsn text,
-  provider_name name, provider_dsn text, replication_sets name[],
-  synchronize_schema boolean synchronize_data boolean)`
-  Creates a subscriber node.
+- `pglogical.pglogical_drop_node(node_name name, ifexists bool)`
+  Drops the pglogical node.
 
   Parameters:
-  - `subscriber_name` - name of the subscriber, must be unique
-  - `local_dsn` - connection string to the subscriber, this is used for initial
-    synchronization and administration tasks
-  - `provider_name` - name of the provider to which this subscriber will be
-     connected
+  - `node_name` - name of the existing node
+  - `ifexists` - if true, error is not thrown when subscription does not exist,
+    default is false
+
+### Subscription management
+
+- `pglogical.create_subscription(subscription_name name, provider_dsn text,
+  replication_sets text[], synchronize_structure boolean,
+  synchronize_data boolean)`
+  Creates a subscription from current node to the provider node.
+
+  Parameters:
+  - `subscription_name` - name of the subscription, must be unique
   - `provider_dsn` - connection string to a provider
   - `replication_sets` - array of replication sets to subscribe to, these must
     already exist, default is "default"
-  - `synchronize_schema` - specifies is to synchronize schema from provider to
-    the subscriber, default true
-  - `synchronize_data` - specifies is to synchronize data from provider to
+  - `synchronize_structure` - specifies if to synchronize structure from
+    provider to the subscriber, default true
+  - `synchronize_data` - specifies if to synchronize data from provider to
     the subscriber, default true
 
-- `pglogical.drop_provider(provider_name name)`
-  Removes the provider and disconnect all subscribers from it.
+- `pglogical.pglogical_drop_subscription(subscription_name name, ifexists bool)`
+  Disconnects the subscription and removes it from the catalog.
 
   Parameters:
-  - `subscriber_name` - name of the existing provider
+  - `subscription_name` - name of the existing subscription
+  - `ifexists` - if true, error is not thrown when subscription does not exist,
+    default is false
 
-- `pglogical.drop_subscriber(subscriber_name name)`
-  Disconnects the subscriber and removes it from the catalog.
+- `pglogical.alter_subscription_disable(subscription_name name, immediate bool)`
+   Disables a subscription and disconnects it from the provider.
 
   Parameters:
-  - `subscriber_name` - name of the existing subscriber
+  - `subscription_name` - name of the existing subscription
+  - `immediate` - if true, the subscription is stopped immediately, otherwise
+    it will be only stopped at the end of current transaction, default is false
+
+- `pglogical.alter_subscription_enable(subscription_name name, immediate bool)`
+  Enables disabled subscription.
+
+  Parameters:
+  - `subscription_name` - name of the existing subscription
+  - `immediate` - if true, the subscription is started immediately, otherwise
+    it will be only started at the end of current transaction, default is false
 
 ### Replication sets
 
@@ -157,12 +180,14 @@ The following functions are provided for managing the replication sets:
   Parameters:
   - `set_name` - name of the existing replication set
 
-- `pglogical.replication_set_add_table(set_name name, table_name regclass)`
+- `pglogical.replication_set_add_table(set_name name, table_name regclass, synchronize boolean)`
   Adds a table to replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
   - `table_name` - name or OID of the table to be added to the set
+  - `synchronize` - if true, the table data is synchronized on all subscribers
+    which are subscribed to given replication set, default false
 
 - `pglogical.replication_set_remove_table(set_name name, table_name regclass)`
   Remove a table from replication set.
@@ -181,23 +206,23 @@ replication sets for newly created tables.
 
 Example:
 
-	CREATE OR REPLACE FUNCTION pglogical_assign_repset()
-	RETURNS event_trigger AS $$
-	DECLARE obj record;
-	BEGIN
-	    FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()
-	    LOOP
-	        IF obj.object_type = 'table' AND obj.schema_name = 'config' THEN
-	            PERFORM pglogical.replication_set_add_table('configuration', obj.objid);
-	        END IF;
-	    END LOOP;
-	END;
-	$$ LANGUAGE plpgsql;
+    CREATE OR REPLACE FUNCTION pglogical_assign_repset()
+    RETURNS event_trigger AS $$
+    DECLARE obj record;
+    BEGIN
+        FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()
+        LOOP
+            IF obj.object_type = 'table' AND obj.schema_name = 'config' THEN
+                PERFORM pglogical.replication_set_add_table('configuration', obj.objid);
+            END IF;
+        END LOOP;
+    END;
+    $$ LANGUAGE plpgsql;
 
-	CREATE EVENT TRIGGER pglogical_assign_repset_trg
-	    ON ddl_command_end
-	    WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
-	    EXECUTE PROCEDURE pglogical_assign_repset();
+    CREATE EVENT TRIGGER pglogical_assign_repset_trg
+        ON ddl_command_end
+        WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
+        EXECUTE PROCEDURE pglogical_assign_repset();
 
 The above example will put all new tables created in schema `config` into
 replication set `configuration`.

@@ -167,7 +167,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	PGconn				   *conn;
 	PGLogicalSubscription	sub;
 	PGLogicalSyncStatus		sync;
-	char				   *origin_dsn;
+	char				   *provider_dsn;
 	bool					sync_structure = PG_GETARG_BOOL(3);
 	bool					sync_data = PG_GETARG_BOOL(4);
 	PGLogicalNode			origin;
@@ -179,8 +179,8 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	localnode = get_local_node(true);
 
 	/* Now, fetch info about remote node. */
-	origin_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
-	conn = pglogical_connect(origin_dsn, "create_subscription");
+	provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	conn = pglogical_connect(provider_dsn, "create_subscription");
 	pglogical_remote_node_info(conn, &origin.id, &origin.name, NULL, NULL, NULL);
 	PQfinish(conn);
 
@@ -190,7 +190,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	originif.id = InvalidOid;
 	originif.name = origin.name;
 	originif.nodeid = origin.id;
-	originif.dsn = origin_dsn;
+	originif.dsn = provider_dsn;
 	create_node_interface(&originif);
 
 	/*

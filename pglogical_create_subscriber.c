@@ -920,7 +920,7 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 	printfPQExpBuffer(&repsets, "{%s}", replication_sets);
 	printfPQExpBuffer(&query,
 					  "SELECT pglogical.create_subscription("
-					  "subscription_name := %s, origin_dsn := %s, "
+					  "subscription_name := %s, provider_dsn := %s, "
 					  "replication_sets := %s, "
 					  "synchronize_structure := false, "
 					  "synchronize_data := false);",
