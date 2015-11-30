@@ -64,7 +64,7 @@ typedef struct QueueTuple
  * Add tuple to the queue table.
  */
 void
-queue_message(char *replication_set, Oid roleoid, char message_type,
+queue_message(const char *replication_set, Oid roleoid, char message_type,
 			  char *message)
 {
 	RangeVar   *rv;

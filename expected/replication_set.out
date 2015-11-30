@@ -152,7 +152,7 @@ CONTEXT:  during execution of queued SQL statement:
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
 NOTICE:  drop cascades to 1 other object
-DETAIL:  table "strange.schema-IS".test_strangeschema in replication set repset_replicate_insupd
+DETAIL:  table strange.schema-IS.test_strangeschema in replication set repset_replicate_insupd
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;

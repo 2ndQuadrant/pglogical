@@ -28,12 +28,8 @@ SELECT * FROM public.test_publicschema;
 \c regression
 
 -- move tables back to the subscribed replication set
-SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema');
-SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS".test_strangeschema');
-
-INSERT INTO pglogical.queue VALUES(now(), 'foo', 'pjmodos', 'C', '{"schema_name": "public", "table_name": "test_publicschema"}');
-INSERT INTO pglogical.queue VALUES(now(), 'foo', 'pjmodos', 'C', '{"schema_name": "strange.schema-IS", "table_name": "test_strangeschema"}');
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema', true);
+SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS".test_strangeschema', true);
 
 \c postgres
 DO $$

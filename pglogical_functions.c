@@ -223,7 +223,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	sync.nspname = NULL;
 	sync.relname = NULL;
 	sync.status = SYNC_STATUS_INIT;
-	create_subscription_sync_status(&sync);
+	create_local_sync_status(&sync);
 
 	pglogical_connections_changed();
 
@@ -412,10 +412,15 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 Datum
 pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 {
+	Name		repset_name = PG_GETARG_NAME(0);
 	Oid			reloid = PG_GETARG_OID(1);
+	bool		synchronize = PG_GETARG_BOOL(2);
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	PGLogicalLocalNode *node;
+	char			   *nspname;
+	char			   *relname;
+	StringInfoData		json;
 
 	node = get_local_node(true);
 	if (!node)
@@ -426,12 +431,30 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*PG_GETARG_NAME(0)), false);
+										 NameStr(*repset_name), false);
 
 	/* Make sure the relation exists. */
 	rel = heap_open(reloid, AccessShareLock);
 
 	replication_set_add_table(repset->id, reloid);
+
+	if (synchronize)
+	{
+		nspname = get_namespace_name(RelationGetNamespace(rel));
+		relname = RelationGetRelationName(rel);
+
+		/* It's easier to construct json manually than via Jsonb API... */
+		initStringInfo(&json);
+		appendStringInfo(&json, "{\"schema_name\": ");
+		escape_json(&json, nspname);
+		appendStringInfo(&json, ",\"table_name\": ");
+		escape_json(&json, relname);
+		appendStringInfo(&json, "}");
+
+		/* Queue the truncate for replication. */
+		queue_message(repset->name, GetUserId(), QUEUE_COMMAND_TYPE_TABLESYNC,
+					  json.data);
+	}
 
 	/* Cleanup. */
 	heap_close(rel, NoLock);
@@ -641,7 +664,7 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 
 	SPI_connect();
 
-	res = SPI_execute("SELECT objid, object_identity "
+	res = SPI_execute("SELECT objid, schema_name, object_name "
 					  "FROM pg_event_trigger_dropped_objects() "
 					  "WHERE object_type = 'table'",
 					  false, 0);
@@ -651,6 +674,7 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 	for (i = 0; i < SPI_processed; i++)
 	{
 		Oid		reloid;
+		char   *schema_name;
 		char   *table_name;
 		bool	isnull;
 		List   *repsets;
@@ -658,7 +682,8 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 		reloid = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
 									 SPI_tuptable->tupdesc, 1, &isnull);
 		Assert(!isnull);
-		table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
+		schema_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
+		table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 3);
 
 		repsets = get_relation_replication_sets(node->node->id, reloid);
 
@@ -672,13 +697,15 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 
 				if (numDependentObjects++)
 					appendStringInfoString(&logdetail, "\n");
-				appendStringInfo(&logdetail, "table %s in replication set %s",
-								 table_name, repset->name);
+				appendStringInfo(&logdetail, "table %s.%s in replication set %s",
+								 schema_name, table_name, repset->name);
 
 				if (stmt->behavior == DROP_CASCADE)
 					replication_set_remove_table(repset->id, reloid, true);
 			}
 		}
+
+		drop_table_sync_status(schema_name, table_name);
 	}
 
 	SPI_finish();

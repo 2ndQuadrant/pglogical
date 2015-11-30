@@ -54,24 +54,16 @@ SELECT * FROM public.test_publicschema;
 
 \c regression
 -- move tables back to the subscribed replication set
-SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema');
+SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema', true);
  replication_set_add_table 
 ---------------------------
  t
 (1 row)
 
-SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS".test_strangeschema');
+SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS".test_strangeschema', true);
  replication_set_add_table 
 ---------------------------
  t
-(1 row)
-
-INSERT INTO pglogical.queue VALUES(now(), 'foo', 'pjmodos', 'C', '{"schema_name": "public", "table_name": "test_publicschema"}');
-INSERT INTO pglogical.queue VALUES(now(), 'foo', 'pjmodos', 'C', '{"schema_name": "strange.schema-IS", "table_name": "test_strangeschema"}');
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
- pg_xlog_wait_remote_apply 
----------------------------
- 
 (1 row)
 
 \c postgres
@@ -148,8 +140,8 @@ CONTEXT:  during execution of queued SQL statement:
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table "strange.schema-IS".test_strangeschema in replication set repset_test
-table "strange.schema-IS".test_strangeschema in replication set default
+DETAIL:  table strange.schema-IS.test_strangeschema in replication set repset_test
+table strange.schema-IS.test_strangeschema in replication set default
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;

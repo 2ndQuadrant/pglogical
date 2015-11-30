@@ -17,7 +17,7 @@
 
 #define QUEUE_COMMAND_TYPE_SQL			'Q'
 #define QUEUE_COMMAND_TYPE_TRUNCATE		'T'
-#define QUEUE_COMMAND_TYPE_TABLECOPY	'C'
+#define QUEUE_COMMAND_TYPE_TABLESYNC	'A'
 
 typedef struct QueuedMessage
 {
@@ -28,7 +28,7 @@ typedef struct QueuedMessage
 	Jsonb	   *message;
 } QueuedMessage;
 
-extern void queue_message(char *replication_set, Oid roleoid,
+extern void queue_message(const char *replication_set, Oid roleoid,
 						  char message_type, char *message);
 
 extern QueuedMessage *queued_message_from_tuple(HeapTuple queue_tup);

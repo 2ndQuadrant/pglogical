@@ -726,9 +726,6 @@ parse_relation_message(Jsonb *message)
 
 /*
  * Handle TRUNCATE message comming via queue table.
- *
- * Note we do truncate filtering here in rhe downstream for performance
- * reasons.
  */
 static void
 handle_truncate(QueuedMessage *queued_message)
@@ -764,27 +761,40 @@ handle_truncate(QueuedMessage *queued_message)
 }
 
 /*
- * Handle TRUNCATE message comming via queue table.
- *
- * Note we do truncate filtering here in rhe downstream for performance
- * reasons.
+ * Handle TABLESYNC message comming via queue table.
  */
 static void
-handle_table_copy(QueuedMessage *queued_message)
+handle_table_sync(QueuedMessage *queued_message)
 {
 	RangeVar	   *rv;
 	MemoryContext			oldcontext;
-	PGLogicalSyncStatus		sync;
+	PGLogicalSyncStatus		*oldsync;
+	PGLogicalSyncStatus		newsync;
 
 	rv = parse_relation_message(queued_message->message);
 
-	/* Create synchronization status for the subscription. */
-	sync.kind = 'd';
-	sync.subid = MyApplyWorker->subid;
-	sync.nspname = rv->schemaname;
-	sync.relname = rv->relname;
-	sync.status = SYNC_STATUS_INIT;
-	create_subscription_sync_status(&sync);
+	oldsync = get_table_sync_status(MyApplyWorker->subid, rv->schemaname,
+									rv->relname, true);
+
+	if (oldsync)
+	{
+		elog(INFO,
+			 "table sync came from queue for table %s.%s which already being synchronized, skipping",
+			 rv->schemaname, rv->relname);
+
+		return;
+	}
+
+	/*
+	 * Create synchronization status for the subscription.
+	 * Currently we only support data sync for tables.
+	 */
+	newsync.kind = SYNC_KIND_DATA;
+	newsync.subid = MyApplyWorker->subid;
+	newsync.nspname = rv->schemaname;
+	newsync.relname = rv->relname;
+	newsync.status = SYNC_STATUS_INIT;
+	create_local_sync_status(&newsync);
 
 	/* Keep the lists persistent. */
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
@@ -851,8 +861,8 @@ handle_queued_message(HeapTuple msgtup, bool tx_just_started)
 		case QUEUE_COMMAND_TYPE_TRUNCATE:
 			handle_truncate(queued_message);
 			break;
-		case QUEUE_COMMAND_TYPE_TABLECOPY:
-			handle_table_copy(queued_message);
+		case QUEUE_COMMAND_TYPE_TABLESYNC:
+			handle_table_sync(queued_message);
 			break;
 		default:
 			elog(ERROR, "unknown message type '%c'",
@@ -1241,8 +1251,18 @@ process_syncing_tables(XLogRecPtr end_lsn)
 
 			StartTransactionCommand();
 			sync = get_table_sync_status(MyApplyWorker->subid, rv->schemaname,
-										 rv->relname);
-			status = sync->status;
+										 rv->relname, true);
+
+			/*
+			 * TODO: what to do here? We don't really want to die,
+			 * but this can mean many things, for now we just assume table is
+			 * not relevant for us anymore and leave fixing to the user.
+			 */
+			if (!sync)
+				status = SYNC_STATUS_READY;
+			else
+				status = sync->status;
+			CommitTransactionCommand();
 
 			if (status == SYNC_STATUS_SYNCWAIT)
 			{
@@ -1256,29 +1276,24 @@ process_syncing_tables(XLogRecPtr end_lsn)
 				{
 					worker->worker.apply.replay_stop_lsn = end_lsn;
 
+					StartTransactionCommand();
 					set_table_sync_status(MyApplyWorker->subid, rv->schemaname,
 										  rv->relname, SYNC_STATUS_CATCHUP);
-
 					CommitTransactionCommand();
 
 					SetLatch(&worker->proc->procLatch);
 					LWLockRelease(PGLogicalCtx->lock);
 
-					wait_for_sync_status_change(MyApplyWorker->subid,
-												rv->schemaname, rv->relname,
-												SYNC_STATUS_READY);
+					if (wait_for_sync_status_change(MyApplyWorker->subid,
+													rv->schemaname,
+													rv->relname,
+													SYNC_STATUS_READY))
+						status = SYNC_STATUS_READY;
 
-					StartTransactionCommand();
-					sync = get_table_sync_status(MyApplyWorker->subid,
-												 rv->schemaname,
-												 rv->relname);
-					status = sync->status;
 				}
 				else
 					LWLockRelease(PGLogicalCtx->lock);
 			}
-
-			CommitTransactionCommand();
 
 			/* Ready? Remove it from local cache. */
 			if (status == SYNC_STATUS_READY)

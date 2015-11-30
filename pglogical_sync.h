@@ -52,15 +52,17 @@ extern void pglogical_sync_worker_finish(PGconn *applyconn);
 extern void pglogical_sync_subscription(PGLogicalSubscription *sub);
 extern void pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table);
 
-extern void create_subscription_sync_status(PGLogicalSyncStatus *sync);
+extern void create_local_sync_status(PGLogicalSyncStatus *sync);
 extern void drop_subscription_sync_status(Oid subid);
 
 extern PGLogicalSyncStatus *get_subscription_sync_status(Oid subid);
 extern void set_subscription_sync_status(Oid subid, char status);
 
+extern void drop_table_sync_status(const char *nspname, const char *relname);
 extern PGLogicalSyncStatus *get_table_sync_status(Oid subid,
 												  const char *schemaname,
-												  const char *relname);
+												  const char *relname,
+												  bool missing_ok);
 extern void set_table_sync_status(Oid subid, const char *schemaname,
 								  const char *relname, char status);
 extern List *get_unsynced_tables(Oid subid);

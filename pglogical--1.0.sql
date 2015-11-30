@@ -112,12 +112,7 @@ CREATE VIEW pglogical.TABLES AS
 	   AND t.oid NOT IN (SELECT set_reloid FROM set_tables)
 	   AND i.indrelid = t.oid
            /* Only tables with replica identity index can be in default replication set. */
-	   AND ((relreplident = 'd' AND i.indisprimary) OR (relreplident = 'i' AND i.indisreplident))
-	 UNION ALL
-    SELECT rs.set_name, t.nspname, t.relname
-	  FROM user_tables t,
-		   pglogical.replication_set rs
-     WHERE rs.set_name = 'all';
+	   AND ((relreplident = 'd' AND i.indisprimary) OR (relreplident = 'i' AND i.indisreplident));
 
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
@@ -131,7 +126,7 @@ RETURNS oid CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglo
 CREATE FUNCTION pglogical.drop_replication_set(set_name name, ifexists boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
 
-CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass)
+CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
 CREATE FUNCTION pglogical.replication_set_remove_table(set_name name, relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
