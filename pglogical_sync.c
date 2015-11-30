@@ -87,8 +87,8 @@ dump_structure(PGLogicalSubscription *sub, const char *snapshot)
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
-					 pg_dump, snapshot, EXTENSION_NAME, "/tmp/pglogical.dump",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"/tmp/pglogical-%d.dump\" \"%s\"",
+					 pg_dump, snapshot, EXTENSION_NAME, MyProcPid,
 					 sub->origin_if->dsn);
 
 	res = system(command.data);
@@ -119,9 +119,9 @@ restore_structure(PGLogicalSubscription *sub, const char *section)
 
 	initStringInfo(&command);
 	appendStringInfo(&command,
-					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
+					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"/tmp/pglogical-%d.dump\"",
 					 pg_restore, section, sub->target_if->dsn,
-					 "/tmp/pglogical.dump");
+					 MyProcPid);
 
 	res = system(command.data);
 	if (res != 0)
