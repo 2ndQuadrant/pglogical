@@ -91,6 +91,7 @@ CREATE VIEW pglogical.TABLES AS
 		  FROM pg_catalog.pg_class r,
 		       pg_catalog.pg_namespace n
 		 WHERE r.relkind = 'r'
+           AND r.relpersistence = 'p'
 		   AND n.oid = r.relnamespace
 		   AND n.nspname !~ '^pg_'
 		   AND n.nspname != 'information_schema'
@@ -131,6 +132,11 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_repl
 CREATE FUNCTION pglogical.replication_set_remove_table(set_name name, relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
 
+CREATE FUNCTION pglogical.alter_subscription_synchronize(subscription_name name, truncate boolean DEFAULT false)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_synchronize';
+
+CREATE FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_resynchronize_table';
 
 CREATE TABLE pglogical.queue (
     queued_at timestamp with time zone NOT NULL,

@@ -3,6 +3,7 @@
 SELECT pglogical.replicate_ddl_command($$
 CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_publicschema(id serial primary key, data text);
+CREATE TABLE public.test_nosync(id serial primary key, data text);
 CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
 $$);
  replicate_ddl_command 
@@ -30,6 +31,12 @@ SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_publicsch
  t
 (1 row)
 
+SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_nosync');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
 SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_strangeschema');
  replication_set_add_table 
 ---------------------------
@@ -38,6 +45,8 @@ SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schem
 
 INSERT INTO public.test_publicschema VALUES(1, 'a');
 INSERT INTO public.test_publicschema VALUES(2, 'b');
+INSERT INTO public.test_nosync VALUES(1, 'a');
+INSERT INTO public.test_nosync VALUES(2, 'b');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(1);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(2);
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
@@ -55,6 +64,12 @@ SELECT * FROM public.test_publicschema;
 \c regression
 -- move tables back to the subscribed replication set
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema', true);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'test_nosync', false);
  replication_set_add_table 
 ---------------------------
  t
@@ -116,6 +131,81 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
   4
 (4 rows)
 
+SELECT * FROM pglogical.alter_subscription_synchronize('test_subscription');
+ alter_subscription_synchronize 
+--------------------------------
+ t
+(1 row)
+
+DO $$
+-- give it 10 seconds to syncrhonize the tabes
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_nosync')) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
+-----------+------------+-------------------+--------------------+-------------
+ d         | 3848008564 | public            | test_nosync        | r
+ d         | 3848008564 | public            | test_publicschema  | r
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | r
+ f         | 3848008564 |                   |                    | r
+(4 rows)
+
+SELECT * FROM public.test_nosync;
+ id | data 
+----+------
+  1 | a
+  2 | b
+(2 rows)
+
+DELETE FROM public.test_publicschema WHERE id > 1;
+SELECT * FROM public.test_publicschema;
+ id | data 
+----+------
+  1 | a
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', 'test_publicschema');
+ alter_subscription_resynchronize_table 
+----------------------------------------
+ t
+(1 row)
+
+DO $$
+-- give it 10 seconds to syncrhonize the tabes
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_publicschema')) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
+-----------+------------+-------------------+--------------------+-------------
+ d         | 3848008564 | public            | test_nosync        | r
+ d         | 3848008564 | public            | test_publicschema  | r
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | r
+ f         | 3848008564 |                   |                    | r
+(4 rows)
+
+SELECT * FROM public.test_publicschema;
+ id | data 
+----+------
+  1 | a
+  2 | b
+  3 | c
+  4 | d
+(4 rows)
+
 \c regression
 SELECT plugin, slot_type, database, active FROM pg_replication_slots;
       plugin      | slot_type |  database  | active 
@@ -125,6 +215,7 @@ SELECT plugin, slot_type, database, active FROM pg_replication_slots;
 
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
+	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
 NOTICE:  drop cascades to 2 other objects
@@ -132,11 +223,21 @@ DETAIL:  table public.test_publicschema in replication set repset_test
 table public.test_publicschema in replication set default
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
+	DROP TABLE public.test_nosync CASCADE;
+	DROP SCHEMA "strange.schema-IS" CASCADE;
+
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  table public.test_nosync in replication set repset_test
+table public.test_nosync in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_publicschema CASCADE;
+	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
+	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
 NOTICE:  drop cascades to 2 other objects
@@ -144,6 +245,7 @@ DETAIL:  table strange.schema-IS.test_strangeschema in replication set repset_te
 table strange.schema-IS.test_strangeschema in replication set default
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
+	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
  replicate_ddl_command 

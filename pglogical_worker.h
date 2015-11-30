@@ -24,6 +24,7 @@ typedef enum {
 typedef struct PGLogicalApplyWorker
 {
 	Oid			subid;				/* Subscription id for apply worker. */
+	bool		sync_pending;		/* Is there new synchronization info pending?. */
 	XLogRecPtr	replay_stop_lsn;	/* Replay should stop here if defined. */
 } PGLogicalApplyWorker;
 

@@ -72,6 +72,9 @@ PG_FUNCTION_INFO_V1(pglogical_drop_subscription);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_disable);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_enable);
 
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_synchronize);
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_resynchronize_table);
+
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_alter_replication_set);
@@ -310,6 +313,121 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(true);
 }
+
+/*
+ * Synchronize all the missing tables.
+ */
+Datum
+pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	bool					truncate = PG_GETARG_BOOL(1);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGconn				   *conn;
+	List				   *tables;
+	ListCell			   *lc;
+	PGLogicalWorker		   *apply;
+
+	/* Read table list from provider. */
+	conn = pglogical_connect(sub->origin_if->dsn, "synchronize_subscription");
+	tables = pg_logical_get_remote_repset_tables(conn, sub->replication_sets);
+	PQfinish(conn);
+
+	/* Compare with sync status on subscriber. And add missing ones. */
+	foreach (lc, tables)
+	{
+		RangeVar	   *rv = (RangeVar *) lfirst(lc);
+		PGLogicalSyncStatus	   *oldsync;
+
+		oldsync = get_table_sync_status(sub->id, rv->schemaname, rv->relname,
+										true);
+		if (!oldsync)
+		{
+			PGLogicalSyncStatus	   newsync;
+
+			newsync.kind = SYNC_KIND_DATA;
+			newsync.subid = sub->id;
+			newsync.nspname = rv->schemaname;
+			newsync.relname = rv->relname;
+			newsync.status = SYNC_STATUS_INIT;
+			create_local_sync_status(&newsync);
+
+			if (truncate)
+				truncate_table(rv->schemaname, rv->relname);
+		}
+	}
+
+	/* Tell apply to re-read sync statuses. */
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+	apply = pglogical_apply_find(MyDatabaseId, sub->id);
+	if (apply)
+		apply->worker.apply.sync_pending = true;
+	LWLockRelease(PGLogicalCtx->lock);
+
+	pglogical_connections_changed();
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Resyncrhonize one existing table.
+ */
+Datum
+pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	Oid						reloid = PG_GETARG_OID(1);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSyncStatus	   *oldsync;
+	PGLogicalWorker		   *apply;
+	Relation				rel;
+	char				   *nspname,
+						   *relname;
+
+	rel = heap_open(reloid, AccessShareLock);
+
+	nspname = get_namespace_name(RelationGetNamespace(rel));
+	relname = RelationGetRelationName(rel);
+
+	/* Reset sync status of the table. */
+	oldsync = get_table_sync_status(sub->id, nspname, relname, true);
+	if (oldsync)
+	{
+		if (oldsync->status != SYNC_STATUS_READY &&
+			oldsync->status != SYNC_STATUS_NONE)
+			elog(ERROR, "table %s.%s is already being synchronized",
+				 nspname, relname);
+
+		set_table_sync_status(sub->id, nspname, relname, SYNC_STATUS_INIT);
+	}
+	else
+	{
+		PGLogicalSyncStatus	   newsync;
+
+		newsync.kind = SYNC_KIND_DATA;
+		newsync.subid = sub->id;
+		newsync.nspname = nspname;
+		newsync.relname = relname;
+		newsync.status = SYNC_STATUS_INIT;
+		create_local_sync_status(&newsync);
+	}
+
+	/* Tell apply to re-read sync statuses. */
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+	apply = pglogical_apply_find(MyDatabaseId, sub->id);
+	if (apply)
+		apply->worker.apply.sync_pending = true;
+	LWLockRelease(PGLogicalCtx->lock);
+
+	heap_close(rel, NoLock);
+
+	truncate_table(nspname, relname);
+
+	pglogical_connections_changed();
+
+	PG_RETURN_BOOL(true);
+}
+
 
 /*
  * Create new replication set.

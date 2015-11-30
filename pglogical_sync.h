@@ -70,5 +70,7 @@ extern List *get_unsynced_tables(Oid subid);
 extern bool wait_for_sync_status_change(Oid subid, char *nspname,
 										char *relname, char desired_state);
 
+extern void truncate_table(char *nspname, char *relname);
+
 #endif /* PGLOGICAL_SYNC_H */
 

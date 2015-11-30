@@ -101,7 +101,8 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 - `pglogical.create_subscription(subscription_name name, provider_dsn text,
   replication_sets text[], synchronize_structure boolean,
   synchronize_data boolean)`
-  Creates a subscription from current node to the provider node.
+  Creates a subscription from current node to the provider node. Command does
+  not block, just initiates the action.
 
   Parameters:
   - `subscription_name` - name of the subscription, must be unique
@@ -136,6 +137,24 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `immediate` - if true, the subscription is started immediately, otherwise
     it will be only started at the end of current transaction, default is false
+
+- `pglogical.alter_subscription_synchronize(subscription_name name, truncate bool)`
+  All unsynchronized tables in all sets are synchronized in a single operation.
+  Tables are copied and synchronized one by one. Command does not block, just
+  initiates the action.
+
+  Parameters:
+  - `subscription_name` - name of the existing subscription
+  - `truncate` - if true, tables will be truncated before copy, default false
+
+- `pglogical.alter_subscription_resynchronize_table(subscription_name name,
+  relation regclass)`
+  Resynchronize one existing table.
+  **WARNING: This function will truncate the table first.**
+
+  Parameters:
+  - `subscription_name` - name of the existing subscription
+  - `relation` - name of existing table, optinally qualified
 
 ### Replication sets
 

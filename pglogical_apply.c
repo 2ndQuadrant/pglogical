@@ -731,8 +731,6 @@ static void
 handle_truncate(QueuedMessage *queued_message)
 {
 	RangeVar	   *rv;
-	Oid				relid;
-	TruncateStmt   *truncate;
 
 	/*
 	 * If table doesn't exist locally, it can't be subscribed.
@@ -745,19 +743,7 @@ handle_truncate(QueuedMessage *queued_message)
 	if (check_syncing_relation(rv->schemaname, rv->relname))
 		return;
 
-	relid = RangeVarGetRelid(rv, AccessExclusiveLock, true);
-	if (relid == InvalidOid)
-		return;
-
-	/* Truncate the table. */
-	truncate = makeNode(TruncateStmt);
-	truncate->relations = list_make1(rv);
-	truncate->restart_seqs = false;
-	truncate->behavior = DROP_RESTRICT;
-
-	ExecuteTruncate(truncate);
-
-	CommandCounterIncrement();
+	truncate_table(rv->schemaname, rv->relname);
 }
 
 /*
@@ -1229,9 +1215,66 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		error_context_stack = errcallback.previous;
 }
 
+/*
+ * Load list of tables currently pending sync.
+ *
+ * Must be inside transaction.
+ */
+static void
+reread_unsynced_tables(Oid subid)
+{
+	MemoryContext	saved_ctx;
+	List		   *unsynced_tables;
+	ListCell	   *lc;
+
+	/* Cleanup first. */
+	if (list_length(SyncingTables) > 0)
+	{
+		ListCell	   *next;
+
+		for (lc = list_head(SyncingTables); lc; lc = next)
+		{
+			RangeVar	   *rv = (RangeVar *) lfirst(lc);
+
+			next = lnext(lc);
+
+			pfree(rv->schemaname);
+			pfree(rv->relname);
+			pfree(rv);
+			pfree(lc);
+		}
+
+		pfree(SyncingTables);
+		SyncingTables = NIL;
+
+	}
+
+	/* Read new state. */
+	unsynced_tables = get_unsynced_tables(subid);
+	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
+	foreach (lc, unsynced_tables)
+	{
+		RangeVar	   *rv = lfirst(lc);
+		SyncingTables = lappend(SyncingTables,
+								makeRangeVar(pstrdup(rv->schemaname),
+											 pstrdup(rv->relname), -1));
+	}
+
+	MemoryContextSwitchTo(saved_ctx);
+}
+
 static void
 process_syncing_tables(XLogRecPtr end_lsn)
 {
+	/* First check if we need to update the cached information. */
+	if (MyApplyWorker->sync_pending)
+	{
+		StartTransactionCommand();
+		MyApplyWorker->sync_pending = false;
+		reread_unsynced_tables(MyApplyWorker->subid);
+		CommitTransactionCommand();
+	}
+
 	/* Process currently pending sync tables. */
 	if (list_length(SyncingTables) > 0)
 	{
@@ -1340,6 +1383,7 @@ start_sync_worker(RangeVar *rv)
 	worker.worker_type = PGLOGICAL_WORKER_SYNC;
 	worker.dboid = MyPGLogicalWorker->dboid;
 	worker.worker.apply.subid = MyApplyWorker->subid;
+	worker.worker.apply.sync_pending = false; /* Makes no sense for sync worker. */
 
 	/* Tell the worker to stop at current position. */
 	worker.worker.sync.apply.replay_stop_lsn = replorigin_session_origin_lsn;
@@ -1360,8 +1404,6 @@ pglogical_apply_main(Datum main_arg)
 	PGLogicalSubscription  *sub;
 	MemoryContext	saved_ctx;
 	char		   *repsets;
-	List		   *unsynced_tables;
-	ListCell	   *lc;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
@@ -1415,18 +1457,6 @@ pglogical_apply_main(Datum main_arg)
 	pglogical_start_replication(streamConn, NameStr(slot_name),
 								origin_startpos, "all", repsets, NULL);
 	pfree(repsets);
-
-	/* Load list of tables currently pending sync. */
-	unsynced_tables = get_unsynced_tables(sub->id);
-	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-	foreach (lc, unsynced_tables)
-	{
-		RangeVar	   *rv = lfirst(lc);
-		SyncingTables = lappend(SyncingTables,
-							makeRangeVar(pstrdup(rv->schemaname),
-										 pstrdup(rv->relname), -1));
-	}
-	MemoryContextSwitchTo(saved_ctx);
 
 	CommitTransactionCommand();
 

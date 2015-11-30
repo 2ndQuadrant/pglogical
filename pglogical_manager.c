@@ -101,6 +101,8 @@ manage_apply_workers(void)
 		apply.worker_type = PGLOGICAL_WORKER_APPLY;
 		apply.dboid = MyPGLogicalWorker->dboid;
 		apply.worker.apply.subid = sub->id;
+		apply.worker.apply.sync_pending = true;
+		apply.worker.apply.replay_stop_lsn = InvalidXLogRecPtr;
 
 		pglogical_worker_register(&apply);
 	}

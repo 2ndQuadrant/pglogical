@@ -13,11 +13,66 @@
 
 #include "postgres.h"
 
+#include "lib/stringinfo.h"
+
+#include "nodes/makefuncs.h"
+
 #include "catalog/pg_type.h"
 
+#include "pglogical_repset.h"
 #include "pglogical_rpc.h"
+#include "pglogical.h"
 
 #define atooid(x)  ((Oid) strtoul((x), NULL, 10))
+
+/*
+ * Fetch list of tables that are grouped in specified replication sets.
+ */
+List *
+pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
+{
+	PGresult   *res;
+	int			i;
+	List	   *tables = NIL;
+	ListCell   *lc;
+	StringInfoData	query;
+	StringInfoData	repsetarr;
+
+	initStringInfo(&repsetarr);
+	appendStringInfo(&repsetarr, "{");
+	foreach (lc, replication_sets)
+	{
+		char	   *repset_name = lfirst(lc);
+		appendStringInfo(&repsetarr, "%s", repset_name);
+	}
+	appendStringInfo(&repsetarr, "}");
+
+	/* Build COPY TO query. */
+	initStringInfo(&query);
+	appendStringInfo(&query, "SELECT nspname, relname FROM %s.tables WHERE set_name = ANY(%s)",
+					 EXTENSION_NAME,
+					 PQescapeLiteral(conn, repsetarr.data,
+									 repsetarr.len));
+
+	res = PQexec(conn, query.data);
+	/* TODO: better error message */
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		elog(ERROR, "could not get table list");
+
+	for (i = 0; i < PQntuples(res); i++)
+	{
+		RangeVar *rv;
+
+		rv = makeRangeVar(pstrdup(PQgetvalue(res, i, 0)),
+						  pstrdup(PQgetvalue(res, i, 1)), -1);
+
+		tables = lappend(tables, rv);
+	}
+
+	PQclear(res);
+
+	return tables;
+}
 
 /*
  * Drops replication slot on remote node that has been used by the local node.

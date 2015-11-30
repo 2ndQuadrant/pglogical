@@ -24,8 +24,10 @@
 #include "access/xact.h"
 
 #include "catalog/indexing.h"
+#include "catalog/namespace.h"
 
 #include "commands/dbcommands.h"
+#include "commands/tablecmds.h"
 
 #include "lib/stringinfo.h"
 
@@ -343,56 +345,6 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 }
 
 /*
- * Fetch list of tables that are grouped in specified replication sets.
- */
-static List *
-get_copy_tables(PGconn *origin_conn, List *replication_sets)
-{
-	PGresult   *res;
-	int			i;
-	List	   *tables = NIL;
-	ListCell   *lc;
-	StringInfoData	query;
-	StringInfoData	repsetarr;
-
-	initStringInfo(&repsetarr);
-	appendStringInfo(&repsetarr, "{");
-	foreach (lc, replication_sets)
-	{
-		PGLogicalRepSet *rs = lfirst(lc);
-
-		appendStringInfo(&repsetarr, "%s", rs->name);
-	}
-	appendStringInfo(&repsetarr, "}");
-
-	/* Build COPY TO query. */
-	initStringInfo(&query);
-	appendStringInfo(&query, "SELECT nspname, relname FROM %s.tables WHERE set_name = ANY(%s)",
-					 EXTENSION_NAME,
-					 PQescapeLiteral(origin_conn, repsetarr.data,
-									 repsetarr.len));
-
-	res = PQexec(origin_conn, query.data);
-	/* TODO: better error message */
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		elog(ERROR, "could not get table list");
-
-	for (i = 0; i < PQntuples(res); i++)
-	{
-		RangeVar *rv;
-
-		rv = makeRangeVar(pstrdup(PQgetvalue(res, i, 0)),
-						  pstrdup(PQgetvalue(res, i, 1)), -1);
-
-		tables = lappend(tables, rv);
-	}
-
-	PQclear(res);
-
-	return tables;
-}
-
-/*
  * Copy data from origin node to target node.
  *
  * Creates new connection to origin and target.
@@ -438,7 +390,7 @@ copy_tables_data(const char *origin_dsn, const char *target_dsn,
  * merged to single function because we need to get list of tables here after
  * the transaction is bound to a snapshot.
  */
-static void
+static List *
 copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 						   const char *origin_snapshot, List *replication_sets)
 {
@@ -452,7 +404,8 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 	start_copy_origin_tx(origin_conn, origin_snapshot);
 
 	/* Get tables to copy from origin node. */
-	tables = get_copy_tables(origin_conn, replication_sets);
+	tables = pg_logical_get_remote_repset_tables(origin_conn,
+												 replication_sets);
 
 	/* Connect to target node. */
 	target_conn = pglogical_connect(target_dsn, EXTENSION_NAME "_copy");
@@ -472,6 +425,8 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 	/* Finish the transactions and disconnect. */
 	finish_copy_origin_tx(origin_conn);
 	finish_copy_target_tx(target_conn);
+
+	return tables;
 }
 
 void
@@ -558,6 +513,9 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		/* Copy data. */
 		if (SyncKindData(sync->kind))
 		{
+			List	   *tables;
+			ListCell   *lc;
+
 			elog(INFO, "synchronizing data");
 
 			status = SYNC_STATUS_DATA;
@@ -565,9 +523,35 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 			set_subscription_sync_status(sub->id, status);
 			CommitTransactionCommand();
 
-			copy_replication_sets_data(sub->origin_if->dsn,
-									   sub->target_if->dsn, snapshot,
-									   sub->replication_sets);
+			tables = copy_replication_sets_data(sub->origin_if->dsn,
+												sub->target_if->dsn, snapshot,
+												sub->replication_sets);
+
+			/* Store info about all the synchronized tables. */
+			StartTransactionCommand();
+			foreach (lc, tables)
+			{
+				RangeVar	   *rv = (RangeVar *) lfirst(lc);
+				PGLogicalSyncStatus	   *oldsync;
+
+				oldsync = get_table_sync_status(sub->id, rv->schemaname, rv->relname, true);
+				if (oldsync)
+				{
+					set_table_sync_status(sub->id, rv->schemaname, rv->relname, SYNC_STATUS_READY);
+				}
+				else
+				{
+					PGLogicalSyncStatus	   newsync;
+
+					newsync.kind = SYNC_KIND_FULL;
+					newsync.subid = sub->id;
+					newsync.nspname = rv->schemaname;
+					newsync.relname = rv->relname;
+					newsync.status = SYNC_STATUS_INIT;
+					create_local_sync_status(&newsync);
+				}
+			}
+			CommitTransactionCommand();
 		}
 
 		/* Restore post-data structure (indexes, constraints, etc). */
@@ -1277,4 +1261,31 @@ wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
 	}
 
 	return false; /* Silence compiler. */
+}
+
+/*
+ * Truncates table if it exists.
+ */
+void
+truncate_table(char *nspname, char *relname)
+{
+	RangeVar	   *rv;
+	Oid				relid;
+	TruncateStmt   *truncate;
+
+	rv = makeRangeVar(nspname, relname, -1);
+
+	relid = RangeVarGetRelid(rv, AccessExclusiveLock, true);
+	if (relid == InvalidOid)
+		return;
+
+	/* Truncate the table. */
+	truncate = makeNode(TruncateStmt);
+	truncate->relations = list_make1(rv);
+	truncate->restart_seqs = false;
+	truncate->behavior = DROP_RESTRICT;
+
+	ExecuteTruncate(truncate);
+
+	CommandCounterIncrement();
 }
