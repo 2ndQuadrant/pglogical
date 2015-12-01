@@ -72,8 +72,13 @@ PG_FUNCTION_INFO_V1(pglogical_drop_subscription);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_disable);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_enable);
 
+PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_add_replication_set);
+PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_remove_replication_set);
+
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_synchronize);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_resynchronize_table);
+
+PG_FUNCTION_INFO_V1(pglogical_show_subscription_table);
 
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
@@ -280,7 +285,8 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		apply = pglogical_apply_find(MyDatabaseId, sub->id);
-		kill(apply->proc->pid, SIGTERM);
+		if (apply)
+			kill(apply->proc->pid, SIGTERM);
 		LWLockRelease(PGLogicalCtx->lock);
 	}
 
@@ -312,6 +318,87 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Add replication set to subscriber.
+ */
+Datum
+pglogical_alter_subscriber_add_replication_set(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	ListCell			   *lc;
+	PGLogicalWorker		   *apply;
+
+	foreach (lc, sub->replication_sets)
+	{
+		char	   *rs = (char *) lfirst(lc);
+
+		if (strcmp(rs, repset_name) == 0)
+			PG_RETURN_BOOL(false);
+	}
+
+	sub->replication_sets = lappend(sub->replication_sets, repset_name);
+	alter_subscription(sub);
+
+	/* Apply as to reconnect to be able to receive new repset. */
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+	apply = pglogical_apply_find(MyDatabaseId, sub->id);
+	if (apply)
+		kill(apply->proc->pid, SIGTERM);
+	LWLockRelease(PGLogicalCtx->lock);
+
+	pglogical_connections_changed();
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Remove replication set to subscriber.
+ */
+Datum
+pglogical_alter_subscriber_remove_replication_set(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	ListCell			   *lc,
+						   *next,
+						   *prev;
+	PGLogicalWorker		   *apply;
+
+	prev = NULL;
+	for (lc = list_head(sub->replication_sets); lc; lc = next)
+	{
+		char	   *rs = (char *) lfirst(lc);
+
+		/* We might delete the cell so advance it now. */
+		next = lnext(lc);
+
+		if (strcmp(rs, repset_name) == 0)
+		{
+			sub->replication_sets = list_delete_cell(sub->replication_sets,
+													 lc, prev);
+			alter_subscription(sub);
+
+			/* Apply as to reconnect to be able to receive new repset. */
+			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+			apply = pglogical_apply_find(MyDatabaseId, sub->id);
+			if (apply)
+				kill(apply->proc->pid, SIGTERM);
+			LWLockRelease(PGLogicalCtx->lock);
+
+			pglogical_connections_changed();
+
+			PG_RETURN_BOOL(true);
+		}
+
+		prev = lc;
+	}
+
+	PG_RETURN_BOOL(false);
 }
 
 /*
@@ -428,6 +515,97 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(true);
 }
 
+static char *
+sync_status_to_string(char status)
+{
+	switch (status)
+	{
+		case SYNC_STATUS_INIT:
+			return "sync_init";
+		case SYNC_STATUS_STRUCTURE:
+			return "sync_structure";
+		case SYNC_STATUS_DATA:
+			return "sync_data";
+		case SYNC_STATUS_CONSTAINTS:
+			return "sync_constraints";
+		case SYNC_STATUS_SYNCWAIT:
+			return "sync_waiting";
+		case SYNC_STATUS_CATCHUP:
+			return "catchup";
+		case SYNC_STATUS_READY:
+			return "syncronized";
+		default:
+			return "unknown";
+	}
+}
+
+/*
+ * Show info about one table.
+ */
+Datum
+pglogical_show_subscription_table(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	Oid						reloid = PG_GETARG_OID(1);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	char				   *nspname;
+	char				   *relname;
+	PGLogicalSyncStatus	   *sync;
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	TupleDesc	tupdesc;
+	Tuplestorestate *tupstore;
+	MemoryContext per_query_ctx;
+	MemoryContext oldcontext;
+	Datum		values[3];
+	bool		nulls[3];
+
+	/* check to see if caller supports us returning a tuplestore */
+	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that cannot accept a set")));
+	if (!(rsinfo->allowedModes & SFRM_Materialize))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("materialize mode required, but it is not " \
+						"allowed in this context")));
+
+	/* Switch into long-lived context to construct returned data structures */
+	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	tupstore = tuplestore_begin_heap(true, false, work_mem);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	nspname = get_namespace_name(get_rel_namespace(reloid));
+	relname = get_rel_name(reloid);
+
+	memset(values, 0, sizeof(values));
+	memset(nulls, 0, sizeof(nulls));
+
+	values[0] = CStringGetTextDatum(nspname);
+	values[1] = CStringGetTextDatum(relname);
+
+	/* Reset sync status of the table. */
+	sync = get_table_sync_status(sub->id, nspname, relname, true);
+	if (sync)
+		values[2] = CStringGetTextDatum(sync_status_to_string(sync->status));
+	else
+		values[2] = CStringGetTextDatum("unknown");
+
+	tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+	tuplestore_donestoring(tupstore);
+
+	PG_RETURN_VOID();
+}
 
 /*
  * Create new replication set.

@@ -6,6 +6,7 @@ CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_publicschema(id serial primary key, data text);
 CREATE TABLE public.test_nosync(id serial primary key, data text);
 CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
+CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key);
 $$);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
@@ -17,6 +18,7 @@ SELECT * FROM pglogical.create_replication_set('repset_test');
 SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_publicschema');
 SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_nosync');
 SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_strangeschema');
+SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_diff_repset');
 
 INSERT INTO public.test_publicschema VALUES(1, 'a');
 INSERT INTO public.test_publicschema VALUES(2, 'b');
@@ -35,6 +37,7 @@ SELECT * FROM public.test_publicschema;
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema', true);
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_nosync', false);
 SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS".test_strangeschema', true);
+
 
 \c postgres
 DO $$
@@ -101,11 +104,35 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
 
 SELECT * FROM public.test_publicschema;
 
-\c regression
-SELECT plugin, slot_type, database, active FROM pg_replication_slots;
+SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 
+SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'repset_test');
+
+\c regression
+
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(1);
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(2);
+
+SELECT * FROM pglogical.replication_set_remove_table('repset_test', '"strange.schema-IS".test_strangeschema');
+SELECT * FROM pglogical.replication_set_remove_table('default', '"strange.schema-IS".test_strangeschema');
+
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6);
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+
+\c postgres
+
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+SELECT * FROM "strange.schema-IS".test_strangeschema;
+
+SELECT * FROM pglogical.alter_subscriber_remove_replication_set('test_subscription', 'repset_test');
+
+\c regression
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;

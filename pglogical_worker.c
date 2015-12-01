@@ -216,6 +216,7 @@ pglogical_manager_find(Oid dboid)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_MANAGER &&
+			PGLogicalCtx->workers[i].proc &&
 			dboid == PGLogicalCtx->workers[i].dboid)
 			return &PGLogicalCtx->workers[i];
 	}
@@ -236,6 +237,7 @@ pglogical_apply_find(Oid dboid, Oid subscriberid)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
+			PGLogicalCtx->workers[i].proc &&
 			dboid == PGLogicalCtx->workers[i].dboid &&
 			subscriberid == PGLogicalCtx->workers[i].worker.apply.subid)
 			return &PGLogicalCtx->workers[i];
@@ -258,6 +260,7 @@ pglogical_apply_find_all(Oid dboid)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
+			PGLogicalCtx->workers[i].proc &&
 			dboid == PGLogicalCtx->workers[i].dboid)
 			res = lappend(res, &PGLogicalCtx->workers[i]);
 	}
@@ -279,7 +282,7 @@ pglogical_sync_find(Oid dboid, Oid subscriberid, char *nspname, char *relname)
 	{
 		PGLogicalWorker *w = &PGLogicalCtx->workers[i];
 		if (w->worker_type == PGLOGICAL_WORKER_SYNC && dboid == w->dboid &&
-			subscriberid == w->worker.apply.subid &&
+			w->proc && subscriberid == w->worker.apply.subid &&
 			strcmp(NameStr(w->worker.sync.nspname), nspname) == 0 &&
 			strcmp(NameStr(w->worker.sync.relname), relname) == 0)
 			return w;
@@ -304,7 +307,7 @@ pglogical_sync_find_all(Oid dboid, Oid subscriberid)
 	{
 		PGLogicalWorker *w = &PGLogicalCtx->workers[i];
 		if (w->worker_type == PGLOGICAL_WORKER_SYNC && dboid == w->dboid &&
-			subscriberid == w->worker.apply.subid)
+			w->proc && subscriberid == w->worker.apply.subid)
 			res = lappend(res, w);
 	}
 
