@@ -156,6 +156,31 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `relation` - name of existing table, optinally qualified
 
+- `pglogical.show_subscription_table(subscription_name name,
+  relation regclass)`
+  Shows syncrhonization status of a table.
+
+  Parameters:
+  - `subscription_name` - name of the existing subscription
+  - `relation` - name of existing table, optinally qualified
+
+- `pglogical.alter_subscriber_add_replication_set(subscription_name name,
+  replication_set name)`
+  Adds one replication set into a subscriber. Does not synchronize, only
+  activates consumption of events.
+
+  Parameters:
+  - `subscription_name` - name of the existing subscription
+  - `replication_set` - name of replication set to add
+
+- `pglogical.alter_subscriber_remove_replication_set(subscription_name name,
+  replication_set name)`
+  Removes one replication set from a subscriber.
+
+  Parameters:
+  - `subscription_name` - name of the existing subscription
+  - `replication_set` - name of replication set to remove
+
 ### Replication sets
 
 Replication sets provide a mechanism to control which tables in the database
