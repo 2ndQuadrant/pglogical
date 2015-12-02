@@ -1324,7 +1324,8 @@ process_syncing_tables(XLogRecPtr end_lsn)
 										  rv->relname, SYNC_STATUS_CATCHUP);
 					CommitTransactionCommand();
 
-					SetLatch(&worker->proc->procLatch);
+					if (pglogical_worker_running(worker))
+						SetLatch(&worker->proc->procLatch);
 					LWLockRelease(PGLogicalCtx->lock);
 
 					if (wait_for_sync_status_change(MyApplyWorker->subid,

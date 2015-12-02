@@ -708,7 +708,7 @@ pglogical_sync_worker_finish(PGconn *applyconn)
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyPGLogicalWorker->dboid,
 								 MyApplyWorker->subid);
-	if (apply)
+	if (pglogical_worker_running(apply))
 		SetLatch(&apply->proc->procLatch);
 	LWLockRelease(PGLogicalCtx->lock);
 }

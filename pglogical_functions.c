@@ -317,7 +317,8 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		manager = pglogical_manager_find(MyDatabaseId);
-		SetLatch(&manager->proc->procLatch);
+		if (pglogical_worker_running(manager))
+			SetLatch(&manager->proc->procLatch);
 		LWLockRelease(PGLogicalCtx->lock);
 	}
 
