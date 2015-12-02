@@ -940,7 +940,9 @@ stringlist_to_identifierstr(List *strings)
 
 	foreach (lc, strings)
 	{
-		if (!first)
+		if (first)
+			first = false;
+		else
 			appendStringInfoChar(&res, ',');
 
 		appendStringInfoString(&res, quote_identifier((char *)lfirst(lc)));

@@ -5,6 +5,7 @@ CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_publicschema(id serial primary key, data text);
 CREATE TABLE public.test_nosync(id serial primary key, data text);
 CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
+CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key);
 $$);
  replicate_ddl_command 
 -----------------------
@@ -38,6 +39,12 @@ SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_nosync');
 (1 row)
 
 SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_strangeschema');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_diff_repset');
  replication_set_add_table 
 ---------------------------
  t
@@ -206,13 +213,85 @@ SELECT * FROM public.test_publicschema;
   4 | d
 (4 rows)
 
-\c regression
-SELECT plugin, slot_type, database, active FROM pg_replication_slots;
-      plugin      | slot_type |  database  | active 
-------------------+-----------+------------+--------
- pglogical_output | logical   | regression | t
+SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+ nspname |      relname      |   status    
+---------+-------------------+-------------
+ public  | test_publicschema | syncronized
 (1 row)
 
+SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'repset_test');
+ alter_subscriber_add_replication_set 
+--------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscriber_remove_replication_set('test_subscription', 'default');
+ alter_subscriber_remove_replication_set 
+-----------------------------------------
+ t
+(1 row)
+
+\c regression
+SELECT * FROM pglogical.replication_set_remove_table('repset_test', '"strange.schema-IS".test_strangeschema');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(1);
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(2);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6);
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_stat_replication) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+ id 
+----
+  1
+  2
+(2 rows)
+
+SELECT * FROM "strange.schema-IS".test_strangeschema;
+ id 
+----
+  1
+  2
+  3
+  4
+(4 rows)
+
+SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'default');
+ alter_subscriber_add_replication_set 
+--------------------------------------
+ t
+(1 row)
+
+\c regression
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_stat_replication) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP TABLE public.test_nosync CASCADE;
@@ -234,15 +313,17 @@ CONTEXT:  during execution of queued SQL statement:
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
-NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table "strange.schema-IS".test_strangeschema
+drop cascades to table "strange.schema-IS".test_diff_repset
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table strange.schema-IS.test_strangeschema in replication set repset_test
-table strange.schema-IS.test_strangeschema in replication set default
+DETAIL:  table strange.schema-IS.test_strangeschema in replication set default
+table strange.schema-IS.test_diff_repset in replication set repset_test
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP TABLE public.test_nosync CASCADE;
