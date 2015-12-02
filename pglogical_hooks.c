@@ -53,11 +53,12 @@ bool pglogical_txn_filter_hook(struct PGLogicalTxnFilterArgs *txnfilter_args);
 
 typedef struct PGLogicalHooksPrivate
 {
-    const char *forward_origin;
 	Oid			local_node_id;
 	/* List of PGLogicalRepSet */
 	List	   *replication_sets;
 	RangeVar   *replicate_only_table;
+	/* List of origin names */
+    List	   *forward_origins;
 } PGLogicalHooksPrivate;
 
 void
@@ -81,12 +82,29 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 	{
 		DefElem    *elem = lfirst(option);
 
-		if (pg_strcasecmp("pglogical.forward_origin", elem->defname) == 0)
+		if (pg_strcasecmp("pglogical.forward_origins", elem->defname) == 0)
 		{
-			if (elem->arg == NULL || strVal(elem->arg) == NULL)
-				elog(ERROR, "pglogical.forward_origin may not be NULL");
+			List		   *forward_origin_names;
+			ListCell	   *lc;
 
-			private->forward_origin = pstrdup(strVal(elem->arg));
+			if (elem->arg == NULL || strVal(elem->arg) == NULL)
+				elog(ERROR, "pglogical.forward_origins may not be NULL");
+
+			elog(DEBUG2, "pglogical startup hook got forward origins %s", strVal(elem->arg));
+
+			if (!SplitIdentifierString(strVal(elem->arg), ',', &forward_origin_names))
+				elog(ERROR, "Could not parse forward origin name list %s", strVal(elem->arg));
+
+			foreach (lc, forward_origin_names)
+			{
+				char	   *origin_name = (char *) lfirst(lc);
+
+				if (strcmp(origin_name, REPLICATION_ORIGIN_ALL) != 0)
+					elog(ERROR, "Only \"%s\" is allowed in forward origin name list at the moment, found \"%s\"",
+						 REPLICATION_ORIGIN_ALL, origin_name);
+			}
+
+			private->forward_origins = forward_origin_names;
 
 			continue;
 		}
@@ -176,9 +194,9 @@ pglogical_txn_filter_hook(struct PGLogicalTxnFilterArgs *txnfilter_args)
 		/*
 		 * Otherwise, ignore the origin passed in txnfilter_args->origin_id,
 		 * and just forward all or nothing based on the configuration option
-		 * 'forward_origin'.
+		 * 'forward_origins'.
 		 */
-		ret = strcmp(private->forward_origin, REPLICATION_ORIGIN_ALL) == 0;
+		ret = list_length(private->forward_origins) > 0;
 
 	return ret;
 }

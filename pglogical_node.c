@@ -83,9 +83,10 @@ typedef struct SubscriptionTuple
 	bool		sub_sync_structure;
 	bool		sub_sync_data;
 	text		sub_replication_sets[1];
+	text		sub_forward_origins[1];
 } SubscriptionTuple;
 
-#define Natts_subscription			10
+#define Natts_subscription			11
 #define Anum_sub_id					1
 #define Anum_sub_name				2
 #define Anum_sub_origin				3
@@ -96,6 +97,7 @@ typedef struct SubscriptionTuple
 #define Anum_sub_sync_structure		8
 #define Anum_sub_sync_data			9
 #define Anum_sub_replication_sets	10
+#define Anum_sub_forward_origins	11
 
 /*
  * Add new node to catalog.
@@ -610,6 +612,12 @@ create_subscription(PGLogicalSubscription *sub)
 	else
 		nulls[Anum_sub_replication_sets - 1] = true;
 
+	if (list_length(sub->forward_origins) > 0)
+		values[Anum_sub_forward_origins - 1] =
+			PointerGetDatum(strlist_to_textarray(sub->forward_origins));
+	else
+		nulls[Anum_sub_forward_origins - 1] = true;
+
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
@@ -685,6 +693,12 @@ alter_subscription(PGLogicalSubscription *sub)
 			PointerGetDatum(strlist_to_textarray(sub->replication_sets));
 	else
 		nulls[Anum_sub_replication_sets - 1] = true;
+
+	if (list_length(sub->forward_origins) > 0)
+		values[Anum_sub_forward_origins - 1] =
+			PointerGetDatum(strlist_to_textarray(sub->forward_origins));
+	else
+		nulls[Anum_sub_forward_origins - 1] = true;
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -769,6 +783,17 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 		List		   *repset_names;
 		repset_names = textarray_to_list(DatumGetArrayTypeP(d));
 		sub->replication_sets = repset_names;
+	}
+
+	/* Get origin forwarding. */
+	d = heap_getattr(tuple, Anum_sub_forward_origins, desc, &isnull);
+	if (isnull)
+		sub->forward_origins = NIL;
+	else
+	{
+		List		   *forward_origin_names;
+		forward_origin_names = textarray_to_list(DatumGetArrayTypeP(d));
+		sub->forward_origins = forward_origin_names;
 	}
 
 	return sub;

@@ -172,12 +172,16 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 Datum
 pglogical_create_subscription(PG_FUNCTION_ARGS)
 {
+
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	char				   *provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	ArrayType			   *rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
+	bool					sync_structure = PG_GETARG_BOOL(3);
+	bool					sync_data = PG_GETARG_BOOL(4);
+	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(5);
 	PGconn				   *conn;
 	PGLogicalSubscription	sub;
 	PGLogicalSyncStatus		sync;
-	char				   *provider_dsn;
-	bool					sync_structure = PG_GETARG_BOOL(3);
-	bool					sync_data = PG_GETARG_BOOL(4);
 	PGLogicalNode			origin;
 	PGlogicalInterface		originif;
 	PGLogicalLocalNode     *localnode;
@@ -187,7 +191,6 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	localnode = get_local_node(true);
 
 	/* Now, fetch info about remote node. */
-	provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	conn = pglogical_connect(provider_dsn, "create_subscription");
 	pglogical_remote_node_info(conn, &origin.id, &origin.name, NULL, NULL, NULL);
 	PQfinish(conn);
@@ -210,10 +213,11 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	targetif.id = localnode->interface->id;
 	targetif.nodeid = localnode->node->id;
 	sub.id = InvalidOid;
-	sub.name = NameStr(*PG_GETARG_NAME(0));
+	sub.name = sub_name;
 	sub.origin_if = &originif;
 	sub.target_if = &targetif;
-	sub.replication_sets = textarray_to_list(PG_GETARG_ARRAYTYPE_P(2));
+	sub.replication_sets = textarray_to_list(rep_set_names);
+	sub.forward_origins = textarray_to_list(forward_origin_names);
 	sub.enabled = true;
 	create_subscription(&sub);
 

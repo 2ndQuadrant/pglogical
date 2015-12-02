@@ -1404,6 +1404,7 @@ pglogical_apply_main(Datum main_arg)
 	PGLogicalSubscription  *sub;
 	MemoryContext	saved_ctx;
 	char		   *repsets;
+	char		   *origins;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
@@ -1454,8 +1455,9 @@ pglogical_apply_main(Datum main_arg)
 	streamConn = pglogical_connect_replica(sub->origin_if->dsn, sub->name);
 
 	repsets = stringlist_to_identifierstr(sub->replication_sets);
+	origins = stringlist_to_identifierstr(sub->forward_origins);
 	pglogical_start_replication(streamConn, NameStr(slot_name),
-								origin_startpos, "all", repsets, NULL);
+								origin_startpos, origins, repsets, NULL);
 	pfree(repsets);
 
 	CommitTransactionCommand();

@@ -30,6 +30,7 @@ CREATE TABLE pglogical.subscription (
 	sub_sync_structure boolean DEFAULT true,
 	sub_sync_data boolean DEFAULT true,
 	sub_replication_sets text[],
+	sub_forward_origins text[],
 	UNIQUE (sub_origin, sub_target)
 );
 
@@ -49,7 +50,8 @@ CREATE FUNCTION pglogical.drop_node(mode_name name, ifexists boolean DEFAULT fal
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_node';
 
 CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
-	replication_sets text[] = '{default}', synchronize_structure boolean = true, synchronize_data boolean = true)
+	replication_sets text[] = '{default}', synchronize_structure boolean = true, synchronize_data boolean = true,
+	forward_origins text[] = '{all}')
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';
 CREATE FUNCTION pglogical.drop_subscription(subscription_name name, ifexists boolean DEFAULT false)
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_subscription';
