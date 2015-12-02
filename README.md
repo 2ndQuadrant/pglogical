@@ -27,10 +27,10 @@ automatic and configurable conflict resolution (some, but not all aspects requir
 
 DDL replication is not supported; DDL is the responsibility of the user. As such, long term cross-version replication is not considered a design target, though it may often work.
 
-* Currently pglogical replication requires superuser. It may be later extended to user with replication privileges. 
-* UNLOGGED and TEMP tables will not and cannot be replicated. 
+* Currently pglogical replication requires superuser. It may be later extended to user with replication privileges.
+* UNLOGGED and TEMP tables will not and cannot be replicated.
 * Updates and Deletes cannot be replicated for tables that lack both a primary key and a replica identity - we have no way to find the tuple that should be updated/deleted since there is no unique identifier.
-* `pglogical_output` needs to be installed on both provider and subscriber. 
+* `pglogical_output` needs to be installed on both provider and subscriber.
 
 ## Usage
 
@@ -86,7 +86,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   Parameters:
   - `node_name` - name of the new node, only one node is allowed per database
   - `dsn` - connection string to the node, for nodes that are supposed to be
-    providers, this should be reacheble from outside
+    providers, this should be reachable from outside
 
 - `pglogical.pglogical_drop_node(node_name name, ifexists bool)`
   Drops the pglogical node.
@@ -100,7 +100,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 
 - `pglogical.create_subscription(subscription_name name, provider_dsn text,
   replication_sets text[], synchronize_structure boolean,
-  synchronize_data boolean)`
+  synchronize_data boolean, forward_origins text[])`
   Creates a subscription from current node to the provider node. Command does
   not block, just initiates the action.
 
@@ -113,6 +113,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     provider to the subscriber, default true
   - `synchronize_data` - specifies if to synchronize data from provider to
     the subscriber, default true
+  - `forward_origins` - array of origin names to forward, currently only
+    supported values are empty array meaning don't forward any changes
+    that didn't originate on provider node, or "all" which means replicate all
+    changes no matter what is their origin, default is "all"
 
 - `pglogical.pglogical_drop_subscription(subscription_name name, ifexists bool)`
   Disconnects the subscription and removes it from the catalog.
@@ -154,15 +158,15 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 
   Parameters:
   - `subscription_name` - name of the existing subscription
-  - `relation` - name of existing table, optinally qualified
+  - `relation` - name of existing table, optionally qualified
 
 - `pglogical.show_subscription_table(subscription_name name,
   relation regclass)`
-  Shows syncrhonization status of a table.
+  Shows synchronization status of a table.
 
   Parameters:
   - `subscription_name` - name of the existing subscription
-  - `relation` - name of existing table, optinally qualified
+  - `relation` - name of existing table, optionally qualified
 
 - `pglogical.alter_subscriber_add_replication_set(subscription_name name,
   replication_set name)`
@@ -273,9 +277,10 @@ replication set `configuration`.
 
 ## Conflicts
 
-In case the node is subscribed to multiple providers, conflicts between the
-incomming changes can arise. These are automatically detected and can be acted
-on depending on the configuration.
+In case the node is subscribed to multiple providers, or when local writes
+happen on a subscriber, conflicts can arise for the incoming changes can
+arise. These are automatically detected and can be acted on depending on the
+configuration.
 
 The configuration of the conflicts resolver is done via the
 `pglogical.conflict_resolution` setting. The supported values for the
