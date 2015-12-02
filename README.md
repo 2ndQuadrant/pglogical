@@ -278,9 +278,8 @@ replication set `configuration`.
 ## Conflicts
 
 In case the node is subscribed to multiple providers, or when local writes
-happen on a subscriber, conflicts can arise for the incoming changes can
-arise. These are automatically detected and can be acted on depending on the
-configuration.
+happen on a subscriber, conflicts can arise for the incoming changes. These
+are automatically detected and can be acted on depending on the configuration.
 
 The configuration of the conflicts resolver is done via the
 `pglogical.conflict_resolution` setting. The supported values for the
