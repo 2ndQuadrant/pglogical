@@ -90,5 +90,6 @@ extern PGLogicalWorker *pglogical_sync_find(Oid dboid, Oid subid,
 extern List *pglogical_sync_find_all(Oid dboid, Oid subscriberid);
 
 extern PGLogicalWorker *pglogical_get_worker(int slot);
+extern bool pglogical_worker_running(PGLogicalWorker *w);
 
 #endif /* PGLOGICAL_WORKER_H */

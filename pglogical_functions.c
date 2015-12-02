@@ -289,7 +289,7 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		apply = pglogical_apply_find(MyDatabaseId, sub->id);
-		if (apply)
+		if (pglogical_worker_running(apply))
 			kill(apply->proc->pid, SIGTERM);
 		LWLockRelease(PGLogicalCtx->lock);
 	}
@@ -350,7 +350,7 @@ pglogical_alter_subscriber_add_replication_set(PG_FUNCTION_ARGS)
 	/* Apply as to reconnect to be able to receive new repset. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (apply)
+	if (pglogical_worker_running(apply))
 		kill(apply->proc->pid, SIGTERM);
 	LWLockRelease(PGLogicalCtx->lock);
 
@@ -390,7 +390,7 @@ pglogical_alter_subscriber_remove_replication_set(PG_FUNCTION_ARGS)
 			/* Apply as to reconnect to be able to receive new repset. */
 			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 			apply = pglogical_apply_find(MyDatabaseId, sub->id);
-			if (apply)
+			if (pglogical_worker_running(apply))
 				kill(apply->proc->pid, SIGTERM);
 			LWLockRelease(PGLogicalCtx->lock);
 

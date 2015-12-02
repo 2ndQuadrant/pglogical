@@ -216,7 +216,6 @@ pglogical_manager_find(Oid dboid)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_MANAGER &&
-			PGLogicalCtx->workers[i].proc &&
 			dboid == PGLogicalCtx->workers[i].dboid)
 			return &PGLogicalCtx->workers[i];
 	}
@@ -237,7 +236,6 @@ pglogical_apply_find(Oid dboid, Oid subscriberid)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
-			PGLogicalCtx->workers[i].proc &&
 			dboid == PGLogicalCtx->workers[i].dboid &&
 			subscriberid == PGLogicalCtx->workers[i].worker.apply.subid)
 			return &PGLogicalCtx->workers[i];
@@ -260,7 +258,6 @@ pglogical_apply_find_all(Oid dboid)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
-			PGLogicalCtx->workers[i].proc &&
 			dboid == PGLogicalCtx->workers[i].dboid)
 			res = lappend(res, &PGLogicalCtx->workers[i]);
 	}
@@ -282,7 +279,7 @@ pglogical_sync_find(Oid dboid, Oid subscriberid, char *nspname, char *relname)
 	{
 		PGLogicalWorker *w = &PGLogicalCtx->workers[i];
 		if (w->worker_type == PGLOGICAL_WORKER_SYNC && dboid == w->dboid &&
-			w->proc && subscriberid == w->worker.apply.subid &&
+			subscriberid == w->worker.apply.subid &&
 			strcmp(NameStr(w->worker.sync.nspname), nspname) == 0 &&
 			strcmp(NameStr(w->worker.sync.relname), relname) == 0)
 			return w;
@@ -307,7 +304,7 @@ pglogical_sync_find_all(Oid dboid, Oid subscriberid)
 	{
 		PGLogicalWorker *w = &PGLogicalCtx->workers[i];
 		if (w->worker_type == PGLOGICAL_WORKER_SYNC && dboid == w->dboid &&
-			w->proc && subscriberid == w->worker.apply.subid)
+			subscriberid == w->worker.apply.subid)
 			res = lappend(res, w);
 	}
 
@@ -322,6 +319,15 @@ pglogical_get_worker(int slot)
 {
 	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
 	return &PGLogicalCtx->workers[slot];
+}
+
+/*
+ * Is the worker running?
+ */
+bool
+pglogical_worker_running(PGLogicalWorker *w)
+{
+	return w && w->proc;
 }
 
 static void
@@ -340,7 +346,7 @@ signal_worker_xact_callback(XactEvent event, void *arg)
 
 				w = pglogical_manager_find(MyDatabaseId);
 
-				if (w && w->proc)
+				if (pglogical_worker_running(w))
 				{
 					/* Signal the manager worker. */
 					SetLatch(&w->proc->procLatch);

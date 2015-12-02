@@ -110,11 +110,14 @@ manage_apply_workers(void)
 	CommitTransactionCommand();
 
 	/* Kill any remaining workers. */
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	foreach (wlc, workers)
 	{
 		PGLogicalWorker *worker = (PGLogicalWorker *) lfirst(wlc);
-		kill(worker->proc->pid, SIGTERM);
+		if (pglogical_worker_running(worker))
+			kill(worker->proc->pid, SIGTERM);
 	}
+	LWLockRelease(PGLogicalCtx->lock);
 
 	/* No subscribers, exit. */
 	if (list_length(subscriptions) == 0)
