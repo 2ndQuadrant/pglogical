@@ -18,7 +18,7 @@ SCRIPTS_built = pglogical_create_subscriber
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
-REGRESS = init basic extended toasted replication_set add_table matview
+REGRESS = init basic extended toasted replication_set add_table matview bidirectional
 
 ifdef USE_PGXS
 

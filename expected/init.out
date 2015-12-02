@@ -37,7 +37,8 @@ SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbna
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=super');
+    provider_dsn := 'dbname=regression user=super',
+	forward_origins := '{}');
  create_subscription 
 ---------------------
           3848008564
@@ -45,11 +46,12 @@ SELECT * FROM pglogical.create_subscription(
 
 DO $$
 BEGIN
-	LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
-			EXIT;
-		END IF;
-	END LOOP;
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
 END;$$;
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
  sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
