@@ -802,7 +802,10 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 {
 	text   *command = PG_GETARG_TEXT_PP(0);
 	char   *query = text_to_cstring(command);
+	int		save_nestlevel;
 	StringInfoData	cmd;
+
+	save_nestlevel = NewGUCNestLevel();
 
 	/* Force everything in the query to be fully qualified. */
 	(void) set_config_option("search_path", "",
@@ -824,6 +827,11 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	/* Execute the query locally. */
 	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId(), false),
 								  false);
+
+	/*
+	 * Restore the GUC variables we set above.
+	 */
+	AtEOXact_GUC(true, save_nestlevel);
 
 	PG_RETURN_BOOL(true);
 }
