@@ -1,36 +1,57 @@
 # pglogical replication
 
-The pglogical module provides logical streaming replication for PostgreSQL, using a publish/subscribe module.
+The pglogical module provides logical streaming replication for PostgreSQL,
+using a publish/subscribe module. It is based on technology developed as part
+of the BDR project.
 
-We use the following terms to describe data streams between nodes, deliberately reused from the earlier Slony technology.
+We use the following terms to describe data streams between nodes, deliberately
+reused from the earlier Slony technology:
 * Nodes - PostgreSQL database instances
 * Providers and Subscribers - roles taken by Nodes
 * Replication Set - a collection of tables
 
-pglogical is new technology utilising the latest in-core features, so we have these version restrictions
+pglogical is new technology utilising the latest in-core features, so we have
+these version restrictions:
 * Provider node must run PostgreSQL 9.4+
 * Subscriber node must run PostgreSQL 9.5+
+(Subscriber support may later be widened to 9.4)
 
-Use cases supported are
+Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
 * Full database replication
 * Selective replication of sets of tables using replication sets
+* Data gather/merge from multiple upstream servers
 
-Architectural details
-* pglogical works at the database level, not whole server level like physical streaming replication
-* One Provider may feed multiple Subscribers without incurring additional write overhead
-* One Subscriber can merge changes from several origins and detect conflict between changes with
-automatic and configurable conflict resolution (some, but not all aspects required for multi-master).
-* Cascading replication is implemented in the form of change forwarding.
+Architectural details:
+* pglogical works on a per-database database level, not whole server level like
+  physical streaming replication
+* One Provider may feed multiple Subscribers without incurring additional disk
+  write overhead
+* One Subscriber can merge changes from several origins and detect conflict
+  between changes with automatic and configurable conflict resolution (some,
+  but not all aspects required for multi-master).
+* Cascading replication is implemented in the form of changeset forwarding.
 
 ## Requirements
 
-DDL replication is not supported; DDL is the responsibility of the user. As such, long term cross-version replication is not considered a design target, though it may often work.
+To use pglogical the provider must be running PostgreSQL 9.4 or newer and the
+subscriber must be running PostgreSQL 9.5 or newer.
 
-* Currently pglogical replication requires superuser. It may be later extended to user with replication privileges.
-* UNLOGGED and TEMP tables will not and cannot be replicated.
-* Updates and Deletes cannot be replicated for tables that lack both a primary key and a replica identity - we have no way to find the tuple that should be updated/deleted since there is no unique identifier.
-* `pglogical_output` needs to be installed on both provider and subscriber.
+The `pglogical_output` extension needs to be installed on both provider and
+subscriber. No actual `CREATE EXTENSION` is required, it must just be present
+in the PostgreSQL installation.
+
+The `pglogical` extension must be installed on both provider and subscriber.
+You must `CREATE EXTENSION pglogical` on both.
+
+Tables on the provider and subscriber must have the same names and be in the
+same schema. Future revisions may add mapping features.
+
+Tables on the provider and subscriber must have the same columns, with the same
+data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc must
+be the same or weaker (more permissive) on the subscriber than the provider.
+
+Some additional requirements are covered in "Limitations and Restrictions", below.
 
 ## Usage
 
@@ -298,3 +319,150 @@ The configuration of the conflicts resolver is done via the
 
 When `track_commit_timestamp` is disabled, the only allowed value is
 `apply_remote`.
+
+## Limitations and restrictions
+
+### DDL
+
+Automatic DDL replication is not supported. Managing DDL so that the provider and
+subscriber database(s) remain compatible is the responsibility of the user.
+
+pglogical provides the `pglogical.replicate_ddl_command` function to allow DDL
+to be run on the provider and subscriber at a consistent point.
+
+### No replication queue flush
+
+There's no support for freezing transactions on the master and waiting until
+all pending queued xacts are replayed from slots. Support for making the
+upstream read-only for this will be added in a future release.
+
+This means that care must be taken when applying table structure changes. If
+there are committed transactions that aren't yet replicated and the table
+structure of the provider and subscriber are changed at the same time in a way
+that makes the subscriber table incompatible with the queued transactions
+replication will stop.
+
+Administrators should either ensure that writes to the master are stopped
+before making schema changes, or use the `pglogical.replicate_ddl_command`
+function to queue schema changes so they're replayed at a consistent point
+on the replica.
+
+If mutual multi-master replication is in use then using
+`pglogical.replicate_ddl_command` is not enough, as the subscriber may be
+generating new xacts with the old structure after the schema change is
+committed on the publisher. Users must ensure writes are stopped on all nodes
+and all slots are caught up before making schema changes when multi-master
+is configured.
+
+### TRUNCATE
+
+Truncating a table that has foreign key relationships on the subscriber but not
+the provider will fail on the subscriber. Replication will stop. To allow
+replication to continue the foreign key relationship must be dropped. Using
+`TRUNCATE ... CASCADE` will not help because the `CASCADE` only applies to tables
+on the provider side.
+
+(Properly handling this would probably require the addition of `ON TRUNCATE CASCADE`
+support for foreign keys in PostgreSQL).
+
+`TRUNCATE ... RESTART IDENTITY` is not supported. The identity restart step is
+not replicated to the replica.
+
+### Sequences
+
+Sequence state is local to the provider or subscriber node(s). Advancing a
+sequence on the provider has no effect on the subscriber or vice versa.
+
+Support for replicating sequences is important for failover support and will
+be added in a future version.
+
+Users may work around this limitation by creating sequences with a step
+interval equal to or greater than the number of nodes, then setting a different
+offset on each node. Use the `INCREMENT BY` option for `CREATE SEQUENCE` or
+`ALTER SEQUENCE`, and use `setval(...)` to set the start point.
+
+### Triggers
+
+No triggers are fired when applying changes on the subscriber.
+
+Firing of `ENABLE REPLICA` and `ENABLE ALWAYS` triggers may be added by a later
+version.
+
+### PostgreSQL Version differences
+
+pglogical can replicate across PostgreSQL major versions. Despite that, long
+term cross-version replication is not considered a design target, though it may
+often work. Issues where changes are valid on the provider but not on the
+subscriber are more likely to arise when replicating across versions.
+
+It is safer to replicate from an old version to a newer version since PostgreSQL
+maintains solid backward compatibility but only limited forward compatibility.
+
+Replicating between different minor versions makes no difference at all.
+
+### Superuser is required
+
+Currently pglogical replication requires superuser. It may be later extended to
+user with replication privileges.
+
+### `UNLOGGED` and `TEMPORARY` not replicated
+
+`UNLOGGED` and `TEMPORARY` tables will not and cannot be replicated, much like
+with physical streaming replication.
+
+### One database at a time
+
+To replicate multiple databases you must set up individual provider/subscriber
+relationships for each. There is no way to configure replication for all databases
+in a PostgreSQL install at once.
+
+#### `PRIMARY KEY` or `REPLICA IDENTITY` required
+
+`UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
+KEY` or other valid replica identity such as a `UNIQUE` constraint. Replication
+has no way to find the tuple that should be updated/deleted since there is no
+unique identifier.
+
+See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
+
+## How does pglogical differ from BDR?
+
+`pglogical` is based on technology developed for BDR and shares some code with
+BDR. It's designed to be more flexible than BDR and to apply better to
+single-master unidirectional replication, data-gather/merge, non-mesh
+multimaster topologies, etc.
+
+It omits some features found in BDR:
+
+* Mesh multi-master. Limited multi-master support with conflict resolution exists,
+  but mutual replication connections must be added individually.
+
+* Distributed sequences. Use different sequence offsets on each node instead.
+
+* DDL replication. Users must keep table definitions consistent themselves.
+  pglogical provides queue functions to help with this.
+
+* Global DDL locking. There's no DDL replication so no global locking is
+  required.... but that introduces problems with mutual multi-master replication.
+  See next point.
+
+* Global flush-to-consistent-state. Part of BDR's DDL locking is a step
+  where all nodes' queues are plugged by prevening new xacts from being
+  committed, then flushed to the peer nodes. This ensures there are no xacts in
+  the queue that can't be applied once table structure has changed. pglogical
+  doesn't do this, so care must be taken when using mutual multi-master.
+  See "limitations".
+
+See "limitations and restrictions" for more information.
+
+It also adds some features:
+
+* Flexible connections between nodes; topology is not restricted to
+  mesh multi-master. Cascading logical replication is possible.
+
+* Loosely-coupled output plugin that's re-usable for other projects
+
+* JSON output so queued transactions can be inspected
+
+... but its main purpose is to provide a cleaner, simpler base that doesn't
+require a patched PostgreSQL, with a pluggable and extensible design.
