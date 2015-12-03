@@ -316,6 +316,10 @@ fill_tuple_defaults(PGLogicalRelation *rel, ExprContext *econtext,
 	int		   *defmap;
 	ExprState **defexprs;
 
+	/* We got all the data via replication, no need to evaluate anything. */
+	if (num_phys_attrs == rel->natts)
+		return;
+
 	defmap = (int *) palloc(num_phys_attrs * sizeof(int));
 	defexprs = (ExprState **) palloc(num_phys_attrs * sizeof(ExprState *));
 
@@ -357,11 +361,13 @@ handle_insert(StringInfo s)
 	PGLogicalTupleData	newtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
+	ExprContext		   *econtext;
 	Oid					conflicts;
 	TupleTableSlot	   *localslot,
 					   *applyslot;
 	HeapTuple			remotetuple;
 	HeapTuple			applytuple;
+	MemoryContext		oldcontext = CurrentMemoryContext;
 	PGLogicalConflictResolution resolution;
 	bool				started_tx = ensure_transaction();
 
@@ -376,7 +382,11 @@ handle_insert(StringInfo s)
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
-	fill_tuple_defaults(rel, GetPerTupleExprContext(estate), &newtup);
+	econtext = GetPerTupleExprContext(estate);
+
+	MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
+	fill_tuple_defaults(rel, econtext, &newtup);
+
 	localslot = ExecInitExtraTupleSlot(estate);
 	applyslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
@@ -392,6 +402,7 @@ handle_insert(StringInfo s)
 
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup.values, newtup.nulls);
+	MemoryContextSwitchTo(oldcontext);
 
 	if (OidIsValid(conflicts))
 	{
@@ -483,6 +494,8 @@ handle_update(StringInfo s)
 	PGLogicalTupleData *searchtup;
 	PGLogicalRelation  *rel;
 	EState			   *estate;
+	ExprContext		   *econtext;
+	MemoryContext		oldcontext = CurrentMemoryContext;
 	bool				found;
 	bool				hasoldtup;
 	TupleTableSlot	   *localslot,
@@ -503,7 +516,11 @@ handle_update(StringInfo s)
 
 	/* Initialize the executor state. */
 	estate = create_estate_for_relation(rel->rel);
-	fill_tuple_defaults(rel, GetPerTupleExprContext(estate), &newtup);
+	econtext = GetPerTupleExprContext(estate);
+
+	MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
+	fill_tuple_defaults(rel, econtext, &newtup);
+
 	localslot = ExecInitExtraTupleSlot(estate);
 	applyslot = ExecInitExtraTupleSlot(estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
@@ -516,6 +533,8 @@ handle_update(StringInfo s)
 
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup.values, newtup.nulls);
+
+	MemoryContextSwitchTo(oldcontext);
 
 	/*
 	 * Tuple found.
