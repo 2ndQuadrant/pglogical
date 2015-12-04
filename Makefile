@@ -57,7 +57,7 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 ifdef PG94
 regresscheck: ;
 else
-regresscheck: makeregression_output
+regresscheck:
 	$(MKDIR_P) regression_output
 	$(pg_regress_check) \
 	    --temp-config ./regress-postgresql.conf \
