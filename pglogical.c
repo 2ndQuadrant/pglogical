@@ -325,7 +325,11 @@ pglogical_supervisor_main(Datum main_arg)
 	PGLogicalCtx->supervisor = MyProc;
 
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
+#if PG_VERSION_NUM >= 90500
 	BackgroundWorkerInitializeConnection(NULL, NULL);
+#else
+	BackgroundWorkerInitializeConnection("postgres", NULL);
+#endif
 
 	/* Main wait loop. */
 	while (!got_SIGTERM)

@@ -15,6 +15,8 @@
 
 #include "nodes/execnodes.h"
 
+#include "replication/origin.h"
+
 #include "utils/guc.h"
 
 #include "pglogical_proto.h"

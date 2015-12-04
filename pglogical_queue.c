@@ -38,6 +38,7 @@
 #include "utils/jsonb.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/timestamp.h"
 
 #include "pglogical_queue.h"
 #include "pglogical.h"
@@ -73,8 +74,14 @@ queue_message(const char *replication_set, Oid roleoid, char message_type,
 	HeapTuple	tup;
 	Datum		values[Natts_queue];
 	bool		nulls[Natts_queue];
-	const char *role = GetUserNameFromId(roleoid, false);
+	const char *role;
 	TimestampTz ts = GetCurrentTimestamp();
+
+	role =  GetUserNameFromId(roleoid
+#if PG_VERSION_NUM >= 90500
+							  , false
+#endif
+							 );
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_QUEUE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);

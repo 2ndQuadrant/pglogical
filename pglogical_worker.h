@@ -13,6 +13,8 @@
 #ifndef PGLOGICAL_WORKER_H
 #define PGLOGICAL_WORKER_H
 
+#include "pglogical.h"
+
 typedef enum {
 	PGLOGICAL_WORKER_NONE,		/* Unused slot. */
 	PGLOGICAL_WORKER_MANAGER,	/* Manager. */

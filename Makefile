@@ -20,6 +20,11 @@ SHLIB_LINK = $(libpq)
 
 REGRESS = init basic extended toasted replication_set add_table matview bidirectional
 
+ifdef PG94
+PG_CPPFLAGS += -Icompat
+OBJS += compat/pglogical_compat.o
+endif
+
 ifdef USE_PGXS
 
 # For regression checks
@@ -48,7 +53,11 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 # install. Nobody with any sense runs 'make check' under a user with
 # write permissions to their production PostgreSQL install (right?)
 # but this is still not ideal.
-regresscheck:
+
+ifdef PG94
+regresscheck: ;
+else
+regresscheck: makeregression_output
 	$(MKDIR_P) regression_output
 	$(pg_regress_check) \
 	    --temp-config ./regress-postgresql.conf \
@@ -64,6 +73,8 @@ pglogical_output_install: pglogical_output
 	$(MAKE) -C pglogical_output install
 
 check: pglogical_output_install install regresscheck ;
+
+endif
 
 else
 

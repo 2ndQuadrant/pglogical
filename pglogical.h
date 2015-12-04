@@ -22,6 +22,10 @@
 #include "pglogical_fe.h"
 #include "pglogical_node.h"
 
+#if PG_VERSION_NUM < 90500
+#include "pglogical_compat.h"
+#endif
+
 #define EXTENSION_NAME "pglogical"
 
 #define PGLOGICAL_MASTER_TOC_MAGIC	123
