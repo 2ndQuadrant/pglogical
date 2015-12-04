@@ -83,8 +83,7 @@ SELECT * FROM get_startup_params();
  coltypes                         | "f"
  database_encoding                | "UTF8"
  encoding                         | "UTF8"
- forward_changeset_origins        | "f"
- forward_changesets               | "f"
+ forward_changeset_origins        | "t"
  hooks.row_filter_enabled         | "f"
  hooks.shutdown_hook_enabled      | "f"
  hooks.startup_hook_enabled       | "f"
@@ -92,7 +91,7 @@ SELECT * FROM get_startup_params();
  max_proto_version                | "1"
  min_proto_version                | "1"
  no_txinfo                        | "t"
-(19 rows)
+(18 rows)
 
 SELECT * FROM get_queued_data();
                                                                              data                                                                             

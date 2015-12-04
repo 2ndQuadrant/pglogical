@@ -393,8 +393,7 @@ Since all parameter values are sent as strings, the value types given below spec
 |binary|_set of parameters, specified separately_|See “_the __‘binary’__ parameters_” below, and “_Parameters relating to exchange of binary values_”
 |database_encoding|string|The native text encoding of the database the plugin is running in
 |encoding|string|Field values for textual data will be in this encoding in native protocol text, binary or internal representation. For the native protocol this is currently always the same as `database_encoding`. For text-mode json protocol this is always the same as `client_encoding`.
-|forward_changesets|bool|Specifies that all transactions, not just those originating on the upstream, will be forwarded. See “_Changeset forwarding_”.
-|forward_changeset_origins|bool|Tells the client that the server will send changeset origin information. Independent of forward_changesets. See “_Changeset forwarding_” for details.
+|forward_changeset_origins|bool|Tells the client that the server will send changeset origin information. See “_Changeset forwarding_” for details.
 |no_txinfo|bool|Requests that variable transaction info such as XIDs, LSNs, and timestamps be omitted from output. Mainly for tests. Currently ignored for protos other than json.
 |===
 
@@ -472,7 +471,6 @@ Because these versions are expected to be incremented, to make it clear that the
 |*Key*|*Type*|*Default*|*Notes*
 
 |expected_encoding|string|null|The text encoding the downstream expects field values to be in. Applies to text, binary and internal representations of field values in native format. Has no effect on other protocol content. If specified, the upstream must honour it. For json protocol, must be unset or match `client_encoding`. (Current plugin versions ERROR if this is set for the native protocol and not equal to the upstream database's encoding).
-|forward_changesets|bool|false|Request that all transactions, not just those originating on the upstream, be forwarded. See “_Changeset forwarding_”.
 |want_coltypes|boolean|false|The client wants to receive data type information about columns.
 |===
 

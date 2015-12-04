@@ -52,7 +52,6 @@ typedef struct PGLogicalOutputData
 	/* protocol */
 	bool	allow_internal_basetypes;
 	bool	allow_binary_basetypes;
-	bool	forward_changesets;
 	bool	forward_changeset_origins;
 	int		field_datum_encoding;
 
@@ -84,8 +83,6 @@ typedef struct PGLogicalOutputData
 	bool	client_binary_float8byval;
 	bool	client_binary_intdatetimes_set;
 	bool	client_binary_intdatetimes;
-	bool	client_forward_changesets_set;
-	bool	client_forward_changesets;
 	bool	client_no_txinfo;
 
 	/* hooks */

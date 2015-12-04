@@ -41,10 +41,8 @@ class BasicTest(PGLogicalOutputTest):
 
         if int(params['pg_version_num'])/100 == 904:
             self.assertEquals(params['forward_changeset_origins'], 'f')
-            self.assertEquals(params['forward_changesets'], 't')
         else:
-            self.assertEquals(params['forward_changeset_origins'], 'f')
-            self.assertEquals(params['forward_changesets'], 'f')
+            self.assertEquals(params['forward_changeset_origins'], 't')
 
         anybool = ['t', 'f']
         self.assertIn(params['binary.bigendian'], anybool)

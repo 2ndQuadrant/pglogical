@@ -317,40 +317,15 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		}
 
 		/*
-		 * Will we forward changesets? We have to if we're on 9.4;
-		 * otherwise honour the client's request.
+		 * 9.4 lacks origins info so don't forward it.
+		 *
+		 * There's currently no knob for clients to use to suppress
+		 * this info and it's sent if it's supported and available.
 		 */
 		if (PG_VERSION_NUM/100 == 904)
-		{
-			/*
-			 * 9.4 unconditionally forwards changesets due to lack of
-			 * replication origins, and it can't ever send origin info
-			 * for the same reason.
-			 */
-			data->forward_changesets = true;
 			data->forward_changeset_origins = false;
-
-			if (data->client_forward_changesets_set
-				&& !data->client_forward_changesets)
-			{
-				ereport(DEBUG1,
-						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("Cannot disable changeset forwarding on PostgreSQL 9.4")));
-			}
-		}
-		else if (data->client_forward_changesets_set
-				 && data->client_forward_changesets)
-		{
-			/* Client explicitly asked for forwarding; forward csets and origins */
-			data->forward_changesets = true;
-			data->forward_changeset_origins = true;
-		}
 		else
-		{
-			/* Default to not forwarding or honour client's request not to fwd */
-			data->forward_changesets = false;
-			data->forward_changeset_origins = false;
-		}
+			data->forward_changeset_origins = true;
 
 		if (data->hooks_setup_funcname != NIL)
 		{
@@ -501,9 +476,6 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 
 	if (!call_txn_filter_hook(data, origin_id))
-		return true;
-
-	if (!data->forward_changesets && origin_id != InvalidRepOriginId)
 		return true;
 
 	return false;

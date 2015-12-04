@@ -233,45 +233,34 @@ It's possible to use `pglogical_output` to cascade replication between multiple
 PostgreSQL servers, in combination with an appropriate client to apply the
 changes to the downstreams.
 
-There are three forwarding modes:
+There are two forwarding modes:
 
 * Forward everything. Transactions are replicated whether they were made directly
   on the immediate upstream or some other node upstream of it. This is the only
   option when running on 9.4. All rows from transactions are sent.
 
-  Selected by setting `forward_changesets` to true (default) and not setting a
-  row or transaction filter hook.
-
-* No forwarding. Only transactions applied immediately on the upstream node are
-  forwarded. Transactions with any non-local origin are skipped. All rows from
-  locally originated transactions are sent.
-
-  Selected by setting `forward_changesets` to false. Remember to confirm by
-  checking the startup reply message.
+  Selected by not setting a row or transaction filter hook.
 
 * Filtered forwarding. Transactions are replicated unless a client-supplied
   transaction filter hook says to skip this transaction. Row changes are
   replicated unless the client-supplied row filter hook (if provided) says to
   skip that row.
 
-  Selected by setting `forward_changesets` to `true` and installing a
-  transaction and/or row filter hook (see "hooks").
+  Selected by installing a transaction and/or row filter hook (see "hooks").
 
-If the upstream server is 9.5 or newer and `forward_changesets` is enabled, the
-server will enable changeset origin information. It will set
-`forward_changeset_origins` to true in the startup reply message to indicate
-this. It will then send changeset origin messages after the `BEGIN` for each
-transaction, per the protocol documentation. Origin messages are omitted for
-transactions originating directly on the immediate upstream to save bandwidth.
-If `forward_changeset_origins` is true then transactions without an origin are
-always from the immediate upstream that’s running the decoding plugin.
+If the upstream server is 9.5 or newer the server will enable changeset origin
+information. It will set `forward_changeset_origins` to true in the startup
+reply message to indicate this. It will then send changeset origin messages
+after the `BEGIN` for each transaction, per the protocol documentation. Origin
+messages are omitted for transactions originating directly on the immediate
+upstream to save bandwidth.  If `forward_changeset_origins` is true then
+transactions without an origin are always from the immediate upstream that’s
+running the decoding plugin.
 
-Note that changeset forwarding may be forced to on if not requested by some
-servers, so the client _should_ check the `forward_changesets` and
-`forward_changeset_origins` params in the startup reply message. In particular,
-9.4 servers force changeset forwarding on, but never forward replication
-origins. This means you cannot use 9.4 for mutual replication as it’ll create
-an infinite loop.
+Note that 9.4 servers lack replication origin information and won't send it
+on the wire. They also always pass zeroes to the hooks. So you can't filter
+by origin in 9.4, and thus can't do multual multi-master as it'll create an
+infinite loop.
 
 Clients may use this facility to form arbitrarily complex topologies when
 combined with hooks to determine which transactions are forwarded. An obvious

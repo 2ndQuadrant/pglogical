@@ -236,40 +236,10 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         m = messages.expect_insert()
         messages.expect_commit()
 
-    def test_forwarding_not_requested_95plus(self):
+    def test_forwarding_95plus(self):
         """
-        For this test case we don't ask for forwarding to be enabled.
-
-        For 9.5+ we should get only transactions originated locally, so any transaction
-        with an origin set will be ignored. No origin info messages will be sent.
-        """
-        cur = self.conn.cursor()
-
-        if not self.is95plus:
-            self.skipTest("Cannot run forwarding-off origins-off test on a PostgreSQL 9.4 server")
-
-        self.run_test_transactions(cur)
-
-        # Forwarding not requested.
-        messages = self.get_changes({'forward_changesets':'f'})
-
-        # Startup msg
-        (m, params) = messages.expect_startup()
-
-        # We should not get origins, ever
-        self.assertEquals(params['forward_changeset_origins'], 'f')
-        # Changeset forwarding off respected by 9.5+
-        self.assertEquals(params['forward_changesets'], 'f')
-
-        # decode, expecting no origins
-        self.decode_test_transactions(messages, False, False)
-
-    # Upstream doesn't send origin correctly yet
-    @unittest.skip("Doesn't work yet")
-    def test_forwarding_requested_95plus(self):
-        """
-        In this test we request that forwarding be enabled. We'll get
-        forwarded transactions and origin messages for them.
+        In this test we'll get forwarded transactions and origin messages for
+        them.
         """
         cur = self.conn.cursor()
 
@@ -279,25 +249,19 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         self.run_test_transactions(cur)
 
         #client requests to forward changesets
-        messages = self.get_changes({'forward_changesets': 't'})
+        messages = self.get_changes()
 
         # Startup msg
         (m, params) = messages.expect_startup()
 
-        # Changeset forwarding is forced on by 9.4 and was requested
-        # for 9.5+ so should always be on.
-        self.assertEquals(params['forward_changesets'], 't')
-        # 9.5+ will always forward origins if cset forwarding is
-        # requested.
+        # 9.5+ will always forward origins if cset forwarding is enabled
         self.assertEquals(params['forward_changeset_origins'], 't')
 
         # Decode, expecting forwarding, and expecting origins unless 9.4
         self.decode_test_transactions(messages, self.is95plus, True)
 
-    def test_forwarding_not_requested_94(self):
+    def test_forwarding_94(self):
         """
-        For this test case we don't ask for forwarding to be enabled.
-
         For 9.4, we should get all transactions, even those that were originated "remotely".
         9.4 doesn't support replication identifiers so we couldn't tell the server that the
         tx's were applied from a remote node, and it'd have to way to store that info anyway.
@@ -310,15 +274,13 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         self.run_test_transactions(cur)
 
         # Forwarding not requested.
-        messages = self.get_changes({'forward_changesets':'f'})
+        messages = self.get_changes()
 
         # Startup msg
         (m, params) = messages.expect_startup()
 
-        # We should not get origins, ever
+        # We should not get origins on 9.4, ever
         self.assertEquals(params['forward_changeset_origins'], 'f')
-        # Changeset forwarding is forced on by 9.4
-        self.assertEquals(params['forward_changesets'], 't')
 
         # decode, expecting no origins, and forwarding
         self.decode_test_transactions(messages, False, True)
