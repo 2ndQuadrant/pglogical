@@ -95,9 +95,14 @@ static bool
 ensure_transaction(void)
 {
 	if (IsTransactionState())
+	{
+		if (CurrentMemoryContext != MessageContext)
+			MemoryContextSwitchTo(MessageContext);
 		return false;
+	}
 
 	StartTransactionCommand();
+	MemoryContextSwitchTo(MessageContext);
 	return true;
 }
 
