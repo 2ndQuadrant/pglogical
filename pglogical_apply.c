@@ -137,9 +137,10 @@ handle_commit(StringInfo s)
 	Assert(commit_time == replorigin_session_origin_timestamp);
 
 	if (IsTransactionState())
+	{
 		CommitTransactionCommand();
-
-	MemoryContextSwitchTo(MessageContext);
+		MemoryContextSwitchTo(MessageContext);
+	}
 
 	/*
 	 * If the row isn't from the immediate upstream; advance the slot of the

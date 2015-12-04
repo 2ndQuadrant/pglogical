@@ -17,8 +17,8 @@ typedef struct PGLogicalRelation
 {
 	/* Info coming from the remote side. */
 	uint32		remoteid;
-	const char *nspname;
-	const char *relname;
+	char	   *nspname;
+	char	   *relname;
 	int			natts;
 	char	  **attnames;
 

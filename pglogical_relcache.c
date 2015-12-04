@@ -32,6 +32,9 @@ static int tupdesc_get_att_by_name(TupleDesc desc, const char *attname);
 static void
 relcache_free_entry(PGLogicalRelation *entry)
 {
+	pfree(entry->nspname);
+	pfree(entry->relname);
+
 	if (entry->natts > 0)
 	{
 		int	i;
