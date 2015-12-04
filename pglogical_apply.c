@@ -139,6 +139,8 @@ handle_commit(StringInfo s)
 	if (IsTransactionState())
 		CommitTransactionCommand();
 
+	MemoryContextSwitchTo(MessageContext);
+
 	/*
 	 * If the row isn't from the immediate upstream; advance the slot of the
 	 * node it originally came from so we start replay of that node's
