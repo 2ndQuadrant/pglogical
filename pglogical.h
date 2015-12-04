@@ -30,11 +30,8 @@
 
 #define REPLICATION_ORIGIN_ALL "all"
 
-extern void gen_slot_name(Name slot_name, char *dbname,
-						  const char *provider_name,
-						  const char *subscriber_name,
-						  const char *suffix);
-extern Oid pglogical_generate_id(void);
+extern char *shorten_hash(const char *str, int maxlen);
+
 extern List *textarray_to_list(ArrayType *textarray);
 
 extern void pglogical_execute_sql_command(char *cmdstr, char *role,

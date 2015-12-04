@@ -136,18 +136,17 @@ restore_structure(PGLogicalSubscription *sub, const char *section)
  * Ensure slot exists.
  */
 static char *
-ensure_replication_slot_snapshot(PGconn *origin_conn, Name slot_name,
+ensure_replication_slot_snapshot(PGconn *origin_conn, char *slot_name,
 								 XLogRecPtr *lsn)
 {
 	PGresult	   *res;
 	StringInfoData	query;
 	char		   *snapshot;
-	MemoryContext	saved_ctx;
 
 	initStringInfo(&query);
 
 	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s",
-					 NameStr(*slot_name), "pglogical_output");
+					 slot_name, "pglogical_output");
 
 	res = PQexec(origin_conn, query.data);
 
@@ -159,11 +158,9 @@ ensure_replication_slot_snapshot(PGconn *origin_conn, Name slot_name,
 			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
 	}
 
-	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 	*lsn = DatumGetLSN(DirectFunctionCall1Coll(pg_lsn_in, InvalidOid,
 					  CStringGetDatum(PQgetvalue(res, 0, 1))));
 	snapshot = pstrdup(PQgetvalue(res, 0, 2));
-	MemoryContextSwitchTo(saved_ctx);
 
 	PQclear(res);
 
@@ -174,12 +171,12 @@ ensure_replication_slot_snapshot(PGconn *origin_conn, Name slot_name,
  * Get or create replication origin for a given slot.
  */
 static RepOriginId
-ensure_replication_origin(Name slot_name)
+ensure_replication_origin(char *slot_name)
 {
-	RepOriginId origin = replorigin_by_name(NameStr(*slot_name), true);
+	RepOriginId origin = replorigin_by_name(slot_name, true);
 
 	if (origin == InvalidRepOriginId)
-		origin = replorigin_create(NameStr(*slot_name));
+		origin = replorigin_create(slot_name);
 
 	return origin;
 }
@@ -429,6 +426,32 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 	return tables;
 }
 
+static void
+pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
+{
+	PGconn			   *origin_conn;
+
+	/* Drop the slot on the remote side. */
+	origin_conn = pglogical_connect(sub->origin_if->dsn, "cleanup");
+	pglogical_drop_remote_slot(origin_conn, sub->slot_name);
+	PQfinish(origin_conn);
+
+	/* Drop the origin tracking locally. */
+	if (replorigin_session_origin != InvalidRepOriginId)
+	{
+		replorigin_session_reset();
+		replorigin_drop(replorigin_session_origin);
+		replorigin_session_origin = InvalidRepOriginId;
+	}
+}
+
+static void
+pglogical_sync_worker_cleanup_cb(int code, Datum arg)
+{
+	PGLogicalSubscription  *sub = (PGLogicalSubscription *) DatumGetPointer(arg);
+	pglogical_sync_worker_cleanup(sub);
+}
+
 void
 pglogical_sync_subscription(PGLogicalSubscription *sub)
 {
@@ -475,97 +498,104 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		PGconn	   *origin_conn_repl;
 		RepOriginId	originid;
 		char	   *snapshot;
-		NameData	slot_name;
 
 		elog(INFO, "initializing subscriber %s", sub->name);
-
-		StartTransactionCommand();
-
-		gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-					  sub->origin->name, sub->name, NULL);
 
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 													 EXTENSION_NAME "_snapshot");
 
-		snapshot = ensure_replication_slot_snapshot(origin_conn_repl, &slot_name,
+		snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
+													sub->slot_name,
 													&lsn);
-		originid = ensure_replication_origin(&slot_name);
-		replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
 
-		CommitTransactionCommand();
-
-		if (SyncKindStructure(sync->kind))
+		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+								PointerGetDatum(sub));
 		{
-			elog(INFO, "synchronizing structure");
-
-			status = SYNC_STATUS_STRUCTURE;
 			StartTransactionCommand();
-			set_subscription_sync_status(sub->id, status);
+
+			originid = ensure_replication_origin(sub->slot_name);
+			replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
+
 			CommitTransactionCommand();
 
-			/* Dump structure to temp storage. */
-			dump_structure(sub, snapshot);
-
-			/* Restore base pre-data structure (types, tables, etc). */
-			restore_structure(sub, "pre-data");
-		}
-
-		/* Copy data. */
-		if (SyncKindData(sync->kind))
-		{
-			List	   *tables;
-			ListCell   *lc;
-
-			elog(INFO, "synchronizing data");
-
-			status = SYNC_STATUS_DATA;
-			StartTransactionCommand();
-			set_subscription_sync_status(sub->id, status);
-			CommitTransactionCommand();
-
-			tables = copy_replication_sets_data(sub->origin_if->dsn,
-												sub->target_if->dsn, snapshot,
-												sub->replication_sets);
-
-			/* Store info about all the synchronized tables. */
-			StartTransactionCommand();
-			foreach (lc, tables)
+			if (SyncKindStructure(sync->kind))
 			{
-				RangeVar	   *rv = (RangeVar *) lfirst(lc);
-				PGLogicalSyncStatus	   *oldsync;
+				elog(INFO, "synchronizing structure");
 
-				oldsync = get_table_sync_status(sub->id, rv->schemaname, rv->relname, true);
-				if (oldsync)
-				{
-					set_table_sync_status(sub->id, rv->schemaname, rv->relname, SYNC_STATUS_READY);
-				}
-				else
-				{
-					PGLogicalSyncStatus	   newsync;
+				status = SYNC_STATUS_STRUCTURE;
+				StartTransactionCommand();
+				set_subscription_sync_status(sub->id, status);
+				CommitTransactionCommand();
 
-					newsync.kind = SYNC_KIND_FULL;
-					newsync.subid = sub->id;
-					newsync.nspname = rv->schemaname;
-					newsync.relname = rv->relname;
-					newsync.status = SYNC_STATUS_INIT;
-					create_local_sync_status(&newsync);
-				}
+				/* Dump structure to temp storage. */
+				dump_structure(sub, snapshot);
+
+				/* Restore base pre-data structure (types, tables, etc). */
+				restore_structure(sub, "pre-data");
 			}
-			CommitTransactionCommand();
+
+			/* Copy data. */
+			if (SyncKindData(sync->kind))
+			{
+				List	   *tables;
+				ListCell   *lc;
+
+				elog(INFO, "synchronizing data");
+
+				status = SYNC_STATUS_DATA;
+				StartTransactionCommand();
+				set_subscription_sync_status(sub->id, status);
+				CommitTransactionCommand();
+
+				tables = copy_replication_sets_data(sub->origin_if->dsn,
+													sub->target_if->dsn,
+													snapshot,
+													sub->replication_sets);
+
+				/* Store info about all the synchronized tables. */
+				StartTransactionCommand();
+				foreach (lc, tables)
+				{
+					RangeVar	   *rv = (RangeVar *) lfirst(lc);
+					PGLogicalSyncStatus	   *oldsync;
+
+					oldsync = get_table_sync_status(sub->id, rv->schemaname,
+													rv->relname, true);
+					if (oldsync)
+					{
+						set_table_sync_status(sub->id, rv->schemaname,
+											  rv->relname, SYNC_STATUS_READY);
+					}
+					else
+					{
+						PGLogicalSyncStatus	   newsync;
+
+						newsync.kind = SYNC_KIND_FULL;
+						newsync.subid = sub->id;
+						newsync.nspname = rv->schemaname;
+						newsync.relname = rv->relname;
+						newsync.status = SYNC_STATUS_INIT;
+						create_local_sync_status(&newsync);
+					}
+				}
+				CommitTransactionCommand();
+			}
+
+			/* Restore post-data structure (indexes, constraints, etc). */
+			if (SyncKindStructure(sync->kind))
+			{
+				elog(INFO, "synchronizing constraints");
+
+				status = SYNC_STATUS_CONSTAINTS;
+				StartTransactionCommand();
+				set_subscription_sync_status(sub->id, status);
+				CommitTransactionCommand();
+
+				restore_structure(sub, "post-data");
+			}
 		}
-
-		/* Restore post-data structure (indexes, constraints, etc). */
-		if (SyncKindStructure(sync->kind))
-		{
-			elog(INFO, "synchronizing constraints");
-
-			status = SYNC_STATUS_CONSTAINTS;
-			StartTransactionCommand();
-			set_subscription_sync_status(sub->id, status);
-			CommitTransactionCommand();
-
-			restore_structure(sub, "post-data");
-		}
+		PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+									PointerGetDatum(sub));
 
 		PQfinish(origin_conn_repl);
 
@@ -589,30 +619,6 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 	MemoryContextDelete(myctx);
 }
 
-static void
-pglogical_sync_worker_cleanup(PGconn *applyconn, PGLogicalSubscription *sub,
-							  char *slot_name)
-{
-	PGconn			   *origin_conn;
-
-	/* Disconnect from the slot so we can drop it. */
-	if (applyconn)
-		PQfinish(applyconn);
-
-	/* Drop the slot on the remote side. */
-	origin_conn = pglogical_connect(sub->origin_if->dsn, sub->name);
-	pglogical_drop_remote_slot(origin_conn, slot_name);
-	PQfinish(origin_conn);
-
-	/* Drop the origin tracking locally. */
-	if (replorigin_session_origin != InvalidRepOriginId)
-	{
-		replorigin_session_reset();
-		replorigin_drop(replorigin_session_origin);
-		replorigin_session_origin = InvalidRepOriginId;
-	}
-}
-
 void
 pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 {
@@ -620,7 +626,6 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	PGconn	   *origin_conn_repl;
 	RepOriginId	originid;
 	char	   *snapshot;
-	NameData	slot_name;
 	PGLogicalSyncStatus	   *sync;
 
 	StartTransactionCommand();
@@ -644,22 +649,20 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	if (sync->status != SYNC_STATUS_INIT)
 		set_table_sync_status(sub->id, table->schemaname, table->relname, SYNC_STATUS_INIT);
 
-	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->origin->name, sub->name, table->relname);
-
 	CommitTransactionCommand();
 
+	origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
+												 EXTENSION_NAME "_copy");
+
+	snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
+												sub->slot_name, &lsn);
+
 	/* Make sure we cleanup the slot if something goes wrong. */
-	PG_TRY();
-		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
-													 EXTENSION_NAME "_copy");
-
-		snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
-													&slot_name,
-													&lsn);
-
+	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+							PointerGetDatum(sub));
+	{
 		StartTransactionCommand();
-		originid = ensure_replication_origin(&slot_name);
+		originid = ensure_replication_origin(sub->slot_name);
 		replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
 
 		set_table_sync_status(sub->id, table->schemaname, table->relname,
@@ -669,40 +672,33 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 		/* Copy data. */
 		copy_tables_data(sub->origin_if->dsn,sub->target_if->dsn, snapshot,
 						 list_make1(table));
-	PG_CATCH();
-		pglogical_sync_worker_cleanup(NULL, sub, NameStr(slot_name));
-		PG_RE_THROW();
-	PG_END_TRY();
+	}
+	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+								PointerGetDatum(sub));
 
 	PQfinish(origin_conn_repl);
+
+	pglogical_sync_worker_cleanup(sub);
 }
 
 void
 pglogical_sync_worker_finish(PGconn *applyconn)
 {
 	PGLogicalWorker	   *apply;
-	NameData			slot_name;
-	PGLogicalSubscription  *sub;
 
 	StartTransactionCommand();
-	sub = get_subscription(MyApplyWorker->subid);
-	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->origin->name, sub->name,
-				  NameStr(MyPGLogicalWorker->worker.sync.relname));
-
-
 	/* Mark local table as ready. */
 	set_table_sync_status(MyApplyWorker->subid,
 						  NameStr(MyPGLogicalWorker->worker.sync.nspname),
 						  NameStr(MyPGLogicalWorker->worker.sync.relname),
 						  SYNC_STATUS_READY);
 
-	pglogical_sync_worker_cleanup(applyconn, sub, NameStr(slot_name));
+	pglogical_sync_worker_cleanup(MySubscription);
 	CommitTransactionCommand();
 
 
 	/*
-	 * In case there is apply process running, it might be waiting
+	 * In case there is apply procezss running, it might be waiting
 	 * for the table status change so tell it to check.
 	 */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
@@ -720,8 +716,7 @@ pglogical_sync_main(Datum main_arg)
 	PGconn		   *streamConn;
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
-	NameData		slot_name;
-	PGLogicalSubscription	   *sub;
+	StringInfoData	slot_name;
 	RangeVar	   *copytable = NULL;
 	MemoryContext	saved_ctx;
 	char		   *tablename;
@@ -744,36 +739,41 @@ pglogical_sync_main(Datum main_arg)
 
 	StartTransactionCommand();
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-	sub = get_subscription(MySyncWorker->apply.subid);
+	MySubscription = get_subscription(MySyncWorker->apply.subid);
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
 	copytable = makeRangeVar(NameStr(MySyncWorker->nspname),
 							 NameStr(MySyncWorker->relname), -1);
 
+	tablename = quote_qualified_identifier(copytable->schemaname,
+										   copytable->relname);
+
+	initStringInfo(&slot_name);
+	appendStringInfo(&slot_name, "%s_%s", MySubscription->slot_name,
+					 shorten_hash(tablename, 8));
+	MySubscription->slot_name = slot_name.data;
+
 	elog(LOG, "starting sync of table %s.%s for subscriber %s",
-		 copytable->schemaname, copytable->relname, sub->name);
+		 copytable->schemaname, copytable->relname, MySubscription->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
-		 sub->origin_if->name, sub->origin_if->dsn);
+		 MySubscription->origin_if->name, MySubscription->origin_if->dsn);
 
 	/* Do the initial sync first. */
-	pglogical_sync_table(sub, copytable);
+	pglogical_sync_table(MySubscription, copytable);
 
 	/* Wait for ack from the main apply thread. */
 	StartTransactionCommand();
-	set_table_sync_status(sub->id, copytable->schemaname, copytable->relname,
-						  SYNC_STATUS_SYNCWAIT);
+	set_table_sync_status(MySubscription->id, copytable->schemaname,
+						  copytable->relname, SYNC_STATUS_SYNCWAIT);
 	CommitTransactionCommand();
 
-	wait_for_sync_status_change(sub->id, copytable->schemaname,
+	wait_for_sync_status_change(MySubscription->id, copytable->schemaname,
 								copytable->relname, SYNC_STATUS_CATCHUP);
 
 	/* Setup the origin and get the starting position for the replication. */
 	StartTransactionCommand();
-	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->origin->name, sub->name,
-				  NameStr(MySyncWorker->relname));
-	originid = replorigin_by_name(NameStr(slot_name), false);
+	originid = replorigin_by_name(MySubscription->slot_name, false);
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
@@ -787,15 +787,11 @@ pglogical_sync_main(Datum main_arg)
 	}
 
 	/* Start the replication. */
-	streamConn = pglogical_connect_replica(sub->origin_if->dsn, sub->name);
+	streamConn = pglogical_connect_replica(MySubscription->origin_if->dsn,
+										   MySubscription->name);
 
-	tablename = quote_qualified_identifier(copytable->schemaname,
-										   copytable->relname);
-
-	pglogical_start_replication(streamConn, NameStr(slot_name),
+	pglogical_start_replication(streamConn, MySubscription->slot_name,
 								origin_startpos, "all", NULL, tablename);
-
-	pfree(tablename);
 
 	/* Leave it to standard apply code to do the replication. */
 	apply_work(streamConn);

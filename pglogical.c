@@ -58,7 +58,7 @@ void pglogical_supervisor_main(Datum main_arg);
  * Maxlen can't be less than 8 because hash produces uint32 which in hex form
  * can have up to 8 characters.
  */
-static char *
+char *
 shorten_hash(const char *str, int maxlen)
 {
 	char   *ret;
@@ -75,59 +75,6 @@ shorten_hash(const char *str, int maxlen)
 	ret[maxlen] = '\0';
 
 	return ret;
-}
-
-/*
- * Generate slot name (used also for origin identifier)
- */
-void
-gen_slot_name(Name slot_name, char *dbname, const char *provider_name,
-			  const char *subscriber_name, const char *suffix)
-{
-	if (suffix)
-	{
-		snprintf(NameStr(*slot_name), NAMEDATALEN,
-				 "pgl_%s_%s_%s_%s",
-				 shorten_hash(dbname, 16),
-				 shorten_hash(provider_name, 16),
-				 shorten_hash(subscriber_name, 16),
-				 shorten_hash(suffix, 8));
-	}
-	else
-	{
-		snprintf(NameStr(*slot_name), NAMEDATALEN,
-				 "pgl_%s_%s_%s",
-				 shorten_hash(dbname, 16),
-				 shorten_hash(provider_name, 16),
-				 shorten_hash(subscriber_name, 16));
-	}
-	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
-}
-
-/*
- * Generates new random id, hopefully unique enough.
- *
- * TODO: this could be improved.
- */
-Oid
-pglogical_generate_id(void)
-{
-	uint32	hashinput[3];
-	uint64	sysid = GetSystemIdentifier();
-	uint32	id = random(); /* XXX: this would be better as sequence. */
-
-	do
-	{
-		hashinput[0] = (uint32) sysid;
-		hashinput[1] = (uint32) (sysid >> 32);
-		hashinput[2] = id++;
-
-		id = DatumGetUInt32(hash_any((const unsigned char *) hashinput,
-									 (int) sizeof(hashinput)));
-	}
-	while (id == InvalidOid); /* Protect against returning InvalidOid */
-
-	return id;
 }
 
 /*

@@ -46,6 +46,7 @@ typedef struct PGLogicalSubscription
 	bool		sync_data;
 	List	   *replication_sets;
 	List	   *forward_origins;
+	char	   *slot_name;
 } PGLogicalSubscription;
 
 extern void create_node(PGLogicalNode *node);

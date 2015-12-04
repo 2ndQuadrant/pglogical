@@ -1085,7 +1085,13 @@ pglogical_gen_slot_name(PG_FUNCTION_ARGS)
 
 	slot_name = (Name) palloc0(NAMEDATALEN);
 
-	gen_slot_name(slot_name, get_database_name(MyDatabaseId), node->node->name, subscriber_name, NULL);
+	/* This must be same as what is in subscription_fromtuple() */
+	snprintf(NameStr(*slot_name), NAMEDATALEN,
+		"pgl_%s_%s_%s",
+		 shorten_hash(get_database_name(MyDatabaseId), 16),
+		 shorten_hash(node->node->name, 16),
+		 shorten_hash(subscriber_name, 16));
+	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 
 	PG_RETURN_NAME(slot_name);
 }

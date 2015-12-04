@@ -25,6 +25,10 @@
 #include "catalog/objectaddress.h"
 #include "catalog/pg_type.h"
 
+#include "commands/dbcommands.h"
+
+#include "miscadmin.h"
+
 #include "nodes/makefuncs.h"
 
 #include "utils/array.h"
@@ -758,8 +762,9 @@ static PGLogicalSubscription*
 subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 {
 	SubscriptionTuple *subtup = (SubscriptionTuple *) GETSTRUCT(tuple);
-	Datum d;
-	bool isnull;
+	Datum		d;
+	bool		isnull;
+	NameData	slot_name;
 
 	PGLogicalSubscription *sub =
 		(PGLogicalSubscription *) palloc(sizeof(PGLogicalSubscription));
@@ -795,6 +800,19 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 		forward_origin_names = textarray_to_list(DatumGetArrayTypeP(d));
 		sub->forward_origins = forward_origin_names;
 	}
+
+	/*
+	 * Generate slot name, leaving 8 bytes for suffix
+	 * (_suffix is actually 9 bytes)
+	 */
+	snprintf(NameStr(slot_name), NAMEDATALEN,
+			"pgl_%s_%s_%s",
+			 shorten_hash(get_database_name(MyDatabaseId), 16),
+			 shorten_hash(sub->origin->name, 16),
+			 shorten_hash(sub->name, 16));
+	NameStr(slot_name)[NAMEDATALEN-1] = '\0';
+
+	sub->slot_name = pstrdup(NameStr(slot_name));
 
 	return sub;
 }

@@ -69,6 +69,7 @@ static Oid			QueueRelid = InvalidOid;
 static List		   *SyncingTables = NIL;
 
 PGLogicalApplyWorker	   *MyApplyWorker = NULL;
+PGLogicalSubscription	   *MySubscription = NULL;
 
 static PGconn	   *applyconn = NULL;
 
@@ -1401,8 +1402,6 @@ pglogical_apply_main(Datum main_arg)
 	PGconn		   *streamConn;
 	RepOriginId		originid;
 	XLogRecPtr		origin_startpos;
-	NameData		slot_name;
-	PGLogicalSubscription  *sub;
 	MemoryContext	saved_ctx;
 	char		   *repsets;
 	char		   *origins;
@@ -1425,16 +1424,16 @@ pglogical_apply_main(Datum main_arg)
 	/* Load the subscription. */
 	StartTransactionCommand();
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-	sub = get_subscription(MyApplyWorker->subid);
+	MySubscription = get_subscription(MyApplyWorker->subid);
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
 	/* If the subscription isn't initialized yet, initialize it. */
-	pglogical_sync_subscription(sub);
+	pglogical_sync_subscription(MySubscription);
 
-	elog(LOG, "starting apply for subscription %s", sub->name);
+	elog(LOG, "starting apply for subscription %s", MySubscription->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
-		 sub->origin->name, sub->origin_if->dsn);
+		 MySubscription->origin->name, MySubscription->origin_if->dsn);
 
 	/*
 	 * Cache the queue relation id.
@@ -1443,21 +1442,18 @@ pglogical_apply_main(Datum main_arg)
 	StartTransactionCommand();
 	QueueRelid = get_queue_table_oid();
 
-	/* Setup the origin and get the starting position for the replication. */
-	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  sub->origin->name, sub->name, NULL);
-
-	originid = replorigin_by_name(NameStr(slot_name), false);
+	originid = replorigin_by_name(MySubscription->slot_name, false);
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
 
 	/* Start the replication. */
-	streamConn = pglogical_connect_replica(sub->origin_if->dsn, sub->name);
+	streamConn = pglogical_connect_replica(MySubscription->origin_if->dsn,
+										   MySubscription->name);
 
-	repsets = stringlist_to_identifierstr(sub->replication_sets);
-	origins = stringlist_to_identifierstr(sub->forward_origins);
-	pglogical_start_replication(streamConn, NameStr(slot_name),
+	repsets = stringlist_to_identifierstr(MySubscription->replication_sets);
+	origins = stringlist_to_identifierstr(MySubscription->forward_origins);
+	pglogical_start_replication(streamConn, MySubscription->slot_name,
 								origin_startpos, origins, repsets, NULL);
 	pfree(repsets);
 

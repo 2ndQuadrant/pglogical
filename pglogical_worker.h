@@ -68,6 +68,7 @@ typedef struct PGLogicalContext {
 extern PGLogicalContext		   *PGLogicalCtx;
 extern PGLogicalWorker		   *MyPGLogicalWorker;
 extern PGLogicalApplyWorker	   *MyApplyWorker;
+extern PGLogicalSubscription   *MySubscription;
 
 extern volatile sig_atomic_t got_SIGTERM;
 

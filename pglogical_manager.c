@@ -132,7 +132,6 @@ pglogical_manager_main(Datum main_arg)
 {
 	int			slot = DatumGetInt32(main_arg);
 	Oid			extoid;
-	MemoryContext	saved_ctx;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
@@ -152,9 +151,6 @@ pglogical_manager_main(Datum main_arg)
 	if (!OidIsValid(extoid))
 		proc_exit(0);
 
-	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
-
-	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
