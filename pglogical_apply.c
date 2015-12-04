@@ -1086,6 +1086,8 @@ apply_work(PGconn *streamConn)
 				int c;
 				StringInfoData s;
 
+				MemoryContextSwitchTo(MessageContext);
+
 				initStringInfo(&s);
 				s.data = copybuf;
 				s.len = r;
