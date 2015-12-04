@@ -190,6 +190,7 @@ call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
 		hook_args.change_type = change->action;
 		hook_args.private_data = data->hooks.hooks_private_data;
 		hook_args.changed_rel = rel;
+		hook_args.change = change;
 
 		elog(DEBUG3, "calling pglogical row filter hook");
 
