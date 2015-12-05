@@ -35,27 +35,30 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 	int			i;
 	List	   *tables = NIL;
 	ListCell   *lc;
+	bool		first = true;
 	StringInfoData	query;
 	StringInfoData	repsetarr;
 
 	initStringInfo(&repsetarr);
-	appendStringInfo(&repsetarr, "{");
 	foreach (lc, replication_sets)
 	{
 		char	   *repset_name = lfirst(lc);
-		appendStringInfo(&repsetarr, "%s", repset_name);
-	}
-	appendStringInfo(&repsetarr, "}");
 
-	/* Build COPY TO query. */
+		if (first)
+			first = false;
+		else
+			appendStringInfoChar(&repsetarr, ',');
+
+		appendStringInfo(&repsetarr, "%s",
+						 PQescapeLiteral(conn, repset_name, strlen(repset_name)));
+	}
+
 	initStringInfo(&query);
-	appendStringInfo(&query, "SELECT nspname, relname FROM %s.tables WHERE set_name = ANY(%s)",
-					 EXTENSION_NAME,
-					 PQescapeLiteral(conn, repsetarr.data,
-									 repsetarr.len));
+	appendStringInfo(&query, "SELECT nspname, relname FROM %s.tables WHERE set_name = ANY(ARRAY[%s])",
+					 EXTENSION_NAME, repsetarr.data);
 
 	res = PQexec(conn, query.data);
-	/* TODO: better error message */
+	/* TODO: better error message? */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		elog(ERROR, "could not get table list");
 
