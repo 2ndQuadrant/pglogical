@@ -108,14 +108,14 @@ pglogical_worker_register(PGLogicalWorker *worker)
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 				 "pglogical_manager_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
-				 "pglogical manager %d", worker->dboid);
+				 "pglogical manager %u", worker->dboid);
 	}
 	else if (worker->worker_type == PGLOGICAL_WORKER_SYNC)
 	{
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 				 "pglogical_sync_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
-				 "pglogical sync %s %d:%d",
+				 "pglogical sync %s %u:%u",
 				 NameStr(worker->worker.sync.relname),
 				 worker->dboid, worker->worker.sync.apply.subid);
 	}
@@ -124,7 +124,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 				 "pglogical_apply_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
-				 "pglogical apply %d:%d", worker->dboid,
+				 "pglogical apply %u:%u", worker->dboid,
 				 worker->worker.apply.subid);
 	}
 
