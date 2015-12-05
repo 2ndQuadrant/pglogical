@@ -622,13 +622,6 @@ handle_startup_param(const char *key, const char *value)
 						 GetDatabaseEncodingName(), value)));
 	}
 
-	if (strcmp(key, "forward_changesets") == 0)
-	{
-		bool fwd = parse_bool_param(key, value);
-		/* FIXME: Verify forwarding mode is what we expect */
-		elog(DEBUG1, "changeset forwarding enabled: %s", fwd ? "t" : "f");
-	}
-
 	if (strcmp(key, "forward_changeset_origins") == 0)
 	{
 		bool fwd = parse_bool_param(key, value);
