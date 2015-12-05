@@ -56,3 +56,8 @@ SELECT pglogical.replicate_ddl_command($$
 $$);
 
 SELECT pglogical.drop_subscription('test_bidirectional');
+
+\c postgres
+
+SELECT count(1) FROM pg_stat_replication;
+SELECT slot_name FROM pg_replication_slots;

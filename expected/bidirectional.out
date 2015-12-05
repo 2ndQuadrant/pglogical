@@ -98,3 +98,16 @@ SELECT pglogical.drop_subscription('test_bidirectional');
                  1
 (1 row)
 
+\c postgres
+SELECT count(1) FROM pg_stat_replication;
+ count 
+-------
+     1
+(1 row)
+
+SELECT slot_name FROM pg_replication_slots;
+                 slot_name                  
+--------------------------------------------
+ pgl_postgres_test_provider_test_sube55bf37
+(1 row)
+
