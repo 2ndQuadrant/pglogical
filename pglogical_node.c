@@ -958,7 +958,7 @@ get_node_subscriptions(Oid nodeid, bool origin)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, ExclusiveLock);
 
 	return res;
 }
