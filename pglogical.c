@@ -220,9 +220,6 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 						   ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
 
 
-	/* TODO: Allow forwarding mode control. Currently hardcoded. */
-	appendStringInfoString(&command, ", \"forward_changesets\" 't'");
-
 	if (forward_origins)
 		appendStringInfo(&command, ", \"pglogical.forward_origins\" %s",
 					 quote_literal_cstr(forward_origins));
