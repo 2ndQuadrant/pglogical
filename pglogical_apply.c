@@ -119,6 +119,8 @@ handle_begin(StringInfo s)
 	replorigin_session_origin_lsn = commit_lsn;
 
 	in_remote_transaction = true;
+
+	pgstat_report_activity(STATE_RUNNING, false);
 }
 
 /*
@@ -186,6 +188,8 @@ handle_commit(StringInfo s)
 	}
 
 	process_syncing_tables(end_lsn);
+
+	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 /*
