@@ -323,6 +323,7 @@ start_manager_workers(void)
 		memset(&worker, 0, sizeof(PGLogicalWorker));
 		worker.worker_type = PGLOGICAL_WORKER_MANAGER;
 		worker.dboid = dboid;
+
 		pglogical_worker_register(&worker);
 	}
 
@@ -342,6 +343,7 @@ pglogical_supervisor_main(Datum main_arg)
 
 	/* Assign the latch in shared memory to our process latch. */
 	PGLogicalCtx->supervisor = MyProc;
+	PGLogicalCtx->connections_changed = true;
 
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
 #if PG_VERSION_NUM >= 90500
@@ -355,11 +357,13 @@ pglogical_supervisor_main(Datum main_arg)
     {
 		int rc;
 
-	   	StartTransactionCommand();
-
-		start_manager_workers();
-
-		CommitTransactionCommand();
+		if (PGLogicalCtx->connections_changed)
+		{
+			PGLogicalCtx->connections_changed = false;
+			StartTransactionCommand();
+			start_manager_workers();
+			CommitTransactionCommand();
+		}
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
@@ -372,7 +376,7 @@ pglogical_supervisor_main(Datum main_arg)
 			proc_exit(1);
 	}
 
-	proc_exit(0);
+	proc_exit(1);
 }
 
 
@@ -414,7 +418,7 @@ _PG_init(void)
 			 "pglogical_supervisor_main");
 	snprintf(bgw.bgw_name, BGW_MAXLEN,
 			 "pglogical supervisor");
-	bgw.bgw_restart_time = 1;
+	bgw.bgw_restart_time = 5;
 	bgw.bgw_notify_pid = 0;
 	bgw.bgw_main_arg = (Datum) 0;
 

@@ -62,6 +62,9 @@ typedef struct PGLogicalContext {
 	/* Supervisor process. */
 	PGPROC	   *supervisor;
 
+	/* Signal that connections have changed. */
+	bool		connections_changed;
+
 	/* Background workers. */
 	int			total_workers;
 	PGLogicalWorker  workers[FLEXIBLE_ARRAY_MEMBER];

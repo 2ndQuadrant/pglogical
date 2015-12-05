@@ -344,6 +344,8 @@ signal_worker_xact_callback(XactEvent event, void *arg)
 
 				LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
+				PGLogicalCtx->connections_changed = true;
+
 				w = pglogical_manager_find(MyDatabaseId);
 
 				if (pglogical_worker_running(w))
