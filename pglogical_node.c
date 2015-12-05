@@ -293,8 +293,12 @@ create_local_node(Oid nodeid, Oid ifid)
 	bool		nulls[Natts_local_node];
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = heap_openrv(rv, AccessExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
+
+	/* TODO: better error message */
+	if (get_local_node(true))
+		elog(ERROR, "current database is already configured as pglogical node");
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
@@ -307,12 +311,9 @@ create_local_node(Oid nodeid, Oid ifid)
 	/* Insert the tuple to the catalog. */
 	simple_heap_insert(rel, tup);
 
-	/* Update the indexes. TODO */
-//	CatalogUpdateIndexes(rel, tup);
-
 	/* Cleanup. */
 	heap_freetuple(tup);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, AccessExclusiveLock);
 }
 
 /*
