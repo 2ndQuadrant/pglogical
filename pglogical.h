@@ -38,6 +38,8 @@ extern char *shorten_hash(const char *str, int maxlen);
 
 extern List *textarray_to_list(ArrayType *textarray);
 
+extern Oid get_pglogical_table_oid(const char *table);
+
 extern void pglogical_execute_sql_command(char *cmdstr, char *role,
 										  bool isTopLevel);
 

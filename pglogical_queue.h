@@ -22,13 +22,13 @@
 typedef struct QueuedMessage
 {
 	TimestampTz	queued_at;
-	char	   *replication_set;
+	List	   *replication_sets;
 	char	   *role;
 	char		message_type;
 	Jsonb	   *message;
 } QueuedMessage;
 
-extern void queue_message(const char *replication_set, Oid roleoid,
+extern void queue_message(List *replication_sets, Oid roleoid,
 						  char message_type, char *message);
 
 extern QueuedMessage *queued_message_from_tuple(HeapTuple queue_tup);

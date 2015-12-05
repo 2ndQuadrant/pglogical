@@ -5,7 +5,7 @@ CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_publicschema(id serial primary key, data text);
 CREATE TABLE public.test_nosync(id serial primary key, data text);
 CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
-CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key);
+CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key, data text DEFAULT '');
 $$);
  replicate_ddl_command 
 -----------------------
@@ -260,10 +260,10 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 
 \c postgres
 SELECT * FROM "strange.schema-IS".test_diff_repset;
- id 
-----
-  1
-  2
+ id | data 
+----+------
+  1 | 
+  2 | 
 (2 rows)
 
 SELECT * FROM "strange.schema-IS".test_strangeschema;
@@ -274,6 +274,53 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
   3
   4
 (4 rows)
+
+\c regression
+SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := false, replicate_update := false, replicate_delete := false, replicate_truncate := false);
+ alter_replication_set 
+-----------------------
+            2154402640
+(1 row)
+
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(3);
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(4);
+UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
+DELETE FROM "strange.schema-IS".test_diff_repset WHERE id < 3;
+TRUNCATE "strange.schema-IS".test_diff_repset;
+\c postgres
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+ id | data 
+----+------
+  3 | data
+  4 | data
+(2 rows)
+
+\c regression
+SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := true, replicate_truncate := true);
+ alter_replication_set 
+-----------------------
+            2154402640
+(1 row)
+
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
+\c postgres
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+ id | data 
+----+------
+  3 | data
+  4 | data
+  5 | 
+  6 | 
+(4 rows)
+
+\c regression
+TRUNCATE "strange.schema-IS".test_diff_repset;
+\c postgres
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+ id | data 
+----+------
+(0 rows)
 
 SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'default');
  alter_subscriber_add_replication_set 

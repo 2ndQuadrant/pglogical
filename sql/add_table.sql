@@ -6,7 +6,7 @@ CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_publicschema(id serial primary key, data text);
 CREATE TABLE public.test_nosync(id serial primary key, data text);
 CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
-CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key);
+CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key, data text DEFAULT '');
 $$);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
@@ -135,6 +135,39 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 
 SELECT * FROM "strange.schema-IS".test_diff_repset;
 SELECT * FROM "strange.schema-IS".test_strangeschema;
+
+\c regression
+
+SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := false, replicate_update := false, replicate_delete := false, replicate_truncate := false);
+
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(3);
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(4);
+UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
+DELETE FROM "strange.schema-IS".test_diff_repset WHERE id < 3;
+TRUNCATE "strange.schema-IS".test_diff_repset;
+
+\c postgres
+
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+
+\c regression
+
+SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := true, replicate_truncate := true);
+
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
+INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
+
+\c postgres
+
+SELECT * FROM "strange.schema-IS".test_diff_repset;
+
+\c regression
+
+TRUNCATE "strange.schema-IS".test_diff_repset;
+
+\c postgres
+
+SELECT * FROM "strange.schema-IS".test_diff_repset;
 
 SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'default');
 

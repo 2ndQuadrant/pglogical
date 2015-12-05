@@ -19,7 +19,7 @@ typedef struct PGLogicalRepSet
 {
 	Oid			id;
 	Oid			nodeid;
-	const char *name;
+	char	   *name;
 	bool		replicate_insert;
 	bool		replicate_update;
 	bool		replicate_delete;
@@ -75,6 +75,9 @@ extern void replication_set_remove_table(Oid setid, Oid reloid,
 extern PGLogicalChangeType to_pglogical_changetype(
 		enum ReorderBufferChangeType change);
 
+extern PGLogicalRepSet *replication_set_from_tuple(HeapTuple tuple);
+
+extern Oid get_replication_set_table_oid(void);
 extern char *stringlist_to_identifierstr(List *repsets);
 
 #endif /* PGLOGICAL_REPSET_H */

@@ -79,22 +79,6 @@ typedef struct RepSetTableTuple
 
 static HTAB *RepSetRelationHash = NULL;
 
-static PGLogicalRepSet*
-repset_fromtuple(HeapTuple tuple)
-
-{
-	RepSetTuple *repsettup = (RepSetTuple *) GETSTRUCT(tuple);
-	PGLogicalRepSet *repset = (PGLogicalRepSet *)palloc(sizeof(PGLogicalRepSet));
-	repset->id = repsettup->id;
-	repset->nodeid = repsettup->nodeid;
-	repset->name = pstrdup(NameStr(repsettup->name));
-	repset->replicate_insert = repsettup->replicate_insert;
-	repset->replicate_update = repsettup->replicate_update;
-	repset->replicate_delete = repsettup->replicate_delete;
-	repset->replicate_truncate = repsettup->replicate_truncate;
-	return repset;
-}
-
 /*
  * Read the replication set.
  */
@@ -125,7 +109,7 @@ get_replication_set(Oid setid)
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "replication set %d not found", setid);
 
-	repset = repset_fromtuple(tuple);
+	repset = replication_set_from_tuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -176,7 +160,7 @@ get_replication_set_by_name(Oid nodeid, const char *setname, bool missing_ok)
 		elog(ERROR, "replication set %s not found", setname);
 	}
 
-	repset = repset_fromtuple(tuple);
+	repset = replication_set_from_tuple(tuple);
 
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
@@ -324,7 +308,8 @@ get_replication_sets(Oid nodeid, List *replication_set_names, bool missing_ok)
 						 errmsg("replication set %s not found", setname)));
 		}
 
-		replication_sets = lappend(replication_sets, repset_fromtuple(tuple));
+		replication_sets = lappend(replication_sets,
+								   replication_set_from_tuple(tuple));
 
 		systable_endscan(scan);
 	}
@@ -918,6 +903,38 @@ replication_set_remove_table(Oid setid, Oid reloid, bool from_table_drop)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Utility functions for working with PGLogicalRepSet struct.
+ */
+PGLogicalRepSet*
+replication_set_from_tuple(HeapTuple tuple)
+{
+	RepSetTuple *repsettup = (RepSetTuple *) GETSTRUCT(tuple);
+	PGLogicalRepSet *repset = (PGLogicalRepSet *) palloc(sizeof(PGLogicalRepSet));
+	repset->id = repsettup->id;
+	repset->nodeid = repsettup->nodeid;
+	repset->name = pstrdup(NameStr(repsettup->name));
+	repset->replicate_insert = repsettup->replicate_insert;
+	repset->replicate_update = repsettup->replicate_update;
+	repset->replicate_delete = repsettup->replicate_delete;
+	repset->replicate_truncate = repsettup->replicate_truncate;
+	return repset;
+}
+
+/*
+ * Get (cached) oid of the replicatin set table.
+ */
+Oid
+get_replication_set_table_oid(void)
+{
+	static Oid	repsettableoid = InvalidOid;
+
+	if (repsettableoid == InvalidOid)
+		repsettableoid = get_pglogical_table_oid(CATALOG_REPSET);
+
+	return repsettableoid;
 }
 
 

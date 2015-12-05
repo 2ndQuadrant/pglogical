@@ -19,6 +19,7 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 
+#include "catalog/namespace.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_type.h"
 
@@ -28,6 +29,7 @@
 #include "storage/proc.h"
 
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 
 #include "pglogical_node.h"
 #include "pglogical_conflict.h"
@@ -100,6 +102,26 @@ textarray_to_list(ArrayType *textarray)
 		res = lappend(res, TextDatumGetCString(elems[i]));
 
 	return res;
+}
+
+/*
+ * Get oid of our queue table.
+ */
+inline Oid
+get_pglogical_table_oid(const char *table)
+{
+	Oid			nspoid;
+	Oid			reloid;
+
+	nspoid = get_namespace_oid(EXTENSION_NAME, false);
+
+	reloid = get_relname_relid(table, nspoid);
+
+	if (reloid == InvalidOid)
+		elog(ERROR, "cache lookup failed for relation %s.%s",
+			 EXTENSION_NAME, table);
+
+	return reloid;
 }
 
 /*

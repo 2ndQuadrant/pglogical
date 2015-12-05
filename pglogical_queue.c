@@ -47,8 +47,8 @@
 
 #define Natts_queue					5
 #define Anum_queue_queued_at		1
-#define Anum_queue_replication_set	2
-#define Anum_queue_role				3
+#define Anum_queue_role				2
+#define Anum_queue_replication_sets	3
 #define Anum_queue_message_type		4
 #define Anum_queue_message			5
 
@@ -65,7 +65,7 @@ typedef struct QueueTuple
  * Add tuple to the queue table.
  */
 void
-queue_message(const char *replication_set, Oid roleoid, char message_type,
+queue_message(List *replication_sets, Oid roleoid, char message_type,
 			  char *message)
 {
 	RangeVar   *rv;
@@ -91,10 +91,13 @@ queue_message(const char *replication_set, Oid roleoid, char message_type,
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_queue_queued_at - 1] = TimestampTzGetDatum(ts);
-	values[Anum_queue_replication_set - 1] =
-		DirectFunctionCall1(namein, CStringGetDatum(replication_set));
 	values[Anum_queue_role - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(role));
+	if (replication_sets)
+		values[Anum_queue_replication_sets - 1] =
+			PointerGetDatum(strlist_to_textarray(replication_sets));
+	else
+		nulls[Anum_queue_replication_sets - 1] = true;
 	values[Anum_queue_message_type - 1] = CharGetDatum(message_type);
 	values[Anum_queue_message - 1] =
 		DirectFunctionCall1(json_in, CStringGetDatum(message));
@@ -121,13 +124,11 @@ queue_message(const char *replication_set, Oid roleoid, char message_type,
 QueuedMessage *
 queued_message_from_tuple(HeapTuple queue_tup)
 {
-	QueueTuple *q = (QueueTuple *) GETSTRUCT(queue_tup);
 	RangeVar   *rv;
 	Relation	rel;
 	TupleDesc	tupDesc;
 	bool		isnull;
-	Datum		message;
-	Jsonb	   *data;
+	Datum		d;
 	QueuedMessage *res;
 
 	/* Open relation to get the tuple descriptor. */
@@ -135,22 +136,31 @@ queued_message_from_tuple(HeapTuple queue_tup)
 	rel = heap_openrv(rv, NoLock);
 	tupDesc = RelationGetDescr(rel);
 
-	/* Retriveve the message. */
-	message = heap_getattr(queue_tup, Anum_queue_message, tupDesc, &isnull);
-	if (isnull)
-		elog(ERROR, "null message in queued message tuple");
-
-	/* Parse the json inside the message into Jsonb object. */
-	data = DatumGetJsonb(
-		DirectFunctionCall1(jsonb_in, DirectFunctionCall1(json_out, message)));
-
 	res = (QueuedMessage *) palloc(sizeof(QueuedMessage));
-	res->message = data;
 
-	res->queued_at = q->queued_at;
-	res->replication_set = pstrdup(NameStr(q->replication_set));
-	res->role = pstrdup(NameStr(q->role));
-	res->message_type = q->message_type;
+	d = fastgetattr(queue_tup, Anum_queue_queued_at, tupDesc, &isnull);
+	Assert(!isnull);
+	res->queued_at = DatumGetTimestampTz(d);
+
+	d = fastgetattr(queue_tup, Anum_queue_role, tupDesc, &isnull);
+	Assert(!isnull);
+	res->role = pstrdup(NameStr(*DatumGetName(d)));
+
+	d = fastgetattr(queue_tup, Anum_queue_replication_sets, tupDesc, &isnull);
+	if (!isnull)
+		res->replication_sets = textarray_to_list(DatumGetArrayTypeP(d));
+	else
+		res->replication_sets = NULL;
+
+	d = fastgetattr(queue_tup, Anum_queue_message_type, tupDesc, &isnull);
+	Assert(!isnull);
+	res->message_type = DatumGetChar(d);
+
+	d = fastgetattr(queue_tup, Anum_queue_message, tupDesc, &isnull);
+	Assert(!isnull);
+	/* Parse the json inside the message into Jsonb object. */
+	res->message = DatumGetJsonb(
+		DirectFunctionCall1(jsonb_in, DirectFunctionCall1(json_out, d)));
 
 	/* Close the relation. */
 	heap_close(rel, NoLock);
@@ -159,23 +169,17 @@ queued_message_from_tuple(HeapTuple queue_tup)
 }
 
 /*
- * Get oid of our queue table.
+ * Get (cached) oid of the queue table.
  */
 Oid
 get_queue_table_oid(void)
 {
-	Oid			nspoid;
-	Oid			reloid;
+	static Oid	queuetableoid = InvalidOid;
 
-	nspoid = get_namespace_oid(EXTENSION_NAME, false);
+	if (queuetableoid == InvalidOid)
+		queuetableoid = get_pglogical_table_oid(CATALOG_QUEUE);
 
-	reloid = get_relname_relid(CATALOG_QUEUE, nspoid);
-
-	if (!reloid)
-		elog(ERROR, "cache lookup failed for relation %s.%s",
-			 EXTENSION_NAME, CATALOG_QUEUE);
-
-	return reloid;
+	return queuetableoid;
 }
 
 

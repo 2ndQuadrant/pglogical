@@ -753,8 +753,8 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		appendStringInfo(&json, "}");
 
 		/* Queue the truncate for replication. */
-		queue_message(repset->name, GetUserId(), QUEUE_COMMAND_TYPE_TABLESYNC,
-					  json.data);
+		queue_message(list_make1(repset->name), GetUserId(),
+					  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
 	}
 
 	/* Cleanup. */
@@ -826,7 +826,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	 * Note, we keep "DDL" message type for the future when we have deparsing
 	 * support.
 	 */
-	queue_message("all", GetUserId(), QUEUE_COMMAND_TYPE_SQL, cmd.data);
+	queue_message(NULL, GetUserId(), QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
 	/* Execute the query locally. */
 	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
@@ -859,7 +859,11 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	const char	   *funcname = "queue_truncate";
 	char		   *nspname;
 	char		   *relname;
+	List		   *repsets;
+	List		   *repset_names;
+	ListCell	   *lc;
 	StringInfoData	json;
+	PGLogicalLocalNode *local_node;
 
 	/* Return if this function was called from apply process. */
 	if (MyPGLogicalWorker)
@@ -879,6 +883,11 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 				 errmsg("function \"%s\" must be fired AFTER TRUNCATE",
 						funcname)));
 
+	/* If this is not pglogical node, don't do anything. */
+	local_node = get_local_node(true);
+	if (!local_node)
+		PG_RETURN_VOID();
+
 	/* Format the query. */
 	nspname = get_namespace_name(RelationGetNamespace(trigdata->tg_relation));
 	relname = RelationGetRelationName(trigdata->tg_relation);
@@ -891,8 +900,19 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	escape_json(&json, relname);
 	appendStringInfo(&json, "}");
 
+	repsets = get_relation_replication_sets(local_node->node->id,
+											RelationGetRelid(trigdata->tg_relation));
+
+	repset_names = NIL;
+	foreach (lc, repsets)
+	{
+		PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(lc);
+		repset_names = lappend(repset_names, repset->name);
+	}
+
 	/* Queue the truncate for replication. */
-	queue_message("all", GetUserId(), QUEUE_COMMAND_TYPE_TRUNCATE, json.data);
+	queue_message(repset_names, GetUserId(), QUEUE_COMMAND_TYPE_TRUNCATE,
+				  json.data);
 
 	PG_RETURN_VOID();
 }

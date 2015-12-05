@@ -168,10 +168,72 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 	else if (RelationGetRelid(rowfilter_args->changed_rel) == get_queue_table_oid())
 	{
 		/* Special case - queue table */
-		return true;
+		if (rowfilter_args->change_type == REORDER_BUFFER_CHANGE_INSERT)
+		{
+			HeapTuple		tup = &rowfilter_args->change->data.tp.newtuple->tuple;
+			QueuedMessage  *q = queued_message_from_tuple(tup);
+			ListCell	   *qlc;
+
+			/*
+			 * No replication set means global message, those are always
+			 * replicated.
+			 */
+			if (q->replication_sets == NULL)
+				return true;
+
+			foreach (qlc, q->replication_sets)
+			{
+				char	   *queue_set = (char *) lfirst(qlc);
+				ListCell   *plc;
+
+				foreach (plc, private->replication_sets)
+				{
+					PGLogicalRepSet	   *rs = lfirst(plc);
+
+					/* TODO: this is somewhat ugly. */
+					if (strcmp(queue_set, rs->name) == 0 &&
+						(q->message_type != QUEUE_COMMAND_TYPE_TRUNCATE ||
+						 rs->replicate_truncate))
+						return true;
+				}
+			}
+		}
+
+		return false;
+	}
+	else if (RelationGetRelid(rowfilter_args->changed_rel) == get_replication_set_table_oid())
+	{
+		/*
+		 * Special case - replication set table.
+		 *
+		 * We can use this to update our cached replication set info, without
+		 * having to deal with cache invalidation callbacks.
+		 */
+		HeapTuple		tup = &rowfilter_args->change->data.tp.newtuple->tuple;
+		PGLogicalRepSet	   *replicated_set;
+		ListCell		   *plc;
+
+		replicated_set = replication_set_from_tuple(tup);
+		foreach (plc, private->replication_sets)
+		{
+			PGLogicalRepSet	   *rs = lfirst(plc);
+
+			/* Our cached replication set was updated, update local cache. */
+			if (rs->id == replicated_set->id)
+			{
+				rs->replicate_insert = replicated_set->replicate_insert;
+				rs->replicate_update = replicated_set->replicate_update;
+				rs->replicate_delete = replicated_set->replicate_delete;
+				rs->replicate_truncate = replicated_set->replicate_truncate;
+
+				return false;
+			}
+		}
+
+		return false;
 	}
 
-	/* Normal case - use replication sets. */
+	/* Normal case - use replication set membership. */
 	ret = relation_is_replicated(rowfilter_args->changed_rel,
 								 private->local_node_id,
 								 private->replication_sets,
