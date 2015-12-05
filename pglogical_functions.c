@@ -35,6 +35,7 @@
 
 #include "nodes/makefuncs.h"
 
+#include "replication/origin.h"
 #include "replication/reorderbuffer.h"
 
 #include "storage/latch.h"
@@ -256,13 +257,90 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 
 	if (sub != NULL)
 	{
+		PGLogicalWorker	   *apply;
+		List			   *other_subs;
+		PGLogicalLocalNode *node;
+		RepOriginId			originid;
+
+		node = get_local_node(false);
+
 		/* First drop the status. */
 		drop_subscription_sync_status(sub->id);
 
 		/* Drop the actual subscription. */
 		drop_subscription(sub->id);
 
-		/* This will make manager kill the apply worker on commit. */
+		/*
+		 * The rest is different depending on if we are doing this on provider
+		 * or subscriber.
+		 *
+		 * For now on provider we just exist (there should be no records
+		 * of subscribers on their provider node).
+		 */
+		if (sub->origin->id == node->node->id)
+			PG_RETURN_BOOL(sub != NULL);
+
+		/*
+		 * If the provider node record existed only for the dropped,
+		 * subscription, it should be dropped as well.
+		 */
+		other_subs = get_node_subscriptions(sub->origin->id, true);
+		if (list_length(other_subs) == 0)
+		{
+			drop_node_interfaces(sub->origin->id);
+			drop_node(sub->origin->id);
+		}
+
+		/* Kill the apply to unlock the resources. */
+		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+		apply = pglogical_apply_find(MyDatabaseId, sub->id);
+		if (pglogical_worker_running(apply))
+			kill(apply->proc->pid, SIGTERM);
+		LWLockRelease(PGLogicalCtx->lock);
+
+		/* Wait for the apply to die. */
+		for (;;)
+		{
+			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+			apply = pglogical_apply_find(MyDatabaseId, sub->id);
+			if (!pglogical_worker_running(apply))
+			{
+				LWLockRelease(PGLogicalCtx->lock);
+				break;
+			}
+			LWLockRelease(PGLogicalCtx->lock);
+
+			CHECK_FOR_INTERRUPTS();
+
+			(void) WaitLatch(&MyProc->procLatch,
+							 WL_LATCH_SET | WL_TIMEOUT, 1000L);
+
+			ResetLatch(&MyProc->procLatch);
+		}
+
+		/*
+		 * Drop the slot on remote side.
+		 *
+		 * Note, we can't fail here since we can't assume that the remote node
+		 * is still reachable or even alive.
+		 */
+		PG_TRY();
+		{
+			PGconn *origin_conn = pglogical_connect(sub->origin_if->dsn, "cleanup");
+			pglogical_drop_remote_slot(origin_conn, sub->slot_name);
+			PQfinish(origin_conn);
+		}
+		PG_CATCH();
+			elog(WARNING, "could not drop slot \"%s\" on provider, you will probably have to drop it manually",
+				 sub->slot_name);
+		PG_END_TRY();
+
+		/* Drop the origin tracking locally. */
+		originid = replorigin_by_name(sub->slot_name, true);
+		if (originid != InvalidRepOriginId)
+			replorigin_drop(originid);
+
+		/* Notify manager of the change. */
 		pglogical_connections_changed();
 	}
 

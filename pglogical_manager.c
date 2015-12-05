@@ -55,7 +55,7 @@ manage_apply_workers(void)
 		proc_exit(0);
 
 	/* Get list of subscribers. */
-	subscriptions = get_node_subscriptions(node->node->id);
+	subscriptions = get_node_subscriptions(node->node->id, false);
 
 	/* Register apply worker for each subscriber. */
 	foreach (slc, subscriptions)

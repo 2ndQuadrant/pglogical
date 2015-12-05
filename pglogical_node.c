@@ -148,6 +148,8 @@ create_node(PGLogicalNode *node)
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 /*
@@ -183,6 +185,8 @@ drop_node(Oid nodeid)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 
 	pglogical_connections_changed();
 }
@@ -314,6 +318,8 @@ create_local_node(Oid nodeid, Oid ifid)
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, AccessExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 /*
@@ -346,6 +352,8 @@ drop_local_node(void)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 /*
@@ -454,6 +462,8 @@ create_node_interface(PGlogicalInterface *nodeif)
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 /*
@@ -490,6 +500,8 @@ drop_node_interface(Oid ifid)
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
+	CommandCounterIncrement();
+
 	pglogical_connections_changed();
 }
 
@@ -523,6 +535,8 @@ drop_node_interfaces(Oid nodeid)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 
 	pglogical_connections_changed();
 }
@@ -635,6 +649,8 @@ create_subscription(PGLogicalSubscription *sub)
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
 
+	CommandCounterIncrement();
+
 	pglogical_connections_changed();
 }
 
@@ -718,6 +734,8 @@ alter_subscription(PGLogicalSubscription *sub)
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
+	CommandCounterIncrement();
+
 	pglogical_connections_changed();
 }
 
@@ -753,7 +771,9 @@ drop_subscription(Oid subid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
+
+	CommandCounterIncrement();
 
 	pglogical_connections_changed();
 }
@@ -904,10 +924,10 @@ get_subscription_by_name(const char *name, bool missing_ok)
 }
 
 /*
- * Return all local subscriptions.
+ * Return all target node subscriptions.
  */
 List *
-get_node_subscriptions(Oid nodeid)
+get_node_subscriptions(Oid nodeid, bool origin)
 {
 	PGLogicalSubscription    *sub;
 	RangeVar	   *rv;
@@ -918,12 +938,13 @@ get_node_subscriptions(Oid nodeid)
 	ScanKeyData		key[1];
 	List		   *res = NIL;
 
+	/* This specifically blocks against concurrent updates. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = heap_openrv(rv, ExclusiveLock);
 	desc = RelationGetDescr(rel);
 
 	ScanKeyInit(&key[0],
-				Anum_sub_target,
+				origin ? Anum_sub_origin : Anum_sub_target,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(nodeid));
 
