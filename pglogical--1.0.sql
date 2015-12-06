@@ -156,7 +156,7 @@ RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_su
 CREATE TABLE pglogical.queue (
     queued_at timestamp with time zone NOT NULL,
     role name NOT NULL,
-    replication_sets text[] NOT NULL,
+    replication_sets text[],
     message_type "char" NOT NULL,
     message json NOT NULL
 );
