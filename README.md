@@ -181,6 +181,14 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `relation` - name of existing table, optionally qualified
 
+- `pglogical.show_subscription_status(subscription_name name)`
+  Shows status and basic information about subscription.
+
+  Parameters:
+  - `subscription_name` - optional name of the existing subscription, when no
+    name was provided, the function will show status for all subscriptions on
+    local node
+
 - `pglogical.show_subscription_table(subscription_name name,
   relation regclass)`
   Shows synchronization status of a table.

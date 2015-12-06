@@ -52,6 +52,8 @@ END;$$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
+SELECT * FROM pglogical.show_subscription_status();
+
 -- Make sure we see the slot and active connection
 \c regression
 SELECT plugin, slot_type, database, active FROM pg_replication_slots;

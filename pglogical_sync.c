@@ -470,7 +470,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 	StartTransactionCommand();
 	oldctx = MemoryContextSwitchTo(myctx);
-	sync = get_subscription_sync_status(sub->id);
+	sync = get_subscription_sync_status(sub->id, false);
 	MemoryContextSwitchTo(oldctx);
 	CommitTransactionCommand();
 
@@ -631,7 +631,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	StartTransactionCommand();
 
 	/* Sanity check. */
-	sync = get_subscription_sync_status(sub->id);
+	sync = get_subscription_sync_status(sub->id, false);
 	if (sync->status != SYNC_STATUS_READY)
 	{
 		elog(ERROR,
@@ -925,7 +925,7 @@ syncstatus_fromtuple(HeapTuple tuple, TupleDesc desc)
 
 /* Get the sync status for a subscription. */
 PGLogicalSyncStatus *
-get_subscription_sync_status(Oid subid)
+get_subscription_sync_status(Oid subid, bool missing_ok)
 {
 	PGLogicalSyncStatus	   *sync;
 	RangeVar	   *rv;
@@ -953,7 +953,16 @@ get_subscription_sync_status(Oid subid)
 	}
 
 	if (!HeapTupleIsValid(tuple))
+	{
+		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
+			return NULL;
+		}
+
 		elog(ERROR, "subscription %u status not found", subid);
+	}
 
 	sync = syncstatus_fromtuple(tuple, tupDesc);
 

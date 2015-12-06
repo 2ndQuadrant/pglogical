@@ -66,6 +66,12 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alte
 CREATE FUNCTION pglogical.alter_subscription_remove_replication_set(subscription_name name, replication_set name)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_remove_replication_set';
 
+CREATE FUNCTION pglogical.show_subscription_status(subscription_name name DEFAULT NULL,
+	OUT subscription_name text, OUT status text, OUT provider_node text,
+	OUT provider_dsn text, OUT replication_sets text[],
+	OUT forward_origins text[])
+RETURNS SETOF record STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_subscription_status';
+
 CREATE TABLE pglogical.replication_set (
 	set_id oid NOT NULL PRIMARY KEY,
 	set_nodeid oid NOT NULL,

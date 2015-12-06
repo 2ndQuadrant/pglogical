@@ -80,6 +80,7 @@ PG_FUNCTION_INFO_V1(pglogical_alter_subscription_synchronize);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_resynchronize_table);
 
 PG_FUNCTION_INFO_V1(pglogical_show_subscription_table);
+PG_FUNCTION_INFO_V1(pglogical_show_subscription_status);
 
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
@@ -694,6 +695,119 @@ pglogical_show_subscription_table(PG_FUNCTION_ARGS)
 		values[2] = CStringGetTextDatum("unknown");
 
 	tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+	tuplestore_donestoring(tupstore);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * Show info about subscribtion.
+ */
+Datum
+pglogical_show_subscription_status(PG_FUNCTION_ARGS)
+{
+	List			   *subscriptions;
+	ListCell		   *lc;
+	ReturnSetInfo	   *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	TupleDesc			tupdesc;
+	Tuplestorestate	   *tupstore;
+	PGLogicalLocalNode *node;
+	MemoryContext		per_query_ctx;
+	MemoryContext		oldcontext;
+
+	/* check to see if caller supports us returning a tuplestore */
+	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that cannot accept a set")));
+	if (!(rsinfo->allowedModes & SFRM_Materialize))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("materialize mode required, but it is not " \
+						"allowed in this context")));
+
+	node = get_local_node(true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
+
+	if (PG_ARGISNULL(0))
+	{
+		subscriptions = get_node_subscriptions(node->node->id, false);
+	}
+	else
+	{
+		PGLogicalSubscription  *sub;
+		sub = get_subscription_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+		subscriptions = list_make1(sub);
+	}
+
+	/* Switch into long-lived context to construct returned data structures */
+	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+
+	tupstore = tuplestore_begin_heap(true, false, work_mem);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	foreach (lc, subscriptions)
+	{
+		PGLogicalSubscription  *sub = lfirst(lc);
+		PGLogicalWorker		   *apply;
+		Datum	values[6];
+		bool	nulls[6];
+		char   *status;
+
+		memset(values, 0, sizeof(values));
+		memset(nulls, 0, sizeof(nulls));
+
+		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+		apply = pglogical_apply_find(MyDatabaseId, sub->id);
+		if (pglogical_worker_running(apply))
+		{
+			PGLogicalSyncStatus	   *sync;
+			sync = get_subscription_sync_status(sub->id, true);
+
+			if (!sync)
+				status = "unknown";
+			else if (sync->status == SYNC_STATUS_READY)
+				status = "replicating";
+			else
+				status = "initializing";
+		}
+		else if (!sub->enabled)
+			status = "disabled";
+		else
+			status = "down";
+		LWLockRelease(PGLogicalCtx->lock);
+
+		values[0] = CStringGetTextDatum(sub->name);
+		values[1] = CStringGetTextDatum(status);
+		values[2] = CStringGetTextDatum(sub->origin->name);
+		values[3] = CStringGetTextDatum(sub->origin_if->dsn);
+		if (sub->replication_sets)
+			values[4] =
+				PointerGetDatum(strlist_to_textarray(sub->replication_sets));
+		else
+			nulls[4] = true;
+		if (sub->forward_origins)
+			values[5] =
+				PointerGetDatum(strlist_to_textarray(sub->forward_origins));
+		else
+			nulls[5] = true;
+
+		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+	}
+
 	tuplestore_donestoring(tupstore);
 
 	PG_RETURN_VOID();
