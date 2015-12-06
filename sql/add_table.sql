@@ -106,8 +106,8 @@ SELECT * FROM public.test_publicschema;
 
 SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 
-SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'repset_test');
-SELECT * FROM pglogical.alter_subscriber_remove_replication_set('test_subscription', 'default');
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'repset_test');
+SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'default');
 
 \c regression
 
@@ -169,7 +169,7 @@ TRUNCATE "strange.schema-IS".test_diff_repset;
 
 SELECT * FROM "strange.schema-IS".test_diff_repset;
 
-SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'default');
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'default');
 
 \c regression
 

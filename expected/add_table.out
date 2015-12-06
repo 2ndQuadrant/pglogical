@@ -219,15 +219,15 @@ SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publi
  public  | test_publicschema | syncronized
 (1 row)
 
-SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'repset_test');
- alter_subscriber_add_replication_set 
---------------------------------------
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'repset_test');
+ alter_subscription_add_replication_set 
+----------------------------------------
  t
 (1 row)
 
-SELECT * FROM pglogical.alter_subscriber_remove_replication_set('test_subscription', 'default');
- alter_subscriber_remove_replication_set 
------------------------------------------
+SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'default');
+ alter_subscription_remove_replication_set 
+-------------------------------------------
  t
 (1 row)
 
@@ -322,9 +322,9 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
 ----+------
 (0 rows)
 
-SELECT * FROM pglogical.alter_subscriber_add_replication_set('test_subscription', 'default');
- alter_subscriber_add_replication_set 
---------------------------------------
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'default');
+ alter_subscription_add_replication_set 
+----------------------------------------
  t
 (1 row)
 

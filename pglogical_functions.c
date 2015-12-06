@@ -73,8 +73,8 @@ PG_FUNCTION_INFO_V1(pglogical_drop_subscription);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_disable);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_enable);
 
-PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_add_replication_set);
-PG_FUNCTION_INFO_V1(pglogical_alter_subscriber_remove_replication_set);
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_add_replication_set);
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_remove_replication_set);
 
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_synchronize);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_resynchronize_table);
@@ -157,8 +157,8 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 		if (list_length(osubs) != 0 || list_length(tsubs) != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("cannot drop node \"%s\" because it still has subscribers associated with it", node_name),
-					 errhint("drop the subscribers first")));
+					 errmsg("cannot drop node \"%s\" because it still has subscriptions associated with it", node_name),
+					 errhint("drop the subscriptions first")));
 
 		/* Drop all the interfaces. */
 		drop_node_interfaces(node->id);
@@ -385,7 +385,7 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 }
 
 /*
- * Enable subscriber.
+ * Enable subscription.
  */
 Datum
 pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
@@ -413,10 +413,10 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 }
 
 /*
- * Add replication set to subscriber.
+ * Add replication set to subscription.
  */
 Datum
-pglogical_alter_subscriber_add_replication_set(PG_FUNCTION_ARGS)
+pglogical_alter_subscription_add_replication_set(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
@@ -448,10 +448,10 @@ pglogical_alter_subscriber_add_replication_set(PG_FUNCTION_ARGS)
 }
 
 /*
- * Remove replication set to subscriber.
+ * Remove replication set to subscription.
  */
 Datum
-pglogical_alter_subscriber_remove_replication_set(PG_FUNCTION_ARGS)
+pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
@@ -512,7 +512,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	tables = pg_logical_get_remote_repset_tables(conn, sub->replication_sets);
 	PQfinish(conn);
 
-	/* Compare with sync status on subscriber. And add missing ones. */
+	/* Compare with sync status on subscription. And add missing ones. */
 	foreach (lc, tables)
 	{
 		RangeVar	   *rv = (RangeVar *) lfirst(lc);
@@ -1192,7 +1192,7 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 Datum
 pglogical_gen_slot_name(PG_FUNCTION_ARGS)
 {
-	char	   *subscriber_name = NameStr(*PG_GETARG_NAME(0));
+	char	   *subscription_name = NameStr(*PG_GETARG_NAME(0));
 	Name		slot_name;
 	PGLogicalLocalNode *node;
 
@@ -1205,7 +1205,7 @@ pglogical_gen_slot_name(PG_FUNCTION_ARGS)
 		"pgl_%s_%s_%s",
 		 shorten_hash(get_database_name(MyDatabaseId), 16),
 		 shorten_hash(node->node->name, 16),
-		 shorten_hash(subscriber_name, 16));
+		 shorten_hash(subscription_name, 16));
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 
 	PG_RETURN_NAME(slot_name);

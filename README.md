@@ -189,7 +189,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `relation` - name of existing table, optionally qualified
 
-- `pglogical.alter_subscriber_add_replication_set(subscription_name name,
+- `pglogical.alter_subscription_add_replication_set(subscription_name name,
   replication_set name)`
   Adds one replication set into a subscriber. Does not synchronize, only
   activates consumption of events.
@@ -198,7 +198,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `replication_set` - name of replication set to add
 
-- `pglogical.alter_subscriber_remove_replication_set(subscription_name name,
+- `pglogical.alter_subscription_remove_replication_set(subscription_name name,
   replication_set name)`
   Removes one replication set from a subscriber.
 
