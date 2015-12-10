@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pglogical.c
- * 		pglogical initialization and common functionality
+ * 		pglogical utility functions shared between backend and frontend
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
