@@ -272,6 +272,7 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 			case 'n': /* null */
 				/* already marked as null */
 				tuple->values[attid] = 0xdeadbeef;
+				tuple->changed[attid] = true;
 				break;
 			case 'u': /* unchanged column */
 				tuple->values[attid] = 0xfbadbeef; /* make bad usage more obvious */
