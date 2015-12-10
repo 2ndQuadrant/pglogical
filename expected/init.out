@@ -60,9 +60,9 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
 (1 row)
 
 SELECT * FROM pglogical.show_subscription_status();
- subscription_name |   status    | provider_node |         provider_dsn         | replication_sets | forward_origins 
--------------------+-------------+---------------+------------------------------+------------------+-----------------
- test_subscription | replicating | test_provider | dbname=regression user=super | {default}        | 
+ subscription_name |   status    | provider_node |         provider_dsn         |                 slot_name                  | replication_sets | forward_origins 
+-------------------+-------------+---------------+------------------------------+--------------------------------------------+------------------+-----------------
+ test_subscription | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sube55bf37 | {default}        | 
 (1 row)
 
 -- Make sure we see the slot and active connection

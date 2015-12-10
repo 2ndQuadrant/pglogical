@@ -80,8 +80,9 @@ static char *validate_replication_set_input(char *replication_sets);
 static void remove_unwanted_data(PGconn *conn);
 static void initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn);
 static char *create_restore_point(PGconn *conn, char *restore_point_name);
-static char *initialize_replication_slot(PGconn *conn, char *subscriber_name,
-										 bool drop_slot_if_exists);
+static char *initialize_replication_slot(PGconn *conn, char *dbname,
+							char *provider_node_name, char *subscription_name,
+							bool drop_slot_if_exists);
 static void pglogical_subscribe(PGconn *conn, char *subscriber_name,
 								char *subscriber_dsn,
 								char *provider_connstr,
@@ -307,6 +308,8 @@ main(int argc, char **argv)
 	print_msg(VERBOSITY_NORMAL,
 			  _("Creating replication slot ...\n"));
 	slot_name = initialize_replication_slot(provider_conn,
+											remote_info->dbname,
+											remote_info->node_name,
 											subscriber_name,
 											drop_slot_if_exists);
 
@@ -629,7 +632,8 @@ check_data_dir(char *data_dir, RemoteInfo *remoteinfo)
  * Initialize replication slots
  */
 static char *
-initialize_replication_slot(PGconn *conn, char *subscriber_name,
+initialize_replication_slot(PGconn *conn, char *dbname,
+							char *provider_node_name, char *subscription_name,
 							bool drop_slot_if_exists)
 {
 	PQExpBufferData		query;
@@ -639,8 +643,12 @@ initialize_replication_slot(PGconn *conn, char *subscriber_name,
 	/* Generate the slot name. */
 	initPQExpBuffer(&query);
 	printfPQExpBuffer(&query,
-					  "SELECT pglogical.pglogical_gen_slot_name(%s)",
-					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)));
+					  "SELECT pglogical.pglogical_gen_slot_name(%s, %s, %s)",
+					  PQescapeLiteral(conn, dbname, strlen(dbname)),
+					  PQescapeLiteral(conn, provider_node_name,
+									  strlen(provider_node_name)),
+					  PQescapeLiteral(conn, subscription_name,
+									  strlen(subscription_name)));
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)

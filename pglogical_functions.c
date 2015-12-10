@@ -99,6 +99,10 @@ PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
 PG_FUNCTION_INFO_V1(pglogical_node_info);
 
+static void gen_slot_name(Name slot_name, char *dbname,
+						  const char *provider_name,
+						  const char *subscriber_name);
+
 /*
  * Create new node
  */
@@ -197,6 +201,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	PGlogicalInterface		originif;
 	PGLogicalLocalNode     *localnode;
 	PGlogicalInterface		targetif;
+	NameData				slot_name;
 
 	/* Check that this is actually a node. */
 	localnode = get_local_node(true);
@@ -230,6 +235,10 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	sub.replication_sets = textarray_to_list(rep_set_names);
 	sub.forward_origins = textarray_to_list(forward_origin_names);
 	sub.enabled = true;
+	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
+				  origin.name, sub_name);
+	sub.slot_name = pstrdup(NameStr(slot_name));
+
 	create_subscription(&sub);
 
 	/* Create synchronization status for the subscription. */
@@ -763,8 +772,8 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 	{
 		PGLogicalSubscription  *sub = lfirst(lc);
 		PGLogicalWorker		   *apply;
-		Datum	values[6];
-		bool	nulls[6];
+		Datum	values[7];
+		bool	nulls[7];
 		char   *status;
 
 		memset(values, 0, sizeof(values));
@@ -794,16 +803,17 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 		values[1] = CStringGetTextDatum(status);
 		values[2] = CStringGetTextDatum(sub->origin->name);
 		values[3] = CStringGetTextDatum(sub->origin_if->dsn);
+		values[4] = CStringGetTextDatum(sub->slot_name);
 		if (sub->replication_sets)
-			values[4] =
+			values[5] =
 				PointerGetDatum(strlist_to_textarray(sub->replication_sets));
 		else
-			nulls[4] = true;
+			nulls[5] = true;
 		if (sub->forward_origins)
-			values[5] =
+			values[6] =
 				PointerGetDatum(strlist_to_textarray(sub->forward_origins));
 		else
-			nulls[5] = true;
+			nulls[6] = true;
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 	}
@@ -1306,21 +1316,40 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 Datum
 pglogical_gen_slot_name(PG_FUNCTION_ARGS)
 {
-	char	   *subscription_name = NameStr(*PG_GETARG_NAME(0));
+	char	   *dbname = NameStr(*PG_GETARG_NAME(0));
+	char	   *provider_node_name = NameStr(*PG_GETARG_NAME(1));
+	char	   *subscription_name = NameStr(*PG_GETARG_NAME(2));
 	Name		slot_name;
-	PGLogicalLocalNode *node;
-
-	node = get_local_node(false);
 
 	slot_name = (Name) palloc0(NAMEDATALEN);
 
-	/* This must be same as what is in subscription_fromtuple() */
-	snprintf(NameStr(*slot_name), NAMEDATALEN,
-		"pgl_%s_%s_%s",
-		 shorten_hash(get_database_name(MyDatabaseId), 16),
-		 shorten_hash(node->node->name, 16),
-		 shorten_hash(subscription_name, 16));
-	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
+	gen_slot_name(slot_name, dbname, provider_node_name,
+				  subscription_name);
 
 	PG_RETURN_NAME(slot_name);
 }
+
+
+/*
+ * Generate slot name (used also for origin identifier)
+ *
+ * The current format is:
+ * pgl_<subscriber database name>_<provider node name>_<subscription name>
+ *
+ * Note that we want to leave enough free space for 8 bytes of suffix
+ * which in practice means 9 bytes including the underscore.
+ */
+static void
+gen_slot_name(Name slot_name, char *dbname, const char *provider_node,
+			  const char *subscription_name)
+{
+	memset(NameStr(*slot_name), 0, NAMEDATALEN);
+	snprintf(NameStr(*slot_name), NAMEDATALEN,
+			 "pgl_%s_%s_%s",
+			 shorten_hash(dbname, 16),
+			 shorten_hash(provider_node, 16),
+			 shorten_hash(subscription_name, 16));
+
+	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
+}
+

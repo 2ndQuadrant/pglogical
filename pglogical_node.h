@@ -42,8 +42,6 @@ typedef struct PGLogicalSubscription
 	PGlogicalInterface *origin_if;
 	PGlogicalInterface *target_if;
 	bool		enabled;
-	bool		sync_structure;
-	bool		sync_data;
 	List	   *replication_sets;
 	List	   *forward_origins;
 	char	   *slot_name;

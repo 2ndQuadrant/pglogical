@@ -27,8 +27,7 @@ CREATE TABLE pglogical.subscription (
     sub_origin_if oid NOT NULL REFERENCES node_interface(if_id),
 	sub_target_if oid NOT NULL REFERENCES node_interface(if_id),
 	sub_enabled boolean NOT NULL DEFAULT true,
-	sub_sync_structure boolean DEFAULT true,
-	sub_sync_data boolean DEFAULT true,
+	sub_slot_name name NOT NULL,
 	sub_replication_sets text[],
 	sub_forward_origins text[],
 	UNIQUE (sub_origin, sub_target)
@@ -46,7 +45,7 @@ CREATE TABLE pglogical.local_sync_status (
 
 CREATE FUNCTION pglogical.create_node(node_name name, dsn text)
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_node';
-CREATE FUNCTION pglogical.drop_node(mode_name name, ifexists boolean DEFAULT false)
+CREATE FUNCTION pglogical.drop_node(node_name name, ifexists boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_node';
 
 CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
@@ -68,7 +67,7 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alte
 
 CREATE FUNCTION pglogical.show_subscription_status(subscription_name name DEFAULT NULL,
 	OUT subscription_name text, OUT status text, OUT provider_node text,
-	OUT provider_dsn text, OUT replication_sets text[],
+	OUT provider_dsn text, OUT slot_name text, OUT replication_sets text[],
 	OUT forward_origins text[])
 RETURNS SETOF record STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_subscription_status';
 
@@ -190,6 +189,6 @@ CREATE FUNCTION pglogical.pglogical_node_info(OUT node_id oid, OUT node_name tex
 RETURNS record
 STABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';
 
-CREATE FUNCTION pglogical.pglogical_gen_slot_name(name)
+CREATE FUNCTION pglogical.pglogical_gen_slot_name(name, name, name)
 RETURNS name
 IMMUTABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';
