@@ -332,7 +332,7 @@ drop_local_node(void)
 	HeapTuple		tuple;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = heap_openrv(rv, AccessExclusiveLock);
 
 	/* Find the local node tuple. */
 	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
@@ -349,7 +349,7 @@ drop_local_node(void)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
 }

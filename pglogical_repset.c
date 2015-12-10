@@ -792,6 +792,35 @@ drop_replication_set(Oid setid)
 	heap_close(rel, RowExclusiveLock);
 }
 
+void
+drop_node_replication_sets(Oid nodeid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+
+	Assert(IsTransactionState());
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_repset_nodeid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(nodeid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	/* Remove matching tuples. */
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+		simple_heap_delete(rel, &tuple->t_self);
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+}
+
 /*
  * Insert new replication set / relation mapping.
  *

@@ -209,18 +209,35 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 		 * We can use this to update our cached replication set info, without
 		 * having to deal with cache invalidation callbacks.
 		 */
-		HeapTuple		tup = &rowfilter_args->change->data.tp.newtuple->tuple;
+		HeapTuple			tup;
 		PGLogicalRepSet	   *replicated_set;
 		ListCell		   *plc;
+
+		if (rowfilter_args->change_type == REORDER_BUFFER_CHANGE_UPDATE)
+			 tup = &rowfilter_args->change->data.tp.newtuple->tuple;
+		else if (rowfilter_args->change_type == REORDER_BUFFER_CHANGE_DELETE)
+			 tup = &rowfilter_args->change->data.tp.oldtuple->tuple;
+		else
+			return false;
 
 		replicated_set = replication_set_from_tuple(tup);
 		foreach (plc, private->replication_sets)
 		{
 			PGLogicalRepSet	   *rs = lfirst(plc);
 
-			/* Our cached replication set was updated, update local cache. */
+			/* Check if the changed repset is used by us. */
 			if (rs->id == replicated_set->id)
 			{
+				/*
+				 * In case this was delete, somebody deleted one of our
+				 * rep sets, bail here and let reconnect logic handle any
+				 * potential issues.
+				 */
+				if (rowfilter_args->change_type == REORDER_BUFFER_CHANGE_DELETE)
+					elog(ERROR, "replication set \"%s\" used by this connection was deleted, existing",
+						 rs->name);
+
+				/* This was update of our repset, update the cache. */
 				rs->replicate_insert = replicated_set->replicate_insert;
 				rs->replicate_update = replicated_set->replicate_update;
 				rs->replicate_delete = replicated_set->replicate_delete;

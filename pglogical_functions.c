@@ -37,6 +37,7 @@
 
 #include "replication/origin.h"
 #include "replication/reorderbuffer.h"
+#include "replication/slot.h"
 
 #include "storage/latch.h"
 #include "storage/proc.h"
@@ -140,7 +141,7 @@ pglogical_create_node(PG_FUNCTION_ARGS)
 /*
  * Drop the named node.
  *
- * TODO: cascade support
+ * TODO: support cascade (drop subscribers)
  */
 Datum
 pglogical_drop_node(PG_FUNCTION_ARGS)
@@ -165,13 +166,57 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 					 errmsg("cannot drop node \"%s\" because it still has subscriptions associated with it", node_name),
 					 errhint("drop the subscriptions first")));
 
-		/* Drop all the interfaces. */
-		drop_node_interfaces(node->id);
-
 		/* If the node is local node, drop the record as well. */
 		local_node = get_local_node(true);
 		if (local_node && local_node->node->id == node->id)
+		{
+			int		slotno;
+
+			/* Also drop all the slots associated with the node. */
+			for (slotno = 0; slotno < max_replication_slots; slotno++)
+			{
+				ReplicationSlot *slot = &ReplicationSlotCtl->replication_slots[slotno];
+
+				LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+				SpinLockAcquire(&slot->mutex);
+				/*
+				 * Check the slot is in use and it's slot belonging to current
+				 * pglogical node.
+				 */
+				if (!slot->in_use ||
+					slot->data.database != MyDatabaseId ||
+					namestrcmp(&slot->data.plugin, "pglogical_output") != 0 ||
+					strncmp(NameStr(slot->data.name), "pgl_", 4) != 0)
+				{
+					SpinLockRelease(&slot->mutex);
+					LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+					continue;
+				}
+
+				if (slot->active_pid != 0)
+				{
+					SpinLockRelease(&slot->mutex);
+					LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+					ereport(ERROR,
+							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+							 errmsg("cannot drop node \"%s\" because replication slot \"%s\" on the node is still active",
+									node_name, NameStr(slot->data.name)),
+							 errhint("drop the subscriptions first")));
+				}
+				SpinLockRelease(&slot->mutex);
+				LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+
+				ReplicationSlotDrop(NameStr(slot->data.name));
+			}
+
 			drop_local_node();
+		}
+
+		/* Drop all the interfaces. */
+		drop_node_interfaces(node->id);
+
+		/* Drop replication sets associated with the node. */
+		drop_node_replication_sets(node->id);
 
 		/* Drop the node itself. */
 		drop_node(node->id);
