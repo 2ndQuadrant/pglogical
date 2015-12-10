@@ -1,0 +1,47 @@
+\c regression
+SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
+ERROR:  cannot drop node "test_provider" because replication slot "pgl_postgres_test_provider_test_sube55bf37" on the node is still active
+HINT:  drop the subscriptions first
+SELECT slot_name, plugin, slot_type, database, active FROM pg_replication_slots;
+                 slot_name                  |      plugin      | slot_type |  database  | active 
+--------------------------------------------+------------------+-----------+------------+--------
+ pgl_postgres_test_provider_test_sube55bf37 | pglogical_output | logical   | regression | t
+(1 row)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     1
+(1 row)
+
+\c postgres
+SELECT * FROM pglogical.drop_subscription('test_subscription');
+ drop_subscription 
+-------------------
+                 1
+(1 row)
+
+SELECT * FROM pglogical.drop_node(node_name := 'test_subscriber');
+ drop_node 
+-----------
+ t
+(1 row)
+
+\c regression
+SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
+ drop_node 
+-----------
+ t
+(1 row)
+
+SELECT slot_name, plugin, slot_type, database, active FROM pg_replication_slots;
+ slot_name | plugin | slot_type | database | active 
+-----------+--------+-----------+----------+--------
+(0 rows)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     0
+(1 row)
+
