@@ -71,6 +71,8 @@ SELECT pglogical.replicate_ddl_command($$
 	);
 $$);
 
+SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 -- test_tbl_one_array_col
@@ -543,19 +545,19 @@ SELECT a, b, c FROM tst_range_array ORDER BY a;
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.tst_one_array;
-	DROP TABLE public.tst_arrays;
-	DROP TABLE public.tst_one_enum;
-	DROP TABLE public.tst_enums;
-	DROP TABLE public.tst_one_comp;
-	DROP TABLE public.tst_comps;
-	DROP TABLE public.tst_comp_enum;
-	DROP TABLE public.tst_comp_enum_array;
-	DROP TABLE public.tst_comp_one_enum_array;
-	DROP TABLE public.tst_comp_enum_what;
-	DROP TABLE public.tst_comp_mix_array;
-	DROP TABLE public.tst_range;
-	DROP TABLE public.tst_range_array;
+	DROP TABLE public.tst_one_array CASCADE;
+	DROP TABLE public.tst_arrays CASCADE;
+	DROP TABLE public.tst_one_enum CASCADE;
+	DROP TABLE public.tst_enums CASCADE;
+	DROP TABLE public.tst_one_comp CASCADE;
+	DROP TABLE public.tst_comps CASCADE;
+	DROP TABLE public.tst_comp_enum CASCADE;
+	DROP TABLE public.tst_comp_enum_array CASCADE;
+	DROP TABLE public.tst_comp_one_enum_array CASCADE;
+	DROP TABLE public.tst_comp_enum_what CASCADE;
+	DROP TABLE public.tst_comp_mix_array CASCADE;
+	DROP TABLE public.tst_range CASCADE;
+	DROP TABLE public.tst_range_array CASCADE;
 
 	DROP TYPE public.tst_comp_mix_t;
 	DROP TYPE public.tst_comp_enum_array_t;

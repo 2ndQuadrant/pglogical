@@ -38,10 +38,15 @@ SELECT * FROM pglogical.replication_set_add_table('repset_replicate_instrunc', '
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_insupd', replicate_truncate := true);
 -- fail again
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', 'test_nopkey');
+SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', replicate_update := true);
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', replicate_delete := true);
 
 -- check the replication sets
+SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+
+SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
+
 SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
 
 --too short

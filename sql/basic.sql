@@ -9,6 +9,8 @@ SELECT pglogical.replicate_ddl_command($$
 	);
 $$);
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c postgres
@@ -84,5 +86,5 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.basic_dml;
+	DROP TABLE public.basic_dml CASCADE;
 $$);

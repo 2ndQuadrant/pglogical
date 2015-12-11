@@ -9,10 +9,16 @@ $$);
  t
 (1 row)
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'test_tbl');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
 INSERT INTO test_tbl VALUES (1, 'a');
 REFRESH MATERIALIZED VIEW test_mv;
 INSERT INTO test_tbl VALUES (2, 'b');
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
  
@@ -49,6 +55,11 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;
 $$);
 NOTICE:  drop cascades to materialized view public.test_mv
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.test_tbl CASCADE;
+
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.test_tbl in replication set default
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_tbl CASCADE;
 

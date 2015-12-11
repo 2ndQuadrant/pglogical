@@ -19,6 +19,7 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 
+#include "catalog/catalog.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
@@ -88,6 +89,7 @@ PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_alter_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_drop_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_add_table);
+PG_FUNCTION_INFO_V1(pglogical_replication_set_add_all_tables);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
 
 /* DDL */
@@ -124,12 +126,22 @@ pglogical_create_node(PG_FUNCTION_ARGS)
 	nodeif.dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	create_node_interface(&nodeif);
 
+	/* Create predefined repsets. */
 	repset.id = InvalidOid;
 	repset.nodeid = node.id;
 	repset.name = DEFAULT_REPSET_NAME;
 	repset.replicate_insert = true;
 	repset.replicate_update = true;
 	repset.replicate_delete = true;
+	repset.replicate_truncate = true;
+	create_replication_set(&repset);
+
+	repset.id = InvalidOid;
+	repset.nodeid = node.id;
+	repset.name = DEFAULT_INSONLY_REPSET_NAME;
+	repset.replicate_insert = true;
+	repset.replicate_update = false;
+	repset.replicate_delete = false;
 	repset.replicate_truncate = true;
 	create_replication_set(&repset);
 
@@ -1015,6 +1027,91 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 
 	/* Cleanup. */
 	heap_close(rel, NoLock);
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Add replication set / relation mapping based on schemas.
+ */
+Datum
+pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
+{
+	Name		repset_name = PG_GETARG_NAME(0);
+	ArrayType  *nsp_names = PG_GETARG_ARRAYTYPE_P(1);
+	bool		synchronize = PG_GETARG_BOOL(2);
+	PGLogicalRepSet    *repset;
+	Relation			rel;
+	PGLogicalLocalNode *node;
+	StringInfoData		json;
+	ListCell		   *lc;
+
+	node = get_local_node(true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
+
+	/* Find the replication set. */
+	repset = get_replication_set_by_name(node->node->id,
+										 NameStr(*repset_name), false);
+
+	rel = heap_open(RelationRelationId, RowExclusiveLock);
+
+	foreach (lc, textarray_to_list(nsp_names))
+	{
+		char	   *nspname = lfirst(lc);
+		Oid			nspoid = LookupExplicitNamespace(nspname, false);
+		ScanKeyData skey[1];
+		SysScanDesc sysscan;
+		HeapTuple	tuple;
+
+		ScanKeyInit(&skey[0],
+					Anum_pg_class_relnamespace,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(nspoid));
+
+		sysscan = systable_beginscan(rel, ClassNameNspIndexId, true,
+									 NULL, 1, skey);
+
+		while (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
+		{
+			Oid				reloid = HeapTupleGetOid(tuple);
+			Form_pg_class	reltup = (Form_pg_class) GETSTRUCT(tuple);
+
+			/*
+			 * Only add logged tables which are not system tables
+			 * (catalog, toast).
+			 */
+			if (reltup->relkind != RELKIND_RELATION ||
+				reltup->relpersistence != RELPERSISTENCE_PERMANENT ||
+				IsSystemClass(reloid, reltup))
+				continue;
+
+			if (!replication_set_has_table(repset->id, reloid))
+				replication_set_add_table(repset->id, reloid);
+
+			if (synchronize)
+			{
+				/* It's easier to construct json manually than via Jsonb API... */
+				initStringInfo(&json);
+				appendStringInfo(&json, "{\"schema_name\": ");
+				escape_json(&json, nspname);
+				appendStringInfo(&json, ",\"table_name\": ");
+				escape_json(&json, NameStr(reltup->relname));
+				appendStringInfo(&json, "}");
+
+				/* Queue the truncate for replication. */
+				queue_message(list_make1(repset->name), GetUserId(),
+							  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
+			}
+		}
+
+		systable_endscan(sysscan);
+	}
+
+	heap_close(rel, RowExclusiveLock);
 
 	PG_RETURN_BOOL(true);
 }

@@ -108,7 +108,7 @@ CREATE VIEW pglogical.TABLES AS
 		   AND n.nspname != 'information_schema'
 		   AND n.nspname != 'pglogical'
 	)
-    SELECT s.set_name, n.nspname, r.relname
+    SELECT n.nspname, r.relname, s.set_name
 	  FROM pg_catalog.pg_namespace n,
 		   pg_catalog.pg_class r,
 		   set_tables s
@@ -116,16 +116,9 @@ CREATE VIEW pglogical.TABLES AS
 	   AND n.oid = r.relnamespace
 	   AND r.oid = s.set_reloid
 	 UNION
-    SELECT rs.set_name, t.nspname, t.relname
-	  FROM user_tables t,
-		   pglogical.replication_set rs,
-		   pg_catalog.pg_index i
-     WHERE rs.set_name = 'default'
-	   AND t.oid NOT IN (SELECT set_reloid FROM set_tables)
-	   AND i.indrelid = t.oid
-           /* Only tables with replica identity index can be in default replication set. */
-	   AND ((relreplident = 'd' AND i.indisprimary) OR (relreplident = 'i' AND i.indisreplident));
-
+    SELECT t.nspname, t.relname, NULL
+	  FROM user_tables t
+     WHERE t.oid NOT IN (SELECT set_reloid FROM set_tables);
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
 	replicate_insert boolean = true, replicate_update boolean = true,
@@ -140,6 +133,8 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop
 
 CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
+CREATE FUNCTION pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize boolean DEFAULT false)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_all_tables';
 CREATE FUNCTION pglogical.replication_set_remove_table(set_name name, relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
 

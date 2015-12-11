@@ -22,12 +22,13 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 
 -- show initial replication sets
 SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
- set_name |      nspname      |      relname       
-----------+-------------------+--------------------
- default  | normalschema      | test_normalschema
- default  | public            | test_publicschema
- default  | strange.schema-IS | test_strangeschema
-(3 rows)
+      nspname      |      relname       | set_name 
+-------------------+--------------------+----------
+ normalschema      | test_normalschema  | 
+ public            | test_nopkey        | 
+ public            | test_publicschema  | 
+ strange.schema-IS | test_strangeschema | 
+(4 rows)
 
 -- not existing replication set
 SELECT * FROM pglogical.replication_set_add_table('nonexisting', 'test_publicschema');
@@ -101,20 +102,42 @@ SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', 'te
 ERROR:  table test_nopkey cannot be added to replication set repset_replicate_insupd
 DETAIL:  table does not have PRIMARY KEY and given replication set is configured to replicate UPDATEs and/or DELETEs
 HINT:  Add a PRIMARY KEY to the table
+SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
+ERROR:  table test_nopkey cannot be added to replication set default
+DETAIL:  table does not have PRIMARY KEY and given replication set is configured to replicate UPDATEs and/or DELETEs
+HINT:  Add a PRIMARY KEY to the table
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', replicate_update := true);
 ERROR:  replication set repset_replicate_instrunc cannot be altered to replicate UPDATEs or DELETEs because it contains tables without PRIMARY KEY
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', replicate_delete := true);
 ERROR:  replication set repset_replicate_instrunc cannot be altered to replicate UPDATEs or DELETEs because it contains tables without PRIMARY KEY
 -- check the replication sets
 SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
-         set_name          |      nspname      |      relname       
----------------------------+-------------------+--------------------
- repset_replicate_all      | public            | test_publicschema
- repset_replicate_instrunc | normalschema      | test_normalschema
- repset_replicate_instrunc | public            | test_nopkey
- repset_replicate_insupd   | normalschema      | test_normalschema
- repset_replicate_insupd   | strange.schema-IS | test_strangeschema
+      nspname      |      relname       |         set_name          
+-------------------+--------------------+---------------------------
+ normalschema      | test_normalschema  | repset_replicate_instrunc
+ normalschema      | test_normalschema  | repset_replicate_insupd
+ public            | test_nopkey        | repset_replicate_instrunc
+ public            | test_publicschema  | repset_replicate_all
+ strange.schema-IS | test_strangeschema | repset_replicate_insupd
 (5 rows)
+
+SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
+ replication_set_add_all_tables 
+--------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+      nspname      |      relname       |         set_name          
+-------------------+--------------------+---------------------------
+ normalschema      | test_normalschema  | repset_replicate_instrunc
+ normalschema      | test_normalschema  | repset_replicate_insupd
+ public            | test_nopkey        | default_insert_only
+ public            | test_nopkey        | repset_replicate_instrunc
+ public            | test_publicschema  | default_insert_only
+ public            | test_publicschema  | repset_replicate_all
+ strange.schema-IS | test_strangeschema | repset_replicate_insupd
+(7 rows)
 
 --too short
 SELECT pglogical.create_replication_set('');
@@ -124,8 +147,9 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP SCHEMA normalschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to 2 other objects
 DETAIL:  table public.test_publicschema in replication set repset_replicate_all
+table public.test_publicschema in replication set default_insert_only
 CONTEXT:  during execution of queued SQL statement: 
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
@@ -165,8 +189,9 @@ CONTEXT:  during execution of queued SQL statement:
 
 \c postgres
 SELECT * FROM pglogical.replication_set;
-  set_id   | set_nodeid | set_name | replicate_insert | replicate_update | replicate_delete | replicate_truncate 
------------+------------+----------+------------------+------------------+------------------+--------------------
- 828867312 | 1755434425 | default  | t                | t                | t                | t
-(1 row)
+   set_id   | set_nodeid |      set_name       | replicate_insert | replicate_update | replicate_delete | replicate_truncate 
+------------+------------+---------------------+------------------+------------------+------------------+--------------------
+  828867312 | 1755434425 | default             | t                | t                | t                | t
+ 3318003856 | 1755434425 | default_insert_only | t                | f                | f                | t
+(2 rows)
 

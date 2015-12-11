@@ -33,6 +33,12 @@ $$);
  t
 (1 row)
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
@@ -40,6 +46,12 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c regression
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
 -- check basic insert replication
 INSERT INTO basic_dml(other, data, something)
 VALUES (5, 'foo', '1 minute'::interval),
@@ -85,8 +97,13 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
-    DROP TABLE public.basic_dml;
+    DROP TABLE public.basic_dml CASCADE;
 $$);
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.basic_dml in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+    DROP TABLE public.basic_dml CASCADE;
+
  replicate_ddl_command 
 -----------------------
  t

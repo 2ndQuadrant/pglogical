@@ -27,6 +27,7 @@ typedef struct PGLogicalRepSet
 } PGLogicalRepSet;
 
 #define DEFAULT_REPSET_NAME "default"
+#define DEFAULT_INSONLY_REPSET_NAME "default_insert_only"
 
 /* This is only valid within one output plugin instance/walsender. */
 typedef struct PGLogicalRepSetRelation
@@ -70,6 +71,7 @@ extern void drop_replication_set(Oid setid);
 extern void drop_node_replication_sets(Oid nodeid);
 
 extern void replication_set_add_table(Oid setid, Oid reloid);
+extern bool replication_set_has_table(Oid setid, Oid reloid);
 extern void replication_set_remove_table(Oid setid, Oid reloid,
 										 bool from_table_drop);
 

@@ -13,6 +13,12 @@ $$);
  t
 (1 row)
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'toasted');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
 SELECT pglogical.replicate_ddl_command($$
 	ALTER TABLE public.toasted ALTER COLUMN data SET STORAGE EXTERNAL;
 $$);
@@ -69,8 +75,13 @@ SELECT * FROM toasted ORDER BY id;
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.toasted;
+	DROP TABLE public.toasted CASCADE;
 $$);
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.toasted in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+	DROP TABLE public.toasted CASCADE;
+
  replicate_ddl_command 
 -----------------------
  t

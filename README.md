@@ -81,21 +81,29 @@ Now create the provider node:
         dsn := 'host=providerhost port=5432 dbname=db'
     );
 
-Optionally you can also create replication sets and add tables to them (see
-[Replication sets](#replication-sets)). It's usually better to create replication sets beforehand.
+Add all tables in `public` schema to the `default` replication set.
 
-Once the provider node is setup, subscribers can be subscribed to it:
+	SELECT pglogical.replication_set_add_all_tables('default', ARRAY['public']);
+
+Optionally you can also create additional replication sets and add tables to
+them (see [Replication sets](#replication-sets)). It's usually better to create
+replication sets beforehand.
+
+Once the provider node is setup, subscribers can be subscribed to it. First the
+subscriber node must be created:
 
     SELECT pglogical.create_node(
         node_name := 'subscriber1',
         dsn := 'host=thishost port=5432 dbname=db'
     );
 
+And finally on the subscriber node you can create the subscription which will
+start synchronization and replication process in the background:
+
     SELECT pglogical.create_subscription(
         subscription_name := 'subscription1',
         provider_dsn := 'host=providerhost port=5432 dbname=db'
     );
-(run this on the subscriber node)
 
 ### Node management
 
@@ -223,11 +231,14 @@ Each replicated set can specify individually if `INSERTs`, `UPDATEs`,
 `DELETEs` and `TRUNCATEs` on the set are replicated. Every table can be in
 multiple replication sets and every subscriber can subscribe to multiple
 replication sets as well. The resulting set of tables and actions replicated
-is the union of the sets the table is in.
+is the union of the sets the table is in. The tables are not replicated until
+they are added into a replication set.
 
-There are two preexisting replication sets named "all" and "default". The "all"
-replication set contains every user table in the database and every table that
-has not been added to specific replication set will be in the "default" set.
+There are two preexisting replication sets named "default" and
+"default_insert_only". The "default" replication set is defined to replicate
+all changes to tables in in. The "default_insert_only" only replicates INSERTs
+and is meant for tables that don't have primary key (see
+[Limitations](#primary-key-or-replica-identity-required) section for details).
 
 The following functions are provided for managing the replication sets:
 
@@ -266,6 +277,19 @@ The following functions are provided for managing the replication sets:
   - `synchronize` - if true, the table data is synchronized on all subscribers
     which are subscribed to given replication set, default false
 
+- `pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize boolean)`
+  Adds all tables in given schemas. Only existing tables are added, table that
+  will be created in future will not be added automatically. For how to ensure
+  that tables created in future are added to correct replication set, see
+  [Automatic assignment of replication sets for new tables](#automatic-assignment-of-replication-sets-for-new-tables).
+
+  Parameters:
+  - `set_name` - name of the existing replication set
+  - `schema_names` - array of names name of existing schemas from which tables
+    should be added
+  - `synchronize` - if true, the table data is synchronized on all subscribers
+    which are subscribed to given replication set, default false
+
 - `pglogical.replication_set_remove_table(set_name name, table_name regclass)`
   Remove a table from replication set.
 
@@ -289,8 +313,12 @@ Example:
     BEGIN
         FOR obj IN SELECT * FROM pg_event_trigger_ddl_commands()
         LOOP
-            IF obj.object_type = 'table' AND obj.schema_name = 'config' THEN
-                PERFORM pglogical.replication_set_add_table('configuration', obj.objid);
+            IF obj.object_type = 'table' THEN
+                IF obj.schema_name = 'config' THEN
+                    PERFORM pglogical.replication_set_add_table('configuration', obj.objid);
+                ELSIF NOT obj.in_extension THEN
+                    PERFORM pglogical.replication_set_add_table('default', obj.objid);
+                END IF;
             END IF;
         END LOOP;
     END;
@@ -302,7 +330,8 @@ Example:
         EXECUTE PROCEDURE pglogical_assign_repset();
 
 The above example will put all new tables created in schema `config` into
-replication set `configuration`.
+replication set `configuration` and all other new tables which are not created
+by extensions will go to `default` replication set.
 
 ## Conflicts
 
@@ -424,7 +453,7 @@ To replicate multiple databases you must set up individual provider/subscriber
 relationships for each. There is no way to configure replication for all databases
 in a PostgreSQL install at once.
 
-#### `PRIMARY KEY` or `REPLICA IDENTITY` required
+### PRIMARY KEY or REPLICA IDENTITY required
 
 `UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
 KEY` or other valid replica identity such as a `UNIQUE` constraint. Replication

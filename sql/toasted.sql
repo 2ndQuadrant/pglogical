@@ -9,6 +9,8 @@ SELECT pglogical.replicate_ddl_command($$
 	);
 $$);
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'toasted');
+
 SELECT pglogical.replicate_ddl_command($$
 	ALTER TABLE public.toasted ALTER COLUMN data SET STORAGE EXTERNAL;
 $$);
@@ -43,5 +45,5 @@ SELECT * FROM toasted ORDER BY id;
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
-	DROP TABLE public.toasted;
+	DROP TABLE public.toasted CASCADE;
 $$);

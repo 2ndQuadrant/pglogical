@@ -364,7 +364,7 @@ get_repset_relation(Oid nodeid, Oid reloid, List *subs_replication_sets)
 {
 	PGLogicalRepSetRelation *entry;
 	bool			found;
-	ListCell	   *slc;
+	ListCell	   *tlc;
 	List		   *table_replication_sets;
 
 	if (RepSetRelationHash == NULL)
@@ -394,85 +394,44 @@ get_repset_relation(Oid nodeid, Oid reloid, List *subs_replication_sets)
 	/* Get replication sets for a table. */
 	table_replication_sets = get_relation_replication_sets(nodeid, reloid);
 
-	/* If table is not in any replication set, we apply "default" one to it. */
-	if (list_length(table_replication_sets) == 0)
+	/*
+	 * Check for match between table's replication sets and the subscription
+	 * list of replication sets that was given as parameter.
+	 *
+	 * Note that tables can have no replication sets, in which this will be
+	 * noop. This will be commonly true for example for internal tables which
+	 * are created during table rewrites, so if we'll want to support
+	 * replicating those, we'll have to have special handling for them.
+	 */
+	foreach(tlc, table_replication_sets)
 	{
-		char	   *relname = get_rel_name(reloid);
-		Oid			oid;
+		PGLogicalRepSet	   *trepset = lfirst(tlc);
+		ListCell		   *slc;
 
-		/*
-		 * Special case, table rewrite.
-		 * We can't handle table rewrites in pglogical yet, so we filter out
-		 * changes made by table rewrite.
-		 */
-		if (sscanf(relname, "pg_temp_%u", &oid) == 1)
-		{
-			entry->replicate_insert = false;
-			entry->replicate_update = false;
-			entry->replicate_delete = false;
-			entry->replicate_truncate = false;
-		}
-		else
-		{
-			/*
-			 * Normal table.
-			 * Try to find "default" replication set in list of subscribed
-			 * replication sets.
-			 */
-			foreach(slc, subs_replication_sets)
-			{
-				PGLogicalRepSet	   *srepset = lfirst(slc);
-
-				if (strcmp(srepset->name, DEFAULT_REPSET_NAME) == 0)
-				{
-					if (srepset->replicate_insert)
-						entry->replicate_insert = true;
-					if (srepset->replicate_update)
-						entry->replicate_update = true;
-					if (srepset->replicate_delete)
-						entry->replicate_delete = true;
-					if (srepset->replicate_truncate)
-						entry->replicate_truncate = true;
-				}
-			}
-		}
-	}
-	else
-	{
-		/*
-		 * Table has replication sets, build union of the table repsets and
-		 * subscription repsets.
-		 */
-		foreach(slc, subs_replication_sets)
+		foreach (slc, subs_replication_sets)
 		{
 			PGLogicalRepSet	   *srepset = lfirst(slc);
-			ListCell		   *tlc;
 
-			foreach (tlc, table_replication_sets)
+			if (trepset->id == srepset->id)
 			{
-				PGLogicalRepSet	   *trepset = lfirst(tlc);
-
-				if (trepset->id == srepset->id)
-				{
-					if (trepset->replicate_insert)
-						entry->replicate_insert = true;
-					if (trepset->replicate_update)
-						entry->replicate_update = true;
-					if (trepset->replicate_delete)
-						entry->replicate_delete = true;
-					if (trepset->replicate_truncate)
-						entry->replicate_truncate = true;
-				}
+				if (srepset->replicate_insert)
+					entry->replicate_insert = true;
+				if (srepset->replicate_update)
+					entry->replicate_update = true;
+				if (srepset->replicate_delete)
+					entry->replicate_delete = true;
+				if (srepset->replicate_truncate)
+					entry->replicate_truncate = true;
 			}
-
-			/*
-			 * Now we now everything is replicated, no point in trying to check
-			 * more replication sets.
-			 */
-			if (entry->replicate_insert && entry->replicate_update &&
-				entry->replicate_delete && entry->replicate_truncate)
-				break;
 		}
+
+		/*
+		 * Now we now everything is replicated, no point in trying to check
+		 * more replication sets.
+		 */
+		if (entry->replicate_insert && entry->replicate_update &&
+			entry->replicate_delete && entry->replicate_truncate)
+			break;
 	}
 
 	entry->isvalid = true;
@@ -886,6 +845,45 @@ replication_set_add_table(Oid setid, Oid reloid)
 	CacheInvalidateRelcacheByRelid(reloid);
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+}
+
+/*
+ * Check if table is already in replication set.
+ */
+bool
+replication_set_has_table(Oid setid, Oid reloid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[2];
+	bool			found = false;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for the record. */
+	ScanKeyInit(&key[0],
+				Anum_repset_table_setid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(setid));
+	ScanKeyInit(&key[1],
+				Anum_repset_table_reloid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(reloid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 2, key);
+	tuple = systable_getnext(scan);
+
+	if (HeapTupleIsValid(tuple))
+		found = true;
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, NoLock);
+
+	return found;
 }
 
 /*
