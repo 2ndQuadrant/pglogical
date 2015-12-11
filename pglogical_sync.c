@@ -574,7 +574,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 						newsync.subid = sub->id;
 						newsync.nspname = rv->schemaname;
 						newsync.relname = rv->relname;
-						newsync.status = SYNC_STATUS_INIT;
+						newsync.status = SYNC_STATUS_READY;
 						create_local_sync_status(&newsync);
 					}
 				}
