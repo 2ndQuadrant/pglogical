@@ -9,9 +9,9 @@ $$);
  t
 (1 row)
 
-SELECT * FROM pglogical.replication_set_add_table('default', 'test_tbl');
- replication_set_add_table 
----------------------------
+SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
+ replication_set_add_all_tables 
+--------------------------------
  t
 (1 row)
 

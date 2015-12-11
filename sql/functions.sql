@@ -16,12 +16,14 @@ CREATE TABLE public.funct2(
 ) ;
 $$);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'public.funct2');
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 INSERT INTO public.funct2(a,b) VALUES (1,2);--c should be 22
 INSERT INTO public.funct2(a,b,c) VALUES (3,4,5);-- c should be 5
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c postgres
 SELECT * from public.funct2;
@@ -40,6 +42,8 @@ CREATE TABLE public.funct5(
 	c double precision DEFAULT public.get_curr_century()
 );
 $$);
+
+SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
@@ -62,6 +66,8 @@ CREATE TABLE public.funct (
 	b INT DEFAULT nextval('public.insert_seq')
 );
 $$);
+
+SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
@@ -94,6 +100,8 @@ CREATE TABLE public.nullcheck_tbl(
 	name text
 ) ;
 $$);
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'nullcheck_tbl');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
@@ -141,6 +149,8 @@ CREATE TABLE public.not_nullcheck_tbl(
 	name text
 ) ;
 $$);
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'not_nullcheck_tbl');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
@@ -207,12 +217,12 @@ SELECT * FROM public.not_nullcheck_tbl;
 \c regression
 
 SELECT pglogical.replicate_ddl_command($$
-DROP TABLE public.funct;
+DROP TABLE public.funct CASCADE;
 DROP SEQUENCE public.INSERT_SEQ;
-DROP TABLE public.funct2;
-DROP TABLE public.funct5;
+DROP TABLE public.funct2 CASCADE;
+DROP TABLE public.funct5 CASCADE;
 DROP FUNCTION public.get_curr_century();
 DROP FUNCTION public.add(integer, integer);
-DROP TABLE public.nullcheck_tbl;
-DROP TABLE public.not_nullcheck_tbl;
+DROP TABLE public.nullcheck_tbl CASCADE;
+DROP TABLE public.not_nullcheck_tbl CASCADE;
 $$);

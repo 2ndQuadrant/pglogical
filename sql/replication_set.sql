@@ -56,6 +56,7 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
+	DROP TABLE public.test_nopkey CASCADE;
 $$);
 
 \c postgres

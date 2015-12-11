@@ -20,6 +20,18 @@ $$);
  t
 (1 row)
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'f1k_products');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'f1k_orders');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
  pg_xlog_wait_remote_apply 
 ---------------------------
@@ -57,9 +69,21 @@ SELECT * FROM public.f1k_orders;
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
-DROP TABLE public.f1k_orders;
-DROP TABLE public.f1k_products;
+DROP TABLE public.f1k_orders CASCADE;
+DROP TABLE public.f1k_products CASCADE;
 $$);
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.f1k_orders in replication set default_insert_only
+CONTEXT:  during execution of queued SQL statement: 
+DROP TABLE public.f1k_orders CASCADE;
+DROP TABLE public.f1k_products CASCADE;
+
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.f1k_products in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+DROP TABLE public.f1k_orders CASCADE;
+DROP TABLE public.f1k_products CASCADE;
+
  replicate_ddl_command 
 -----------------------
  t

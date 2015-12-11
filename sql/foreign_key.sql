@@ -18,6 +18,9 @@ CREATE TABLE public.f1k_orders (
 --pass
 $$);
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'f1k_products');
+SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'f1k_orders');
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
 INSERT into public.f1k_products VALUES (1, 1, 'product1', 1.20);
@@ -39,6 +42,6 @@ SELECT * FROM public.f1k_orders;
 \c regression
 
 SELECT pglogical.replicate_ddl_command($$
-DROP TABLE public.f1k_orders;
-DROP TABLE public.f1k_products;
+DROP TABLE public.f1k_orders CASCADE;
+DROP TABLE public.f1k_products CASCADE;
 $$);

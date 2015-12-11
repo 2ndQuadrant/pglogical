@@ -137,15 +137,15 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the subscription, must be unique
   - `provider_dsn` - connection string to a provider
   - `replication_sets` - array of replication sets to subscribe to, these must
-    already exist, default is "default"
+    already exist, default is "{default,default_insert_only}"
   - `synchronize_structure` - specifies if to synchronize structure from
     provider to the subscriber, default true
   - `synchronize_data` - specifies if to synchronize data from provider to
     the subscriber, default true
   - `forward_origins` - array of origin names to forward, currently only
     supported values are empty array meaning don't forward any changes
-    that didn't originate on provider node, or "all" which means replicate all
-    changes no matter what is their origin, default is "all"
+    that didn't originate on provider node, or "{all}" which means replicate
+    all changes no matter what is their origin, default is "{all}"
 
 - `pglogical.pglogical_drop_subscription(subscription_name name, ifexists bool)`
   Disconnects the subscription and removes it from the catalog.

@@ -6,7 +6,7 @@ CREATE TABLE public.test_tbl(id serial primary key, data text);
 CREATE MATERIALIZED VIEW public.test_mv AS (SELECT * FROM public.test_tbl);
 $$);
 
-SELECT * FROM pglogical.replication_set_add_table('default', 'test_tbl');
+SELECT * FROM pglogical.replication_set_add_all_tables('default', '{public}');
 
 INSERT INTO test_tbl VALUES (1, 'a');
 
