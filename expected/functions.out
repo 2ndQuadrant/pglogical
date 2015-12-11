@@ -281,21 +281,17 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 
 \c postgres
 SELECT * FROM public.not_nullcheck_tbl;
- id | id1 | name  | id2 
-----+-----+-------+-----
-  1 |   1 | name1 |    
-  2 |   2 | name2 |    
-(2 rows)
+ id | id1 | name | id2 
+----+-----+------+-----
+(0 rows)
 
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (3,3,'name3');
 ERROR:  null value in column "id2" violates not-null constraint
 DETAIL:  Failing row contains (3, 3, name3, null).
 SELECT * FROM public.not_nullcheck_tbl;
- id | id1 | name  | id2 
-----+-----+-------+-----
-  1 |   1 | name1 |    
-  2 |   2 | name2 |    
-(2 rows)
+ id | id1 | name | id2 
+----+-----+------+-----
+(0 rows)
 
 SELECT pglogical.alter_subscription_disable('test_subscription', true);
  alter_subscription_disable 
@@ -314,15 +310,23 @@ BEGIN
 	END LOOP;
 END;
 $$;
-SELECT data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json');
- data 
-------
-(0 rows)
+SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 'D', 'U') THEN data END as data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json');
+ action |                                                data                                                 
+--------+-----------------------------------------------------------------------------------------------------
+ "S"    | 
+ "B"    | 
+ "I"    | {"action":"I","relation":["public","not_nullcheck_tbl"],"newtuple":{"id":1,"id1":1,"name":"name1"}}
+ "C"    | 
+(4 rows)
 
-SELECT data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json');
- data 
-------
-(0 rows)
+SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 'D', 'U') THEN data END as data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json');
+ action |                                                data                                                 
+--------+-----------------------------------------------------------------------------------------------------
+ "S"    | 
+ "B"    | 
+ "I"    | {"action":"I","relation":["public","not_nullcheck_tbl"],"newtuple":{"id":2,"id1":2,"name":"name2"}}
+ "C"    | 
+(4 rows)
 
 \c postgres
 SELECT pglogical.alter_subscription_enable('test_subscription', true);
@@ -356,11 +360,9 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 SELECT * FROM public.not_nullcheck_tbl;
  id | id1 | name  | id2 
 ----+-----+-------+-----
-  1 |   1 | name1 |    
-  2 |   2 | name2 |    
-  4 |   4 | name4 |    
+  4 |   4 | name4 |  99
   5 |   5 | name5 |   0
-(4 rows)
+(2 rows)
 
 \c regression
 SELECT pglogical.replicate_ddl_command($$
