@@ -261,7 +261,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	NameData				slot_name;
 
 	/* Check that this is actually a node. */
-	localnode = get_local_node(true);
+	localnode = get_local_node(false);
 
 	/* Now, fetch info about remote node. */
 	conn = pglogical_connect(provider_dsn, "create_subscription");
