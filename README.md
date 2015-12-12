@@ -83,7 +83,7 @@ Now create the provider node:
 
 Add all tables in `public` schema to the `default` replication set.
 
-	SELECT pglogical.replication_set_add_all_tables('default', ARRAY['public']);
+    SELECT pglogical.replication_set_add_all_tables('default', ARRAY['public']);
 
 Optionally you can also create additional replication sets and add tables to
 them (see [Replication sets](#replication-sets)). It's usually better to create
