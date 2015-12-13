@@ -20,12 +20,8 @@ SHLIB_LINK = $(libpq)
 
 REGRESS = init basic extended toasted replication_set add_table matview bidirectional foreign_key functions drop
 
-ifdef PG94
-PG_CPPFLAGS += -Icompat
-OBJS += compat/pglogical_compat.o
-endif
-
 ifdef USE_PGXS
+
 
 # For regression checks
 # http://www.postgresql.org/message-id/CAB7nPqTsR5o3g-fBi6jbsVdhfPiLFWQ_0cGU5=94Rv_8W3qvFA@mail.gmail.com
@@ -33,9 +29,17 @@ ifdef USE_PGXS
 abs_top_builddir = .
 NO_TEMP_INSTALL = yes
 
-PG_CPPFLAGS += -Ipglogical_output
-
 PG_CONFIG = pg_config
+
+#PG_CPPFLAGS += -Ipglogical_output
+
+PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
+
+ifeq ($(PGVER),94)
+PG_CPPFLAGS += -Icompat
+OBJS += compat/pglogical_compat.o
+endif
+
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
@@ -54,7 +58,7 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 # write permissions to their production PostgreSQL install (right?)
 # but this is still not ideal.
 
-ifdef PG94
+ifeq ($(PGVER),94)
 regresscheck: ;
 else
 regresscheck:
@@ -66,13 +70,7 @@ regresscheck:
 	    --create-role=logical \
 	    $(REGRESS)
 
-pglogical_output:
-	$(MAKE) -C pglogical_output clean all
-
-pglogical_output_install: pglogical_output
-	$(MAKE) -C pglogical_output install
-
-check: pglogical_output_install install regresscheck ;
+check: install regresscheck ;
 
 endif
 
@@ -93,4 +91,4 @@ EXTRA_REGRESS_OPTS += $(top_srcdir)/contrib/regress-postgresql.conf
 
 endif
 
-.PHONY: regresscheck pglogical_output pglogical_output_install
+.PHONY: regresscheck
