@@ -112,18 +112,20 @@ static void gen_slot_name(Name slot_name, char *dbname,
 Datum
 pglogical_create_node(PG_FUNCTION_ARGS)
 {
-	PGLogicalNode	node;
+	char			   *node_name = NameStr(*PG_GETARG_NAME(0));
+	char			   *node_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	PGLogicalNode		node;
 	PGlogicalInterface	nodeif;
 	PGLogicalRepSet		repset;
 
 	node.id = InvalidOid;
-	node.name = NameStr(*PG_GETARG_NAME(0));
+	node.name = node_name;
 	create_node(&node);
 
 	nodeif.id = InvalidOid;
 	nodeif.name = node.name;
 	nodeif.nodeid = node.id;
-	nodeif.dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	nodeif.dsn = node_dsn;
 	create_node_interface(&nodeif);
 
 	/* Create predefined repsets. */
@@ -266,6 +268,14 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	/* Now, fetch info about remote node. */
 	conn = pglogical_connect(provider_dsn, "create_subscription");
 	pglogical_remote_node_info(conn, &origin.id, &origin.name, NULL, NULL, NULL);
+	PQfinish(conn);
+
+	/* Check that we can connect remotely also in replication mode. */
+	conn = pglogical_connect_replica(provider_dsn, "create_subscription");
+	PQfinish(conn);
+
+	/* Check that local connection works. */
+	conn = pglogical_connect(localnode->interface->dsn, "create_subscription");
 	PQfinish(conn);
 
 	/* Next, create local representation of remote node and interface. */

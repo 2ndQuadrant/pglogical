@@ -1,0 +1,73 @@
+\c regression
+SET client_min_messages = 'warning';
+DROP ROLE IF EXISTS nonreplica;
+CREATE USER nonreplica;
+CREATE EXTENSION IF NOT EXISTS pglogical;
+GRANT ALL ON SCHEMA pglogical TO nonreplica;
+GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
+\c postgres
+SET client_min_messages = 'warning';
+CREATE EXTENSION IF NOT EXISTS pglogical;
+-- fail (local node not existing)
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription',
+    provider_dsn := 'dbname=regression user=nonreplica',
+	forward_origins := '{}');
+ERROR:  local node not found
+-- succeed
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=nonreplica');
+ create_node 
+-------------
+  1755434425
+(1 row)
+
+-- fail (can't connect to remote)
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription',
+    provider_dsn := 'dbname=regression user=nonexisting',
+	forward_origins := '{}');
+ERROR:  could not connect to the postgresql server: FATAL:  role "nonexisting" does not exist
+
+DETAIL:  dsn was: dbname=regression user=nonexisting fallback_application_name='create_subscription'
+-- fail (remote node not existing)
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription',
+    provider_dsn := 'dbname=regression user=nonreplica',
+	forward_origins := '{}');
+ERROR:  could fetch remote node info: ERROR:  local node not found
+
+
+\c regression
+-- succeed
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=postgres user=nonreplica');
+ create_node 
+-------------
+  2689511696
+(1 row)
+
+\c postgres
+-- fail (can't connect with replication connection to remote)
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription',
+    provider_dsn := 'dbname=regression user=nonreplica',
+	forward_origins := '{}');
+ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "[local]", user "nonreplica"
+
+DETAIL:  dsn was: dbname=regression user=nonreplica replication=database fallback_application_name='create_subscription'
+-- cleanup
+SELECT * FROM pglogical.drop_node('test_subscriber');
+ drop_node 
+-----------
+ t
+(1 row)
+
+\c regression
+SELECT * FROM pglogical.drop_node('test_provider');
+ drop_node 
+-----------
+ t
+(1 row)
+
+SET client_min_messages = 'warning';
+DROP OWNED BY nonreplica;
+DROP ROLE IF EXISTS nonreplica;

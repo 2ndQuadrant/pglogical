@@ -141,7 +141,7 @@ pglogical_connect(const char *connstring, const char *connname)
 	conn = PQconnectdb(dsn.data);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
-		ereport(FATAL,
+		ereport(ERROR,
 				(errmsg("could not connect to the postgresql server: %s",
 						PQerrorMessage(conn)),
 				 errdetail("dsn was: %s", dsn.data)));
@@ -167,7 +167,7 @@ pglogical_connect_replica(const char *connstring, const char *connname)
 	conn = PQconnectdb(dsn.data);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
-		ereport(FATAL,
+		ereport(ERROR,
 				(errmsg("could not connect to the postgresql server in replication mode: %s",
 						PQerrorMessage(conn)),
 				 errdetail("dsn was: %s", dsn.data)));

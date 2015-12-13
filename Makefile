@@ -18,7 +18,7 @@ SCRIPTS_built = pglogical_create_subscriber
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
-REGRESS = init basic extended toasted replication_set add_table matview bidirectional foreign_key functions drop
+REGRESS = init_fail init basic extended toasted replication_set add_table matview bidirectional foreign_key functions drop
 
 ifdef USE_PGXS
 

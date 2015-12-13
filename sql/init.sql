@@ -26,12 +26,14 @@ END;$FUNC$ LANGUAGE plpgsql;
 GRANT ALL ON SCHEMA public TO nonsuper;
 
 \c regression
-CREATE EXTENSION pglogical;
+SET client_min_messages = 'warning';
+CREATE EXTENSION IF NOT EXISTS pglogical;
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
 
 \c postgres
-CREATE EXTENSION pglogical;
+SET client_min_messages = 'warning';
+CREATE EXTENSION IF NOT EXISTS pglogical;
 
 SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
 
