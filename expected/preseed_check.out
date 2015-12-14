@@ -1,0 +1,141 @@
+-- Verify data from preseed.sql has correctly been cloned
+\c regression
+\d some_local_tbl
+                         Table "public.some_local_tbl"
+ Column |  Type   |                          Modifiers                          
+--------+---------+-------------------------------------------------------------
+ id     | integer | not null default nextval('some_local_tbl_id_seq'::regclass)
+ key    | text    | not null
+ data   | text    | 
+Indexes:
+    "some_local_tbl_pkey" PRIMARY KEY, btree (id)
+    "some_local_tbl_key_key" UNIQUE CONSTRAINT, btree (key)
+
+SELECT * FROM some_local_tbl ORDER BY id;
+ id | key  | data  
+----+------+-------
+  1 | key1 | data1
+  2 | key2 | 
+  3 | key3 | data3
+(3 rows)
+
+\d some_local_tbl1
+                         Table "public.some_local_tbl1"
+ Column |  Type   |                          Modifiers                           
+--------+---------+--------------------------------------------------------------
+ id     | integer | not null default nextval('some_local_tbl1_id_seq'::regclass)
+ key    | text    | not null
+ data   | text    | 
+Indexes:
+    "some_local_tbl1_key_key" UNIQUE CONSTRAINT, btree (key)
+
+SELECT * FROM some_local_tbl1 ORDER BY id;
+ id | key  | data  
+----+------+-------
+  1 | key1 | data1
+  2 | key2 | 
+  3 | key3 | data3
+(3 rows)
+
+\d some_local_tbl2
+                         Table "public.some_local_tbl2"
+ Column |  Type   |                          Modifiers                           
+--------+---------+--------------------------------------------------------------
+ id     | integer | not null default nextval('some_local_tbl2_id_seq'::regclass)
+ key    | text    | 
+ data   | text    | 
+
+SELECT * FROM some_local_tbl2 ORDER BY id;
+ id | key  | data  
+----+------+-------
+  1 | key1 | data1
+  2 | key2 | 
+  3 | key3 | data3
+(3 rows)
+
+\d some_local_tbl3
+Table "public.some_local_tbl3"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ id     | integer | 
+ key    | text    | 
+ data   | text    | 
+
+SELECT * FROM some_local_tbl3 ORDER BY id;
+ id | key  | data  
+----+------+-------
+    | key1 | data1
+    | key2 | 
+    | key3 | data3
+(3 rows)
+
+\c postgres
+\d some_local_tbl
+                         Table "public.some_local_tbl"
+ Column |  Type   |                          Modifiers                          
+--------+---------+-------------------------------------------------------------
+ id     | integer | not null default nextval('some_local_tbl_id_seq'::regclass)
+ key    | text    | not null
+ data   | text    | 
+Indexes:
+    "some_local_tbl_pkey" PRIMARY KEY, btree (id)
+    "some_local_tbl_key_key" UNIQUE CONSTRAINT, btree (key)
+
+SELECT * FROM some_local_tbl ORDER BY id;
+ id | key | data 
+----+-----+------
+(0 rows)
+
+\d some_local_tbl1
+                         Table "public.some_local_tbl1"
+ Column |  Type   |                          Modifiers                           
+--------+---------+--------------------------------------------------------------
+ id     | integer | not null default nextval('some_local_tbl1_id_seq'::regclass)
+ key    | text    | not null
+ data   | text    | 
+Indexes:
+    "some_local_tbl1_key_key" UNIQUE CONSTRAINT, btree (key)
+
+SELECT * FROM some_local_tbl1 ORDER BY id;
+ id | key | data 
+----+-----+------
+(0 rows)
+
+\d some_local_tbl2
+                         Table "public.some_local_tbl2"
+ Column |  Type   |                          Modifiers                           
+--------+---------+--------------------------------------------------------------
+ id     | integer | not null default nextval('some_local_tbl2_id_seq'::regclass)
+ key    | text    | 
+ data   | text    | 
+
+SELECT * FROM some_local_tbl2 ORDER BY id;
+ id | key | data 
+----+-----+------
+(0 rows)
+
+\d some_local_tbl3
+Table "public.some_local_tbl3"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ id     | integer | 
+ key    | text    | 
+ data   | text    | 
+
+SELECT * FROM some_local_tbl3 ORDER BY id;
+ id | key | data 
+----+-----+------
+(0 rows)
+
+\c regression
+SELECT pglogical.replicate_ddl_command($$
+        DROP TABLE public.some_local_tbl;
+        DROP TABLE public.some_local_tbl1;
+        DROP TABLE public.some_local_tbl2;
+        DROP TABLE public.some_local_tbl3;
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
