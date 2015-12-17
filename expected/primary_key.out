@@ -1,0 +1,314 @@
+--PRIMARY KEY
+\c regression
+-- testing update of primary key
+-- create  table with primary key and 3 other tables referencing it
+SELECT pglogical.replicate_ddl_command($$
+CREATE TABLE public.pk_users (
+    id integer PRIMARY KEY,
+    another_id integer unique not null,
+    a_id integer,
+    name text,
+    address text
+);
+
+--pass
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'pk_users');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO pk_users VALUES(1,11,1,'User1', 'Address1');
+INSERT INTO pk_users VALUES(2,12,1,'User2', 'Address2');
+INSERT INTO pk_users VALUES(3,13,2,'User3', 'Address3');
+INSERT INTO pk_users VALUES(4,14,2,'User4', 'Address4');
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  | address  
+----+------------+------+-------+----------
+  1 |         11 |    1 | User1 | Address1
+  2 |         12 |    1 | User2 | Address2
+  3 |         13 |    2 | User3 | Address3
+  4 |         14 |    2 | User4 | Address4
+(4 rows)
+
+\d+ pk_users;
+                         Table "public.pk_users"
+   Column   |  Type   | Modifiers | Storage  | Stats target | Description 
+------------+---------+-----------+----------+--------------+-------------
+ id         | integer | not null  | plain    |              | 
+ another_id | integer | not null  | plain    |              | 
+ a_id       | integer |           | plain    |              | 
+ name       | text    |           | extended |              | 
+ address    | text    |           | extended |              | 
+Indexes:
+    "pk_users_pkey" PRIMARY KEY, btree (id)
+    "pk_users_another_id_key" UNIQUE CONSTRAINT, btree (another_id)
+
+\c postgres
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  | address  
+----+------------+------+-------+----------
+  1 |         11 |    1 | User1 | Address1
+  2 |         12 |    1 | User2 | Address2
+  3 |         13 |    2 | User3 | Address3
+  4 |         14 |    2 | User4 | Address4
+(4 rows)
+
+\c regression
+UPDATE pk_users SET address='UpdatedAddress1' WHERE id=1;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  |     address     
+----+------------+------+-------+-----------------
+  2 |         12 |    1 | User2 | Address2
+  3 |         13 |    2 | User3 | Address3
+  4 |         14 |    2 | User4 | Address4
+  1 |         11 |    1 | User1 | UpdatedAddress1
+(4 rows)
+
+\c regression
+SELECT pglogical.replicate_ddl_command($$
+CREATE UNIQUE INDEX another_id_temp_idx ON public.pk_users (another_id);
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY USING INDEX another_id_temp_idx;
+
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_another_id_key;
+$$);
+NOTICE:  ALTER TABLE / ADD CONSTRAINT USING INDEX will rename index "another_id_temp_idx" to "pk_users_pkey"
+CONTEXT:  during execution of queued SQL statement: 
+CREATE UNIQUE INDEX another_id_temp_idx ON public.pk_users (another_id);
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY USING INDEX another_id_temp_idx;
+
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_another_id_key;
+
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+\d+ pk_users;
+                         Table "public.pk_users"
+   Column   |  Type   | Modifiers | Storage  | Stats target | Description 
+------------+---------+-----------+----------+--------------+-------------
+ id         | integer | not null  | plain    |              | 
+ another_id | integer | not null  | plain    |              | 
+ a_id       | integer |           | plain    |              | 
+ name       | text    |           | extended |              | 
+ address    | text    |           | extended |              | 
+Indexes:
+    "pk_users_pkey" PRIMARY KEY, btree (another_id)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+\d+ pk_users;
+                         Table "public.pk_users"
+   Column   |  Type   | Modifiers | Storage  | Stats target | Description 
+------------+---------+-----------+----------+--------------+-------------
+ id         | integer | not null  | plain    |              | 
+ another_id | integer | not null  | plain    |              | 
+ a_id       | integer |           | plain    |              | 
+ name       | text    |           | extended |              | 
+ address    | text    |           | extended |              | 
+Indexes:
+    "pk_users_pkey" PRIMARY KEY, btree (another_id)
+
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  |     address     
+----+------------+------+-------+-----------------
+  3 |         13 |    2 | User3 | Address3
+  4 |         14 |    2 | User4 | Address4
+  1 |         11 |    1 | User1 | UpdatedAddress1
+  2 |         12 |    1 | User2 | UpdatedAddress2
+(4 rows)
+
+\c regression
+UPDATE pk_users SET address='UpdatedAddress3' WHERE another_id=12;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  |     address     
+----+------------+------+-------+-----------------
+  3 |         13 |    2 | User3 | Address3
+  4 |         14 |    2 | User4 | Address4
+  1 |         11 |    1 | User1 | UpdatedAddress1
+  2 |         12 |    1 | User2 | UpdatedAddress3
+(4 rows)
+
+\c regression
+UPDATE pk_users SET address='UpdatedAddress4' WHERE a_id=2;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+INSERT INTO pk_users VALUES(4,15,2,'User5', 'Address5');
+-- subscriber now has duplicated value in id field while provider does not
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  |     address     
+----+------------+------+-------+-----------------
+  1 |         11 |    1 | User1 | UpdatedAddress1
+  2 |         12 |    1 | User2 | UpdatedAddress3
+  3 |         13 |    2 | User3 | UpdatedAddress4
+  4 |         14 |    2 | User4 | UpdatedAddress4
+  4 |         15 |    2 | User5 | Address5
+(5 rows)
+
+\c regression
+SELECT pglogical.replicate_ddl_command($$
+CREATE UNIQUE INDEX id_temp_idx ON public.pk_users (id);
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY USING INDEX id_temp_idx;
+$$);
+NOTICE:  ALTER TABLE / ADD CONSTRAINT USING INDEX will rename index "id_temp_idx" to "pk_users_pkey"
+CONTEXT:  during execution of queued SQL statement: 
+CREATE UNIQUE INDEX id_temp_idx ON public.pk_users (id);
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY USING INDEX id_temp_idx;
+
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+\d+ pk_users;
+                         Table "public.pk_users"
+   Column   |  Type   | Modifiers | Storage  | Stats target | Description 
+------------+---------+-----------+----------+--------------+-------------
+ id         | integer | not null  | plain    |              | 
+ another_id | integer | not null  | plain    |              | 
+ a_id       | integer |           | plain    |              | 
+ name       | text    |           | extended |              | 
+ address    | text    |           | extended |              | 
+Indexes:
+    "pk_users_pkey" PRIMARY KEY, btree (id)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+(0 rows)
+
+\c postgres
+\d+ pk_users;
+                         Table "public.pk_users"
+   Column   |  Type   | Modifiers | Storage  | Stats target | Description 
+------------+---------+-----------+----------+--------------+-------------
+ id         | integer | not null  | plain    |              | 
+ another_id | integer | not null  | plain    |              | 
+ a_id       | integer |           | plain    |              | 
+ name       | text    |           | extended |              | 
+ address    | text    |           | extended |              | 
+Indexes:
+    "pk_users_pkey" PRIMARY KEY, btree (another_id)
+
+SELECT pglogical.alter_subscription_disable('test_subscription', true);
+ alter_subscription_disable 
+----------------------------
+ t
+(1 row)
+
+\c regression
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_replication_slots WHERE active = false) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 'D', 'U') THEN json_extract_path(data::json, 'relation') END as data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json');
+ action |         data          
+--------+-----------------------
+ "S"    | 
+ "B"    | 
+ "I"    | ["pglogical","queue"]
+ "C"    | 
+(4 rows)
+
+SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 'D', 'U') THEN data END as data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json');
+ action | data 
+--------+------
+(0 rows)
+
+\c postgres
+SELECT pglogical.alter_subscription_enable('test_subscription', true);
+ alter_subscription_enable 
+---------------------------
+ t
+(1 row)
+
+DELETE FROM pk_users WHERE id = 4;-- remove the offending entries.
+\c regression
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_replication_slots WHERE active = true) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+SELECT * FROM pk_users;
+ id | another_id | a_id | name  |     address     
+----+------------+------+-------+-----------------
+  1 |         11 |    1 | User1 | UpdatedAddress1
+  3 |         13 |    2 | User3 | UpdatedAddress4
+  2 |         12 |    1 | User2 | UpdatedAddress2
+(3 rows)
+
+\c regression
+SELECT pglogical.replicate_ddl_command($$
+DROP TABLE public.pk_users CASCADE;
+$$);
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.pk_users in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+DROP TABLE public.pk_users CASCADE;
+
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
