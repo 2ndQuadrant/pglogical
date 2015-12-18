@@ -34,6 +34,8 @@
 
 #define REPLICATION_ORIGIN_ALL "all"
 
+extern bool pglogical_synchronous_commit;
+
 extern char *shorten_hash(const char *str, int maxlen);
 
 extern List *textarray_to_list(ArrayType *textarray);

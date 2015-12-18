@@ -62,6 +62,7 @@
 #include "pglogical_worker.h"
 #include "pglogical.h"
 
+
 void pglogical_apply_main(Datum main_arg);
 
 static bool			in_remote_transaction = false;
@@ -76,6 +77,15 @@ PGLogicalApplyWorker	   *MyApplyWorker = NULL;
 PGLogicalSubscription	   *MySubscription = NULL;
 
 static PGconn	   *applyconn = NULL;
+
+typedef struct PGLFlushPosition
+{
+	dlist_node node;
+	XLogRecPtr local_end;
+	XLogRecPtr remote_end;
+} PGLFlushPosition;
+
+dlist_head lsn_mapping = DLIST_STATIC_INIT(lsn_mapping);
 
 static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
 static void handle_startup_param(const char *key, const char *value);
@@ -144,7 +154,17 @@ handle_commit(StringInfo s)
 
 	if (IsTransactionState())
 	{
+		PGLFlushPosition *flushpos;
+
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(TopMemoryContext);
+
+		/* Track commit lsn  */
+		flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
+		flushpos->local_end = XactLastCommitEnd;
+		flushpos->remote_end = end_lsn;
+
+		dlist_push_tail(&lsn_mapping, &flushpos->node);
 		MemoryContextSwitchTo(MessageContext);
 	}
 
@@ -1033,6 +1053,58 @@ replication_handler(StringInfo s)
 }
 
 /*
+ * Figure out which write/flush positions to report to the walsender process.
+ *
+ * We can't simply report back the last LSN the walsender sent us because the
+ * local transaction might not yet be flushed to disk locally. Instead we
+ * build a list that associates local with remote LSNs for every commit. When
+ * reporting back the flush position to the sender we iterate that list and
+ * check which entries on it are already locally flushed. Those we can report
+ * as having been flushed.
+ *
+ * Returns true if there's no outstanding transactions that need to be
+ * flushed.
+ */
+static bool
+get_flush_position(XLogRecPtr *write, XLogRecPtr *flush)
+{
+	dlist_mutable_iter iter;
+	XLogRecPtr	local_flush = GetFlushRecPtr();
+
+	*write = InvalidXLogRecPtr;
+	*flush = InvalidXLogRecPtr;
+
+	dlist_foreach_modify(iter, &lsn_mapping)
+	{
+		PGLFlushPosition *pos =
+			dlist_container(PGLFlushPosition, node, iter.cur);
+
+		*write = pos->remote_end;
+
+		if (pos->local_end <= local_flush)
+		{
+			*flush = pos->remote_end;
+			dlist_delete(iter.cur);
+			pfree(pos);
+		}
+		else
+		{
+			/*
+			 * Don't want to uselessly iterate over the rest of the list which
+			 * could potentially be long. Instead get the last element and
+			 * grab the write position from there.
+			 */
+			pos = dlist_tail_element(PGLFlushPosition, node,
+									 &lsn_mapping);
+			*write = pos->remote_end;
+			return false;
+		}
+	}
+
+	return dlist_is_empty(&lsn_mapping);
+}
+
+/*
  * Send a Standby Status Update message to server.
  *
  * 'recvpos' is the latest LSN we've received data to, force is set if we need
@@ -1054,7 +1126,14 @@ send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
 	if (recvpos < last_recvpos)
 		recvpos = last_recvpos;
 
-	flushpos = writepos = recvpos;
+	if (get_flush_position(&writepos, &flushpos))
+	{
+		/*
+		 * No outstanding transactions to flush, we can report the latest
+		 * received position. This is important for synchronous replication.
+		 */
+		flushpos = writepos = recvpos;
+	}
 
 	if (writepos < last_writepos)
 		writepos = last_writepos;
@@ -1553,6 +1632,20 @@ pglogical_apply_main(Datum main_arg)
 
 	/* Connect to our database. */
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
+
+	/* setup synchronous commit according to the user's wishes */
+	SetConfigOption("synchronous_commit",
+					pglogical_synchronous_commit ? "local" : "off",
+					PGC_BACKEND, PGC_S_OVERRIDE);	/* other context? */
+
+	/*
+	 * Disable function body checks during replay. That's necessary because a)
+	 * the creator of the function might have had it disabled b) the function
+	 * might be search_path dependant and we don't fix the contents of
+	 * functions.
+	 */
+	SetConfigOption("check_function_bodies", "off",
+					PGC_INTERNAL, PGC_S_OVERRIDE);
 
 	/* Load the subscription. */
 	StartTransactionCommand();

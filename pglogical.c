@@ -47,6 +47,8 @@ static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{NULL, 0, false}
 };
 
+bool pglogical_synchronous_commit = false;
+
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
 
@@ -397,6 +399,14 @@ _PG_init(void)
 							 PGC_SUSET, 0,
 							 pglogical_conflict_resolver_check_hook,
 							 NULL, NULL);
+
+	DefineCustomBoolVariable("pglogical.synchronous_commit",
+							 "pglogical specific synchronous commit value",
+							 NULL,
+							 &pglogical_synchronous_commit,
+							 false, PGC_POSTMASTER,
+							 0,
+							 NULL, NULL, NULL);
 
 	if (IsBinaryUpgrade)
 		return;
