@@ -14,7 +14,8 @@
 #define PG_LOGICAL_PROTO_NATIVE_H
 
 
-extern void pglogical_write_rel(StringInfo out, Relation rel);
+extern void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
+							struct PGLRelMetaCacheEntry *cache_entry);
 
 extern void pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 							ReorderBufferTXN *txn);

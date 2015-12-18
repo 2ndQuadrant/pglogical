@@ -3,7 +3,7 @@ PGFILEDESC = "pglogical_output - logical replication output plugin"
 
 OBJS = pglogical_output.o pglogical_hooks.o pglogical_config.o \
 	   pglogical_proto.o pglogical_proto_native.o \
-	   pglogical_proto_json.o
+	   pglogical_proto_json.o pglogical_relmetacache.o
 
 REGRESS = prep params_native basic_native hooks_native basic_json hooks_json encoding_json cleanup
 

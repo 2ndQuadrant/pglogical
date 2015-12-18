@@ -17,6 +17,7 @@
 #include "pglogical_output.h"
 #include "pglogical_proto.h"
 #include "pglogical_hooks.h"
+#include "pglogical_relmetacache.h"
 
 #include "access/hash.h"
 #include "access/sysattr.h"
@@ -339,6 +340,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			load_hooks(data);
 			call_startup_hook(data, ctx->output_plugin_options);
 		}
+
+		pglogical_init_relmetacache();
 	}
 }
 
@@ -409,6 +412,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext old;
+	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
+
 
 	/* First check the table filter */
 	if (!call_row_filter_hook(data, txn, relation, change))
@@ -417,11 +422,16 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
 
-	/* TODO: add caching (send only if changed) */
-	if (data->api->write_rel)
+	/*
+	 * If the protocol wants to write relation information and the client
+	 * isn't known to have metadata cached for this relation already,
+	 * send relation metadata.
+	 */
+	if (data->api->write_rel != NULL &&
+			pglogical_cache_relmeta(data, relation, &cached_relmeta))
 	{
 		OutputPluginPrepareWrite(ctx, false);
-		data->api->write_rel(ctx->out, relation);
+		data->api->write_rel(ctx->out, data, relation, cached_relmeta);
 		OutputPluginWrite(ctx, false);
 	}
 
