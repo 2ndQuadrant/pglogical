@@ -171,3 +171,60 @@ confirmed that it enabled the requested functionality. It might choose to
 disconnect and report an error to the user if the server didn't do what it
 asked. This can be important, e.g. when a security-significant hook is
 specified.
+
+## Support for transaction streaming
+
+Presently logical decoding requires that a transaction has committed before it
+can *begin* sending it to the client. This means long running xacts can take 2x
+as long, since we can't start apply on the replica until the xact is committed
+on the master.
+
+Additionally, a big xact will cause large delays in apply of smaller
+transactions because logical decoding reoreders transactions into strict commit
+order and replays them in that sequence. Small transactions that commited after
+the big transaction cannot be replayed to the replica until the big transaction
+is transferred over the wire, and we can't get a head start on that while it's
+still running.
+
+Finally, the accumulation of a big transaction in the reorder buffer means that
+storage on the upstream must be sufficient to hold the entire transaction until
+it can be streamed to the replica and discarded. That is in addition to the
+copy in retained WAL, which cannot be purged until replay is confirmed past
+commit for that xact. The temporary copy serves no data safety purpose; it can
+be regenerated from retained WAL is just a spool file.
+
+There are big upsides to waiting until commit. Rolled-back transactions and
+subtransactions are never sent at all. The apply/downstream side is greatly
+simplified by not needing to do transaction ordering, worry about
+interdependencies and conflicts during apply. The commit timestamp is known
+from the beginning of replay, allowing for smarter conflict resolution
+behaviour in multi-master scenarios. Nonetheless sometimes we want to be able
+to stream changes in advance of commit.
+
+So we need the ability to start streaming a transaction from the upstream as
+its changes are seen in WAL, either applying it immediately on the downstream
+or spooling it on the downstream until it's committed. This requires changes
+to the logical decoding facilities themselves, it isn't something pglogical_output
+can do alone. However, we've left room in pglogical_output to support this
+when support is added to logical decoding:
+
+* Flags in most message types let us add fields if we need to, like a
+  HAS_XID flag and an extra field for the transaction ID so we can
+  differentiate between concurrent transactions when streaming. The space
+  isn't wasted the rest of the time.
+
+* The upstream isn't allowed to send new message types, etc, without a
+  capability flag being set by the client. So for interleaved xacts we won't
+  enable them in logical decoding unless the client tells us the client is
+  prepared to cope with them by sending additional startup parameters.
+
+Note that for consistency reasons we still have to commit things in the same
+order on the downstream. The purpose of transaction streaming is to reduce the
+latency between the commit of the last xact before a big one and the first xact
+after the big one, minimising the duration of the stall in the flow of smaller
+xacts perceptible on the downstream.
+
+Transaction streaming also makes parallel apply on the downstream possible,
+though it is not necessary to have parallel apply to benefit from transaction
+streaming. Parallel apply has further complexities that are outside the scope
+of the output plugin design.
