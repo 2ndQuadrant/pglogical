@@ -30,10 +30,8 @@ not the priority as tools like wal2json already exist for that.
 
 ## Column metadata
 
-The output plugin sends metadata for columsn - at minimum, the column names -
-before each row. It will soon be changed to send the data before each row from
-a new, different table, so that streams of inserts from COPY etc don't repeat
-the metadata each time. That's just a pending feature.
+The output plugin sends metadata for columns - at minimum, the column names -
+before each row that first refers to that relation.
 
 The reason metadata must be sent is that the upstream and downstream table's
 attnos don't necessarily correspond. The column names might, and their ordering
@@ -53,15 +51,66 @@ maintained by DDL replication, but:
 
 So despite the bandwidth cost, we need to send metadata.
 
-In future a client-negotiated cache is planned, so that clients can announce
-to the output plugin that they can cache metadata across change series, and
-metadata can only be sent when invalidated by relation changes or when a new
-relation is seen.
-
 Support for type metadata is penciled in to the protocol so that clients that
 don't have table definitions at all - like queueing engines - can decode the
 data. That'll also permit type validation sanity checking on the apply side
 with logical replication.
+
+The upstream expects the client to cache this metadata and re-use it when data
+is sent for the relation again. Cache size controls, an LRU and purge
+notifications will be added.
+
+## Relation metadata cache size controls
+
+The relation metadata cache will have downstream size control added. The
+downstream will send a parameter indicating that it supports caching, and the
+maximum cache size desired. The option will have settings for "no cache",
+"cache unlimited" and "fixed size LRU [size specified]".
+
+Since there is no downstream-to-upstream communication after the startup params
+there's no easy way for the downstream to tell the upstream when it purges
+cache entries. So the downstream cache is a slave cache that must depend
+strictly on the upstream cache. The downstream tells the upstream how to manage
+its cache and then after that it just follows orders.
+
+To keep the caches in sync so the upstream never sends a row without knowing
+the downstream has metadata for it cached the downstream must always cache
+relation metadata when it receives it, and may not purge it from its cache
+until it receives a purge message for that relation from the upstream. If a
+new metadata message for the same relation arrives it *must* replace the old
+entry in the cache.
+
+The downstream does *not* have to promptly purge or invalidate cache entries
+when it gets purge messages from the upstream. They are just notifications that
+the upstream no longer expects the downstream to retain that cache entry and
+will re-send it if it is required again later.
+
+## Not an extension
+
+There's no extension script for pglogical_output. That's by design. We've tried
+really hard to avoid needing one, allowing applications using pglogical_output
+to entirely define any SQL level catalogs they need and interact with them
+using the hooks.
+
+That way applications don't have to deal with some of their catalog data being
+in pglogical_output extension catalogs and some being in their own.
+
+There's no issue with dump and restore that way either. The app controls it
+entirely and pglogical_output doesn't need any policy or tools for it.
+
+pglogical_output is meant to be a re-usable component of other solutions. Users
+shouldn't need to care about it directly.
+
+## Hooks
+
+Quite a bit of functionality that could be done directly in the output
+plugin is instead delegated to pluggable hooks. Replication origin filtering
+for example.
+
+That's because pglogical_output tries hard not to know anything about the
+topology of the replication cluster and leave that to applications using the
+plugin. It doesn't 
+
 
 ## Hook entry point as a SQL function
 
