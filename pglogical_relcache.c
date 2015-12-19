@@ -140,18 +140,29 @@ pglogical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 static void
 pglogical_relcache_invalidate_callback(Datum arg, Oid reloid)
 {
-	HASH_SEQ_STATUS status;
 	PGLogicalRelation *entry;
 
 	/* Just to be sure. */
 	if (PGLogicalRelationHash == NULL)
 		return;
 
-	hash_seq_init(&status, PGLogicalRelationHash);
-
-	while ((entry = (PGLogicalRelation *) hash_seq_search(&status)) != NULL)
+	if (reloid != InvalidOid)
 	{
-		if (reloid == InvalidOid || entry->reloid == reloid)
+		/* invalidate one entry */
+		entry = (PGLogicalRelation *) hash_search(PGLogicalRelationHash,
+				(void*) &reloid, HASH_FIND, NULL);
+
+		if (entry != NULL)
+			entry->reloid = InvalidOid;
+	}
+	else
+	{
+		/* invalidate all cache entries */
+		HASH_SEQ_STATUS status;
+
+		hash_seq_init(&status, PGLogicalRelationHash);
+
+		while ((entry = (PGLogicalRelation *) hash_seq_search(&status)) != NULL)
 			entry->reloid = InvalidOid;
 	}
 }
