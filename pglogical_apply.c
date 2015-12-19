@@ -723,6 +723,9 @@ handle_startup(StringInfo s)
 		/* It's OK to have a zero length value */
 		v = pq_getmsgstring(s);
 
+		/* log parameters for tracing */
+		elog(DEBUG2, "pglogical session start param %s=%s", k, v);
+
 		handle_startup_param(k, v);
 	} while (!getmsgisend(s));
 }
