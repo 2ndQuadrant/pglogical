@@ -428,7 +428,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * send relation metadata.
 	 */
 	if (data->api->write_rel != NULL &&
-			pglogical_cache_relmeta(data, relation, &cached_relmeta))
+			!pglogical_cache_relmeta(data, relation, &cached_relmeta))
 	{
 		OutputPluginPrepareWrite(ctx, false);
 		data->api->write_rel(ctx->out, data, relation, cached_relmeta);

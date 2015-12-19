@@ -128,6 +128,8 @@ relmeta_cache_callback(Datum arg, Oid relid)
  * Newly created entries are returned as is_cached=false. The API
  * hook can set is_cached to skip subsequent updates if it sent a
  * complete response that the client will cache.
+ *
+ * Returns true on a cache hit, false on a miss.
  */
 bool
 pglogical_cache_relmeta(struct PGLogicalOutputData *data,
@@ -145,6 +147,7 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 	{
 		Assert(hentry->relid = RelationGetRelid(rel));
 		hentry->is_cached = false;
+		hentry->api_private = NULL;
 	}
 
 	Assert(hentry != NULL);
