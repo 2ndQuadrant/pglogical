@@ -48,6 +48,7 @@ pglogical_init_relmetacache(void)
 	if (RelMetaCache == NULL)
 	{
 		/* first time, init the cache */
+		int hash_flags = HASH_ELEM | HASH_CONTEXT;
 
 		/* Make sure we've initialized CacheMemoryContext. */
 		if (CacheMemoryContext == NULL)
@@ -59,8 +60,15 @@ pglogical_init_relmetacache(void)
 		/* safe to allocate to CacheMemoryContext since it's never reset */
 		ctl.hcxt = CacheMemoryContext;
 
-		RelMetaCache = hash_create("pglogical relation metadata cache", 32, &ctl,
-								 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+#if PG_VERSION_NUM >= 90500
+		hash_flags |= HASH_BLOBS;
+#else
+		ctl.hash = tag_hash;
+		hash_flags |= HASH_FUNCTION;
+#endif
+
+		RelMetaCache = hash_create("pglogical relation metadata cache", 128,
+									&ctl, hash_flags);
 
 		Assert(RelMetaCache != NULL);
 
@@ -137,6 +145,16 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 {
 	struct PGLRelMetaCacheEntry *hentry;
 	bool found;
+
+	if (data->relmeta_cache_size == 0)
+	{
+		/*
+		 * If cache is disabled must treat every search as a miss
+		 * and return no entry to populate.
+		 */
+		*entry = NULL;
+		return false;
+	}
 
 	/* Find cached function info, creating if not found */
 	hentry = (struct PGLRelMetaCacheEntry*) hash_search(RelMetaCache,

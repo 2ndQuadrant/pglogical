@@ -92,4 +92,13 @@ SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
 	'startup_params_format', '1',
 	'proto_format', 'native');
 
+-- relmeta cache with fixed size (not supported yet, so error)
+SELECT count(data) FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1',
+	'startup_params_format', '1',
+	'relmeta_cache_size', '200');
+
 SELECT 'drop' FROM pg_drop_replication_slot('regression_slot');

@@ -37,6 +37,7 @@ typedef enum PGLogicalOutputParamType
 {
 	OUTPUT_PARAM_TYPE_BOOL,
 	OUTPUT_PARAM_TYPE_UINT32,
+	OUTPUT_PARAM_TYPE_INT32,
 	OUTPUT_PARAM_TYPE_STRING,
 	OUTPUT_PARAM_TYPE_QUALIFIED_NAME
 } PGLogicalOutputParamType;
@@ -50,6 +51,7 @@ static Datum get_param(List *options, const char *name, bool missing_ok,
 					   bool *found);
 static bool parse_param_bool(DefElem *elem);
 static uint32 parse_param_uint32(DefElem *elem);
+static int32 parse_param_int32(DefElem *elem);
 
 static void
 process_parameters_v1(List *options, PGLogicalOutputData *data);
@@ -72,7 +74,8 @@ enum {
 	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
 	PARAM_PG_VERSION,
 	PARAM_HOOKS_SETUP_FUNCTION,
-	PARAM_NO_TXINFO
+	PARAM_NO_TXINFO,
+	PARAM_RELMETA_CACHE_SIZE
 } OutputPluginParamKey;
 
 typedef struct {
@@ -99,6 +102,7 @@ static OutputPluginParam param_lookup[] = {
 	{"pg_version", PARAM_PG_VERSION},
 	{"hooks.setup_function", PARAM_HOOKS_SETUP_FUNCTION},
 	{"no_txinfo", PARAM_NO_TXINFO},
+	{"relmeta_cache_size", PARAM_RELMETA_CACHE_SIZE},
 	{NULL, PARAM_UNRECOGNISED}
 };
 
@@ -238,6 +242,11 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				data->client_no_txinfo = DatumGetBool(val);
 				break;
 
+			case PARAM_RELMETA_CACHE_SIZE:
+				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_INT32);
+				data->client_relmeta_cache_size = DatumGetInt32(val);
+				break;
+
 			case PARAM_UNRECOGNISED:
 				ereport(DEBUG1,
 						(errmsg("Unrecognised pglogical parameter %s ignored", elem->defname)));
@@ -250,7 +259,7 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
  * Read parameters sent by client at startup and store recognised
  * ones in the parameters PGLogicalOutputData.
  *
- * The PGLogicalOutputData must have all client-surprised parameter fields
+ * The PGLogicalOutputData must have all client-supplied parameter fields
  * zeroed, such as by memset or palloc0, since values not supplied
  * by the client are not set.
  */
@@ -292,6 +301,8 @@ get_param_value(DefElem *elem, bool null_ok, PGLogicalOutputParamType type)
 	{
 		case OUTPUT_PARAM_TYPE_UINT32:
 			return UInt32GetDatum(parse_param_uint32(elem));
+		case OUTPUT_PARAM_TYPE_INT32:
+			return Int32GetDatum(parse_param_int32(elem));
 		case OUTPUT_PARAM_TYPE_BOOL:
 			return BoolGetDatum(parse_param_bool(elem));
 		case OUTPUT_PARAM_TYPE_STRING:
@@ -372,6 +383,26 @@ parse_param_uint32(DefElem *elem)
 						strVal(elem->arg), elem->defname)));
 
 	return (uint32) res;
+}
+
+static int32
+parse_param_int32(DefElem *elem)
+{
+	int64		res;
+
+	if (!scanint8(strVal(elem->arg), true, &res))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("could not parse integer value \"%s\" for parameter \"%s\"",
+						strVal(elem->arg), elem->defname)));
+
+	if (res > PG_INT32_MAX || res < PG_INT32_MIN)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("value \"%s\" out of range for parameter \"%s\"",
+						strVal(elem->arg), elem->defname)));
+
+	return (int32) res;
 }
 
 static List*
@@ -468,6 +499,11 @@ prepare_startup_message(PGLogicalOutputData *data)
 			data->hooks.row_filter_hook != NULL);
 	l = add_startup_msg_b(l, "hooks.transaction_filter_enabled",
 			data->hooks.txn_filter_hook != NULL);
+
+	/* Cache control and other misc options */
+	l = add_startup_msg_i(l, "relmeta_cache_size",
+			data->relmeta_cache_size);
+
 
 	/*
 	 * Output any extra params supplied by a startup hook by appending

@@ -54,6 +54,7 @@ typedef struct PGLogicalOutputData
 	bool	allow_binary_basetypes;
 	bool	forward_changeset_origins;
 	int		field_datum_encoding;
+	int		relmeta_cache_size;
 
 	/*
 	 * client info
@@ -84,6 +85,7 @@ typedef struct PGLogicalOutputData
 	bool	client_binary_intdatetimes_set;
 	bool	client_binary_intdatetimes;
 	bool	client_no_txinfo;
+	int   client_relmeta_cache_size;
 
 	/* hooks */
 	List *hooks_setup_funcname;

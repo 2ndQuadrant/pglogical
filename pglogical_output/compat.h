@@ -16,4 +16,12 @@ typedef uint16 RepOriginId;
 #define PG_UINT32_MAX UINT32_MAX
 #endif
 
+#ifndef PG_INT32_MAX
+#define PG_INT32_MAX INT32_MAX
+#endif
+
+#ifndef PG_INT32_MIN
+#define PG_INT32_MIN INT32_MIN
+#endif
+
 #endif

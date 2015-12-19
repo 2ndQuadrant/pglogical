@@ -70,8 +70,10 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 	uint8		relnamelen;
 	uint8		flags = 0;
 
-	Assert(!cache_entry->is_cached);
-	Assert(cache_entry->api_private == NULL);
+	/* must not have cache entry if metacache off; must have entry if on */
+	Assert( (data->relmeta_cache_size == 0) == (cache_entry == NULL) );
+	/* if cache enabled must never be called with an already-cached rel */
+	Assert(cache_entry == NULL || !cache_entry->is_cached);
 
 	pq_sendbyte(out, 'R');		/* sending RELATION */
 
@@ -104,8 +106,12 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 	 * the coming row(s), we can omit sending it again. The client will cache
 	 * it. If the relation changes the cached flag is cleared by
 	 * pglogical_output and we'll be called again next time it's touched.
+	 *
+	 * We don't care about the cache size here, the size management is done
+	 * in the generic cache code.
 	 */
-	cache_entry->is_cached = true;
+	if (cache_entry != NULL)
+		cache_entry->is_cached = true;
 }
 
 /*
