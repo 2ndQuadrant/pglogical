@@ -262,6 +262,9 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 		appendStringInfoString(&command, quote_literal_cstr(replication_sets));
 	}
 
+	/* Tell the upstream that we want unbounded metadata cache size */
+	appendStringInfoString(&command, ", \"relmeta_cache_size\" '-1'");
+
 	appendStringInfoChar(&command, ')');
 
 	res = PQexec(streamConn, command.data);
