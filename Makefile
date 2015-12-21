@@ -56,8 +56,6 @@ endif
 # so it must be escaped. The $ placeholders in awk must be doubled too.
 pglogical_output_version=$(shell awk '/\#define PGLOGICAL_OUTPUT_VERSION[ \t]+\".*\"/ { print substr($$3,2,length($$3)-2) }' pglogical_output.h )
 
-distdir=pglogical-output-$(pglogical_output_version)
-
 all: pglogical_output.control
 
 pglogical_output.control: pglogical_output.control.in pglogical_output.h
@@ -71,7 +69,8 @@ header_install: pglogical_output/compat.h pglogical_output/hooks.h
 
 GITHASH=$(shell if [ -e .distgitrev ]; then cat .distgitrev; else git rev-parse --short HEAD; fi)
 
-git-dist: clean
+dist-common: clean
+	if test "$(wanttag)" -eq 1 -a "`git name-rev --tags --name-only $(GITHASH)`" = "undefined"; then echo "cannot 'make dist' on untagged tree; tag it or use make git-dist"; exit 1; fi
 	rm -f .distgitrev .distgittag
 	if ! git diff-index --quiet HEAD; then echo >&2 "WARNING: git working tree has uncommitted changes to tracked files which were INCLUDED"; fi
 	if [ -n "`git ls-files --exclude-standard --others`" ]; then echo >&2 "WARNING: git working tree has unstaged files which were IGNORED!"; fi
@@ -82,3 +81,11 @@ git-dist: clean
 	    .distgitrev .distgittag
 	echo >&2 "Prepared ${distdir}.tar.bz2 for rev=`cat .distgitrev`, tag=`cat .distgittag`"
 	rm -f .distgitrev .distgittag
+
+dist: distdir=pglogical-output-$(pglogical_output_version)
+dist: wanttag=1
+dist: dist-common
+
+git-dist: distdir=pglogical-output-$(pglogical_output_version)_git$(GITHASH)
+git-dist: wanttag=0
+git-dist: dist-common
