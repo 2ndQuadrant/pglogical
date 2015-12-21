@@ -417,7 +417,6 @@ generating new xacts with the old structure after the schema change is
 committed on the publisher. Users will have to ensure writes are stopped on all
 nodes and all slots are caught up before making schema changes.
 
-
 ### TRUNCATE
 
 Truncating a table that has foreign key relationships on the subscriber but not
@@ -505,3 +504,16 @@ It also adds some features:
 
 ... but its main purpose is to provide a cleaner, simpler base that doesn't
 require a patched PostgreSQL, with a pluggable and extensible design.
+
+## Credits and Licence
+
+pglogical has been designed, developed and tested by the 2ndQuadrant team
+  Petr Jelinek
+  Craig Ringer
+  Simon Riggs
+  Pallavi Sontakke
+  Umair Shahid
+
+pglogical licence is The PostgreSQL Licence
+
+pglogical copyright is novated to PostgreSQL Global Development Group
