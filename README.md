@@ -361,6 +361,31 @@ When `track_commit_timestamp` is disabled, the only allowed value is
 
 ## Limitations and restrictions
 
+### Superuser is required
+
+Currently pglogical replication requires superuser. It may be later extended to
+user with replication privileges.
+
+### `UNLOGGED` and `TEMPORARY` not replicated
+
+`UNLOGGED` and `TEMPORARY` tables will not and cannot be replicated, much like
+with physical streaming replication.
+
+### One database at a time
+
+To replicate multiple databases you must set up individual provider/subscriber
+relationships for each. There is no way to configure replication for all databases
+in a PostgreSQL install at once.
+
+### PRIMARY KEY or REPLICA IDENTITY required
+
+`UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
+KEY` or other valid replica identity such as a `UNIQUE` constraint. Replication
+has no way to find the tuple that should be updated/deleted since there is no
+unique identifier.
+
+See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
+
 ### DDL
 
 Automatic DDL replication is not supported. Managing DDL so that the provider and
@@ -438,31 +463,6 @@ It is safer to replicate from an old version to a newer version since PostgreSQL
 maintains solid backward compatibility but only limited forward compatibility.
 
 Replicating between different minor versions makes no difference at all.
-
-### Superuser is required
-
-Currently pglogical replication requires superuser. It may be later extended to
-user with replication privileges.
-
-### `UNLOGGED` and `TEMPORARY` not replicated
-
-`UNLOGGED` and `TEMPORARY` tables will not and cannot be replicated, much like
-with physical streaming replication.
-
-### One database at a time
-
-To replicate multiple databases you must set up individual provider/subscriber
-relationships for each. There is no way to configure replication for all databases
-in a PostgreSQL install at once.
-
-### PRIMARY KEY or REPLICA IDENTITY required
-
-`UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
-KEY` or other valid replica identity such as a `UNIQUE` constraint. Replication
-has no way to find the tuple that should be updated/deleted since there is no
-unique identifier.
-
-See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
 
 ## How does pglogical differ from BDR?
 
