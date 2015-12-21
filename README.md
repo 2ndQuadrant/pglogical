@@ -51,6 +51,8 @@ Tables on the provider and subscriber must have the same columns, with the same
 data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc must
 be the same or weaker (more permissive) on the subscriber than the provider.
 
+Tables must have the same Primary Keys and be related by the same Foreign Keys.
+
 Some additional requirements are covered in "Limitations and Restrictions", below.
 
 ## Usage
