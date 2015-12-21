@@ -1,0 +1,14 @@
+CREATE EXTENSION pglogical_output;
+SELECT pglogical_output_proto_version();
+ pglogical_output_proto_version 
+--------------------------------
+                              1
+(1 row)
+
+SELECT pglogical_output_min_proto_version();
+ pglogical_output_min_proto_version 
+------------------------------------
+                                  1
+(1 row)
+
+DROP EXTENSION pglogical_output;

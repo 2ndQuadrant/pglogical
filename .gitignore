@@ -6,3 +6,5 @@ tmp_check/
 log/
 *.o
 *.pyc
+*.tar.bz2
+pglogical_output.control

@@ -1,0 +1,4 @@
+default_version = '__PGLOGICAL_OUTPUT_VERSION__'
+comment = 'general purpose logical decoding plugin'
+module_pathname = 'pglogical_output'
+superuser = false

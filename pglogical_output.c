@@ -212,17 +212,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				 errmsg("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
-		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
+		if (data->client_min_proto_version > PGLOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
-					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
+					 data->client_min_proto_version, PGLOGICAL_PROTO_VERSION_NUM)));
 
-		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
+		if (data->client_max_proto_version < PGLOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
-				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
+				 	data->client_max_proto_version, PGLOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/*
 		 * Set correct protocol format.

@@ -24,8 +24,13 @@
 
 #include "pglogical_proto.h"
 
-#define PG_LOGICAL_PROTO_VERSION_NUM 1
-#define PG_LOGICAL_PROTO_MIN_VERSION_NUM 1
+/* XXYYZZ format version number and human readable version */
+#define PGLOGICAL_OUTPUT_VERSION_NUM 10000
+#define PGLOGICAL_OUTPUT_VERSION "1.0.0"
+
+/* Protocol capabilities */
+#define PGLOGICAL_PROTO_VERSION_NUM 1
+#define PGLOGICAL_PROTO_MIN_VERSION_NUM 1
 
 /*
  * The name of a hook function. This is used instead of the usual List*
