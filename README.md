@@ -508,11 +508,11 @@ require a patched PostgreSQL, with a pluggable and extensible design.
 ## Credits and Licence
 
 pglogical has been designed, developed and tested by the 2ndQuadrant team
-  Petr Jelinek
-  Craig Ringer
-  Simon Riggs
-  Pallavi Sontakke
-  Umair Shahid
+* Petr Jelinek
+* Craig Ringer
+* Simon Riggs
+* Pallavi Sontakke
+* Umair Shahid
 
 pglogical licence is The PostgreSQL Licence
 
