@@ -64,6 +64,7 @@ pglogical_output.control: pglogical_output.control.in pglogical_output.h
 install: header_install
 
 header_install: pglogical_output/compat.h pglogical_output/hooks.h
+	$(MKDIR_P) '$(DESTDIR)$(includedir)'/pglogical_output
 	$(INSTALL_DATA) pglogical_output/compat.h '$(DESTDIR)$(includedir)'/pglogical_output
 	$(INSTALL_DATA) pglogical_output/hooks.h '$(DESTDIR)$(includedir)'/pglogical_output
 
