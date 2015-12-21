@@ -411,12 +411,12 @@ before making schema changes, or use the `pglogical.replicate_ddl_command`
 function to queue schema changes so they're replayed at a consistent point
 on the replica.
 
-If mutual multi-master replication is in use then using
-`pglogical.replicate_ddl_command` is not enough, as the subscriber may be
+Once multi-master replication support is added then then using
+`pglogical.replicate_ddl_command` will not be enough, as the subscriber may be
 generating new xacts with the old structure after the schema change is
-committed on the publisher. Users must ensure writes are stopped on all nodes
-and all slots are caught up before making schema changes when multi-master
-is configured.
+committed on the publisher. Users will have to ensure writes are stopped on all
+nodes and all slots are caught up before making schema changes.
+
 
 ### TRUNCATE
 
