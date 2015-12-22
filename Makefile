@@ -71,17 +71,19 @@ header_install: pglogical_output/compat.h pglogical_output/hooks.h
 GITHASH=$(shell if [ -e .distgitrev ]; then cat .distgitrev; else git rev-parse --short HEAD; fi)
 
 dist-common: clean
-	if test "$(wanttag)" -eq 1 -a "`git name-rev --tags --name-only $(GITHASH)`" = "undefined"; then echo "cannot 'make dist' on untagged tree; tag it or use make git-dist"; exit 1; fi
-	rm -f .distgitrev .distgittag
-	if ! git diff-index --quiet HEAD; then echo >&2 "WARNING: git working tree has uncommitted changes to tracked files which were INCLUDED"; fi
-	if [ -n "`git ls-files --exclude-standard --others`" ]; then echo >&2 "WARNING: git working tree has unstaged files which were IGNORED!"; fi
-	echo $(GITHASH) > .distgitrev
-	git name-rev --tags --name-only `cat .distgitrev` > .distgittag
-	git ls-tree -r -t --full-tree HEAD --name-only |\
+	@if test "$(wanttag)" -eq 1 -a "`git name-rev --tags --name-only $(GITHASH)`" = "undefined"; then echo "cannot 'make dist' on untagged tree; tag it or use make git-dist"; exit 1; fi
+	@rm -f .distgitrev .distgittag
+	@if ! git diff-index --quiet HEAD; then echo >&2 "WARNING: git working tree has uncommitted changes to tracked files which were INCLUDED"; fi
+	@if [ -n "`git ls-files --exclude-standard --others`" ]; then echo >&2 "WARNING: git working tree has unstaged files which were IGNORED!"; fi
+	@echo $(GITHASH) > .distgitrev
+	@git name-rev --tags --name-only `cat .distgitrev` > .distgittag
+	@git ls-tree -r -t --full-tree HEAD --name-only |\
 	  tar cjf "${distdir}.tar.bz2" --transform="s|^|${distdir}/|" -T - \
 	    .distgitrev .distgittag
-	echo >&2 "Prepared ${distdir}.tar.bz2 for rev=`cat .distgitrev`, tag=`cat .distgittag`"
-	rm -f .distgitrev .distgittag
+	@echo >&2 "Prepared ${distdir}.tar.bz2 for rev=`cat .distgitrev`, tag=`cat .distgittag`"
+	@rm -f .distgitrev .distgittag
+	@md5sum "${distdir}.tar.bz2" > "${distdir}.tar.bz2.md5"
+	@if test -n "$(GPGSIGNKEYS)"; then gpg -q -a -b $(shell for x in $(GPGSIGNKEYS); do echo -u $$x; done) "${distdir}.tar.bz2"; else echo "No GPGSIGNKEYS passed, not signing tarball. Pass space separated keyid list as make var to sign."; fi
 
 dist: distdir=pglogical-output-$(pglogical_output_version)
 dist: wanttag=1
