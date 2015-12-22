@@ -213,7 +213,11 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 					continue;
 				}
 
+#if PG_VERSION_NUM < 90500
+				if (slot->active)
+#else
 				if (slot->active_pid != 0)
+#endif
 				{
 					SpinLockRelease(&slot->mutex);
 					LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
