@@ -465,6 +465,12 @@ prepare_startup_message(PGLogicalOutputData *data)
 	l = add_startup_msg_b(l, "forward_changeset_origins",
 			data->forward_changeset_origins);
 
+	/* and ourselves */
+	l = add_startup_msg_s(l, "pglogical_output_version",
+			PGLOGICAL_OUTPUT_VERSION);
+	l = add_startup_msg_i(l, "pglogical_output_version",
+			PGLOGICAL_OUTPUT_VERSION_NUM);
+
 	/* binary options enabled */
 	l = add_startup_msg_b(l, "binary.internal_basetypes",
 			data->allow_internal_basetypes);
