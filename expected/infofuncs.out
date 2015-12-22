@@ -1,0 +1,22 @@
+CREATE EXTENSION pglogical;
+SELECT pglogical.pglogical_max_proto_version();
+ pglogical_max_proto_version 
+-----------------------------
+                           1
+(1 row)
+
+SELECT pglogical.pglogical_min_proto_version();
+ pglogical_min_proto_version 
+-----------------------------
+                           1
+(1 row)
+
+SELECT pglogical.pglogical_version() = extversion
+FROM pg_extension
+WHERE extname = 'pglogical';
+ ?column? 
+----------
+ t
+(1 row)
+
+DROP EXTENSION pglogical;

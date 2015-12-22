@@ -5,3 +5,7 @@ pglogical_create_subscriber
 *.o
 *.so
 *~
+pglogical.control
+pglogical-*.tar.bz2
+pglogical-*.tar.bz2.md5
+pglogical-*.tar.bz2.asc

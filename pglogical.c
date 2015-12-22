@@ -197,10 +197,9 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	/* Basic protocol info. */
 	appendStringInfo(&command, "expected_encoding '%s'",
 					 GetDatabaseEncodingName());
-	appendStringInfo(&command, ", min_proto_version '1'");
-	appendStringInfo(&command, ", max_proto_version '1'");
+	appendStringInfo(&command, ", min_proto_version '%d'", PGLOGICAL_MIN_PROTO_VERSION_NUM);
+	appendStringInfo(&command, ", max_proto_version '%d'", PGLOGICAL_MAX_PROTO_VERSION_NUM);
 	appendStringInfo(&command, ", startup_params_format '1'");
-	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
 
 	/* Binary protocol compatibility. */
 	appendStringInfo(&command, ", \"binary.want_internal_basetypes\" '1'");
@@ -243,7 +242,6 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	appendStringInfoString(&command,
 						   ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
 
-
 	if (forward_origins)
 		appendStringInfo(&command, ", \"pglogical.forward_origins\" %s",
 					 quote_literal_cstr(forward_origins));
@@ -264,6 +262,11 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 
 	/* Tell the upstream that we want unbounded metadata cache size */
 	appendStringInfoString(&command, ", \"relmeta_cache_size\" '-1'");
+
+	/* general info about the downstream */
+	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
+	appendStringInfo(&command, ", pglogical_version '%s'", PGLOGICAL_VERSION);
+	appendStringInfo(&command, ", pglogical_version_num '%d'", PGLOGICAL_VERSION_NUM);
 
 	appendStringInfoChar(&command, ')');
 

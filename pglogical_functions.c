@@ -102,6 +102,12 @@ PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
 PG_FUNCTION_INFO_V1(pglogical_node_info);
 
+/* Information */
+PG_FUNCTION_INFO_V1(pglogical_version);
+PG_FUNCTION_INFO_V1(pglogical_version_num);
+PG_FUNCTION_INFO_V1(pglogical_min_proto_version);
+PG_FUNCTION_INFO_V1(pglogical_max_proto_version);
+
 static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
 						  const char *subscriber_name);
@@ -1505,3 +1511,26 @@ gen_slot_name(Name slot_name, char *dbname, const char *provider_node,
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 }
 
+Datum
+pglogical_version(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_TEXT_P(cstring_to_text(PGLOGICAL_VERSION));
+}
+
+Datum
+pglogical_version_num(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(PGLOGICAL_VERSION_NUM);
+}
+
+Datum
+pglogical_max_proto_version(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(PGLOGICAL_MAX_PROTO_VERSION_NUM);
+}
+
+Datum
+pglogical_min_proto_version(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(PGLOGICAL_MIN_PROTO_VERSION_NUM);
+}

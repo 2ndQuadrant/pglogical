@@ -187,3 +187,15 @@ STABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';
 CREATE FUNCTION pglogical.pglogical_gen_slot_name(name, name, name)
 RETURNS name
 IMMUTABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';
+
+CREATE FUNCTION pglogical_version() RETURNS text
+LANGUAGE c AS 'MODULE_PATHNAME';
+
+CREATE FUNCTION pglogical_version_num() RETURNS integer
+LANGUAGE c AS 'MODULE_PATHNAME';
+
+CREATE FUNCTION pglogical_max_proto_version() RETURNS integer
+LANGUAGE c AS 'MODULE_PATHNAME';
+
+CREATE FUNCTION pglogical_min_proto_version() RETURNS integer
+LANGUAGE c AS 'MODULE_PATHNAME';

@@ -26,6 +26,12 @@
 #include "pglogical_compat.h"
 #endif
 
+#define PGLOGICAL_VERSION "1.0.0"
+#define PGLOGICAL_VERSION_NUM 10000
+
+#define PGLOGICAL_MIN_PROTO_VERSION_NUM 1
+#define PGLOGICAL_MAX_PROTO_VERSION_NUM 1
+
 #define EXTENSION_NAME "pglogical"
 
 #define PGLOGICAL_MASTER_TOC_MAGIC	123

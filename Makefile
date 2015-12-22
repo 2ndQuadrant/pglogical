@@ -4,7 +4,7 @@ MODULE_big = pglogical
 EXTENSION = pglogical
 PGFILEDESC = "pglogical - logical replication"
 
-DATA = pglogical--1.0.sql
+DATA = pglogical--1.0.0.sql
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical_node.o pglogical_proto.o pglogical_relcache.o \
@@ -18,7 +18,13 @@ SCRIPTS_built = pglogical_create_subscriber
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
-REGRESS = preseed init_fail init preseed_check basic extended toasted replication_set add_table matview bidirectional primary_key foreign_key functions drop
+REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview bidirectional primary_key foreign_key functions drop
+
+EXTRA_CLEAN += pglogical.control
+
+# The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
+# so it must be escaped. The $ placeholders in awk must be doubled too.
+pglogical_version=$(shell awk '/\#define PGLOGICAL_VERSION[ \t]+\".*\"/ { print substr($$3,2,length($$3)-2) }' pglogical.h )
 
 ifdef USE_PGXS
 
@@ -90,5 +96,36 @@ EXTRA_INSTALL += $(top_srcdir)/contrib/pglogical_output
 EXTRA_REGRESS_OPTS += $(top_srcdir)/contrib/regress-postgresql.conf
 
 endif
+
+pglogical.control: pglogical.control.in pglogical.h
+	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/' pglogical.control.in > pglogical.control
+
+all: pglogical.control
+
+GITHASH=$(shell if [ -e .distgitrev ]; then cat .distgitrev; else git rev-parse --short HEAD; fi)
+
+dist-common: clean
+	@if test "$(wanttag)" -eq 1 -a "`git name-rev --tags --name-only $(GITHASH)`" = "undefined"; then echo "cannot 'make dist' on untagged tree; tag it or use make git-dist"; exit 1; fi
+	@rm -f .distgitrev .distgittag
+	@if ! git diff-index --quiet HEAD; then echo >&2 "WARNING: git working tree has uncommitted changes to tracked files which were INCLUDED"; fi
+	@if [ -n "`git ls-files --exclude-standard --others`" ]; then echo >&2 "WARNING: git working tree has unstaged files which were IGNORED!"; fi
+	@echo $(GITHASH) > .distgitrev
+	@git name-rev --tags --name-only `cat .distgitrev` > .distgittag
+	@git ls-tree -r -t --full-tree HEAD --name-only |\
+	  tar cjf "${distdir}.tar.bz2" --transform="s|^|${distdir}/|" -T - \
+	    .distgitrev .distgittag
+	@echo >&2 "Prepared ${distdir}.tar.bz2 for rev=`cat .distgitrev`, tag=`cat .distgittag`"
+	@rm -f .distgitrev .distgittag
+	@md5sum "${distdir}.tar.bz2" > "${distdir}.tar.bz2.md5"
+	@if test -n "$(GPGSIGNKEYS)"; then gpg -q -a -b $(shell for x in $(GPGSIGNKEYS); do echo -u $$x; done) "${distdir}.tar.bz2"; else echo "No GPGSIGNKEYS passed, not signing tarball. Pass space separated keyid list as make var to sign."; fi
+
+dist: distdir=pglogical-$(pglogical_version)
+dist: wanttag=1
+dist: dist-common
+
+git-dist: distdir=pglogical-$(pglogical_version)_git$(GITHASH)
+git-dist: wanttag=0
+git-dist: dist-common
+
 
 .PHONY: regresscheck
