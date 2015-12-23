@@ -12,6 +12,9 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical_functions.o pglogical_queue.o pglogical_fe.o \
 	   pglogical_worker.o pglogical_hooks.o pglogical_sync.o
 
+# 9.4 needs SCRIPTS set to do anything, even if SCRIPTS_built is set
+SCRIPTS=pglogical_create_subscriber
+
 SCRIPTS_built = pglogical_create_subscriber
 
 
