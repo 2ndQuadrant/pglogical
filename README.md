@@ -10,11 +10,9 @@ reused from the earlier Slony technology:
 * Providers and Subscribers - roles taken by Nodes
 * Replication Set - a collection of tables
 
-pglogical is new technology utilising the latest in-core features, so we have
-these version restrictions:
-* Provider node must run PostgreSQL 9.4+
-* Subscriber node must run PostgreSQL 9.5+
-(Subscriber support may later be widened to 9.4)
+pglogical is new technology utilising the latest in-core features, so we have these version restrictions:
+* Provider & subscriber nodes must run PostgreSQL 9.4+
+* PostgreSQL 9.5+ is required for replication origin filtering
 
 Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
