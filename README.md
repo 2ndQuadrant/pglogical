@@ -32,8 +32,7 @@ Architectural details:
 
 ## Requirements
 
-To use pglogical the provider must be running PostgreSQL 9.4 or newer and the
-subscriber must be running PostgreSQL 9.5 or newer.
+To use pglogical the provider and subscriber must be running PostgreSQL 9.4 or newer.
 
 The `pglogical_output` extension needs to be installed on both provider and
 subscriber. No actual `CREATE EXTENSION` is required, it must just be present
