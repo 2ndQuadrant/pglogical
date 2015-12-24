@@ -1,0 +1,73 @@
+--test COPY
+\c regression
+SELECT pglogical.replicate_ddl_command($$
+     CREATE TABLE public.x (
+	a serial primary key,
+	b int,
+	c text not null default 'stuff',
+	d text,
+	e text
+     );
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'x');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+COPY x (a, b, c, d, e) from stdin;
+COPY x (b, d) from stdin;
+COPY x (b, d) from stdin;
+COPY x (a, b, c, d, e) from stdin;
+SELECT * FROM x ORDER BY a;
+   a   | b  |   c   |   d    | e  
+-------+----+-------+--------+----
+     1 |  1 | stuff | test_1 | 
+     2 |  2 | stuff | test_2 | 
+     3 |  3 | stuff | test_3 | 
+     4 |  4 | stuff | test_4 | 
+     5 |  5 | stuff | test_5 | 
+  9999 |    | \N    | NN     | 
+ 10000 | 21 | 31    | 41     | 51
+ 10001 | 22 | 32    | 42     | 52
+ 10002 | 23 | 33    | 43     | 53
+ 10003 | 24 | 34    | 44     | 54
+ 10004 | 25 | 35    | 45     | 55
+ 10005 | 26 | 36    | 46     | 56
+(12 rows)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c postgres
+SELECT * FROM x ORDER BY a;
+   a   | b  |   c   |   d    | e  
+-------+----+-------+--------+----
+     1 |  1 | stuff | test_1 | 
+     2 |  2 | stuff | test_2 | 
+     3 |  3 | stuff | test_3 | 
+     4 |  4 | stuff | test_4 | 
+     5 |  5 | stuff | test_5 | 
+  9999 |    | \N    | NN     | 
+ 10000 | 21 | 31    | 41     | 51
+ 10001 | 22 | 32    | 42     | 52
+ 10002 | 23 | 33    | 43     | 53
+ 10003 | 24 | 34    | 44     | 54
+ 10004 | 25 | 35    | 45     | 55
+ 10005 | 26 | 36    | 46     | 56
+(12 rows)
+
