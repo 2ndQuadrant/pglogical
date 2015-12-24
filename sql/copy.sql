@@ -1,5 +1,8 @@
 --test COPY
-\c regression
+SELECT * FROM pglogical_regress_variables();
+\gset
+
+\c :provider_dsn
 
 SELECT pglogical.replicate_ddl_command($$
      CREATE TABLE public.x (
@@ -42,5 +45,5 @@ COPY x (a, b, c, d, e) from stdin;
 SELECT * FROM x ORDER BY a;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM x ORDER BY a;

@@ -1,5 +1,8 @@
 /* First test whether a table's replication set can be properly manipulated */
-\c regression
+SELECT * FROM pglogical_regress_variables();
+\gset
+
+\c :provider_dsn
 
 SELECT pglogical.replicate_ddl_command($$
 CREATE TABLE public.test_tbl(id serial primary key, data text);
@@ -19,12 +22,12 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT * FROM test_tbl;
 SELECT * FROM test_mv;
 
-\c postgres
+\c :subscriber_dsn
 
 SELECT * FROM test_tbl;
 SELECT * FROM test_mv;
 
-\c regression
+\c :provider_dsn
 
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;

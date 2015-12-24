@@ -1,11 +1,18 @@
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SET client_min_messages = 'warning';
 DROP ROLE IF EXISTS nonreplica;
 CREATE USER nonreplica;
 CREATE EXTENSION IF NOT EXISTS pglogical;
 GRANT ALL ON SCHEMA pglogical TO nonreplica;
 GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
-\c postgres
+\c :subscriber_dsn
 SET client_min_messages = 'warning';
 CREATE EXTENSION IF NOT EXISTS pglogical;
 -- fail (local node not existing)
@@ -37,7 +44,7 @@ SELECT * FROM pglogical.create_subscription(
 ERROR:  could fetch remote node info: ERROR:  local node not found
 
 
-\c regression
+\c :provider_dsn
 -- succeed
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=postgres user=nonreplica');
  create_node 
@@ -45,7 +52,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname
   2689511696
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 -- fail (can't connect with replication connection to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
@@ -61,7 +68,7 @@ SELECT * FROM pglogical.drop_node('test_subscriber');
  t
 (1 row)
 
-\c regression
+\c :provider_dsn
 SELECT * FROM pglogical.drop_node('test_provider');
  drop_node 
 -----------

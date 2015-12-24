@@ -1,5 +1,12 @@
 --FOREIGN KEY
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 CREATE TABLE public.f1k_products (
     product_no integer PRIMARY KEY,
@@ -50,7 +57,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM public.f1k_products;
  product_no | product_id |   name   | price 
 ------------+------------+----------+-------
@@ -67,7 +74,7 @@ SELECT * FROM public.f1k_orders;
        24 |          2 |       40
 (4 rows)
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 DROP TABLE public.f1k_orders CASCADE;
 DROP TABLE public.f1k_products CASCADE;

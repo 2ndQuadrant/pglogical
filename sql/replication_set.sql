@@ -1,5 +1,8 @@
 /* First test whether a table's replication set can be properly manipulated */
-\c regression
+SELECT * FROM pglogical_regress_variables();
+\gset
+
+\c :provider_dsn
 
 SELECT pglogical.replicate_ddl_command($$
 CREATE SCHEMA normalschema;
@@ -59,5 +62,5 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_nopkey CASCADE;
 $$);
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pglogical.replication_set;

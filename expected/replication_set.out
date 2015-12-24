@@ -1,5 +1,12 @@
 /* First test whether a table's replication set can be properly manipulated */
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 CREATE SCHEMA normalschema;
 CREATE SCHEMA "strange.schema-IS";
@@ -202,7 +209,7 @@ CONTEXT:  during execution of queued SQL statement:
  t
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pglogical.replication_set;
    set_id   | set_nodeid |      set_name       | replicate_insert | replicate_update | replicate_delete | replicate_truncate 
 ------------+------------+---------------------+------------------+------------------+------------------+--------------------

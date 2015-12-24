@@ -1,4 +1,11 @@
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_bidirectional',
     provider_dsn := 'dbname=postgres user=super',
@@ -19,7 +26,7 @@ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
-\c postgres
+\c :subscriber_dsn
 SELECT pglogical.replicate_ddl_command($$
     CREATE TABLE public.basic_dml (
         id serial primary key,
@@ -45,7 +52,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  
 (1 row)
 
-\c regression
+\c :provider_dsn
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
  replication_set_add_table 
 ---------------------------
@@ -65,7 +72,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
  id | other | data |    something     
 ----+-------+------+------------------
@@ -84,7 +91,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  
 (1 row)
 
-\c regression
+\c :provider_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
  id | other | data |        something        
 ----+-------+------+-------------------------
@@ -95,7 +102,7 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
   5 |     5 |      | 
 (5 rows)
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml CASCADE;
 $$);
@@ -115,7 +122,7 @@ SELECT pglogical.drop_subscription('test_bidirectional');
                  1
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT count(1) FROM pg_stat_replication;
  count 
 -------

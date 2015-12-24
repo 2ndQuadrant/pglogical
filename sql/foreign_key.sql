@@ -1,6 +1,9 @@
 --FOREIGN KEY
+SELECT * FROM pglogical_regress_variables();
+\gset
 
-\c regression
+
+\c :provider_dsn
 
 SELECT pglogical.replicate_ddl_command($$
 CREATE TABLE public.f1k_products (
@@ -33,13 +36,13 @@ INSERT into public.f1k_orders VALUES (24, 2, 40);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
-\c postgres
+\c :subscriber_dsn
 
 SELECT * FROM public.f1k_products;
 SELECT * FROM public.f1k_orders;
 
 
-\c regression
+\c :provider_dsn
 
 SELECT pglogical.replicate_ddl_command($$
 DROP TABLE public.f1k_orders CASCADE;

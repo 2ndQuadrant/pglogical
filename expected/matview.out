@@ -1,5 +1,12 @@
 /* First test whether a table's replication set can be properly manipulated */
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 CREATE TABLE public.test_tbl(id serial primary key, data text);
 CREATE MATERIALIZED VIEW public.test_mv AS (SELECT * FROM public.test_tbl);
@@ -37,7 +44,7 @@ SELECT * FROM test_mv;
   1 | a
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM test_tbl;
  id | data 
 ----+------
@@ -50,7 +57,7 @@ SELECT * FROM test_mv;
 ----+------
 (0 rows)
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;
 $$);

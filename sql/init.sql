@@ -1,5 +1,8 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
+SELECT * FROM pglogical_regress_variables();
+\gset
+
 SET client_min_messages = 'warning';
 DROP USER IF EXISTS nonsuper;
 DROP USER IF EXISTS super;
@@ -11,7 +14,7 @@ CREATE USER super SUPERUSER;
 --GRANT ALL ON DATABASE regress TO nonsuper;
 --GRANT ALL ON DATABASE regress TO nonsuper;
 
-\c regression
+\c :provider_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
 
 CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
@@ -22,16 +25,16 @@ BEGIN
 	END LOOP;
 END;$FUNC$ LANGUAGE plpgsql;
 
-\c postgres
+\c :subscriber_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
 
-\c regression
+\c :provider_dsn
 SET client_min_messages = 'warning';
 CREATE EXTENSION IF NOT EXISTS pglogical;
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
 
-\c postgres
+\c :subscriber_dsn
 SET client_min_messages = 'warning';
 CREATE EXTENSION IF NOT EXISTS pglogical;
 
@@ -57,6 +60,6 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
 SELECT * FROM pglogical.show_subscription_status();
 
 -- Make sure we see the slot and active connection
-\c regression
+\c :provider_dsn
 SELECT plugin, slot_type, database, active FROM pg_replication_slots;
 SELECT count(*) FROM pg_stat_replication;

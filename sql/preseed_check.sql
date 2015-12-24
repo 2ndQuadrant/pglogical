@@ -1,5 +1,8 @@
 -- Verify data from preseed.sql has correctly been cloned
-\c regression
+SELECT * FROM pglogical_regress_variables();
+\gset
+
+\c :provider_dsn
 \d some_local_tbl
 SELECT * FROM some_local_tbl ORDER BY id;
 
@@ -12,7 +15,7 @@ SELECT * FROM some_local_tbl2 ORDER BY id;
 \d some_local_tbl3
 SELECT * FROM some_local_tbl3 ORDER BY id;
 
-\c postgres
+\c :subscriber_dsn
 
 \d some_local_tbl
 SELECT * FROM some_local_tbl ORDER BY id;
@@ -26,7 +29,7 @@ SELECT * FROM some_local_tbl2 ORDER BY id;
 \d some_local_tbl3
 SELECT * FROM some_local_tbl3 ORDER BY id;
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
         DROP TABLE public.some_local_tbl;
         DROP TABLE public.some_local_tbl1;

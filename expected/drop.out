@@ -1,4 +1,11 @@
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
 ERROR:  cannot drop node "test_provider" because replication slot "pgl_postgres_test_provider_test_sube55bf37" on the node is still active
 HINT:  drop the subscriptions first
@@ -14,7 +21,7 @@ SELECT count(*) FROM pg_stat_replication;
      1
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pglogical.drop_subscription('test_subscription');
  drop_subscription 
 -------------------
@@ -27,7 +34,7 @@ SELECT * FROM pglogical.drop_node(node_name := 'test_subscriber');
  t
 (1 row)
 
-\c regression
+\c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
  drop_node 
 -----------

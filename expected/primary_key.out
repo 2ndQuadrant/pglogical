@@ -1,5 +1,12 @@
 --PRIMARY KEY
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 -- testing update of primary key
 -- create  table with primary key and 3 other tables referencing it
 SELECT pglogical.replicate_ddl_command($$
@@ -50,7 +57,7 @@ Indexes:
     "pk_users_pkey" PRIMARY KEY, btree (id)
     "pk_users_another_id_key" UNIQUE CONSTRAINT, btree (another_id)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pk_users;
  id | another_id | a_id | name  | address  
 ----+------------+------+-------+----------
@@ -60,7 +67,7 @@ SELECT * FROM pk_users;
   4 |         14 |    2 | User4 | Address4
 (4 rows)
 
-\c regression
+\c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress1' WHERE id=1;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
  pg_xlog_wait_remote_apply 
@@ -68,7 +75,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pk_users;
  id | another_id | a_id | name  |     address     
 ----+------------+------+-------+-----------------
@@ -78,7 +85,7 @@ SELECT * FROM pk_users;
   1 |         11 |    1 | User1 | UpdatedAddress1
 (4 rows)
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 CREATE UNIQUE INDEX another_id_temp_idx ON public.pk_users (another_id);
 ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
@@ -124,7 +131,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 \d+ pk_users;
                          Table "public.pk_users"
    Column   |  Type   | Modifiers | Storage  | Stats target | Description 
@@ -146,7 +153,7 @@ SELECT * FROM pk_users;
   2 |         12 |    1 | User2 | UpdatedAddress2
 (4 rows)
 
-\c regression
+\c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress3' WHERE another_id=12;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
  pg_xlog_wait_remote_apply 
@@ -154,7 +161,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pk_users;
  id | another_id | a_id | name  |     address     
 ----+------------+------+-------+-----------------
@@ -164,7 +171,7 @@ SELECT * FROM pk_users;
   2 |         12 |    1 | User2 | UpdatedAddress3
 (4 rows)
 
-\c regression
+\c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress4' WHERE a_id=2;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
  pg_xlog_wait_remote_apply 
@@ -172,7 +179,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 INSERT INTO pk_users VALUES(4,15,2,'User5', 'Address5');
 -- subscriber now has duplicated value in id field while provider does not
 SELECT * FROM pk_users;
@@ -185,7 +192,7 @@ SELECT * FROM pk_users;
   4 |         15 |    2 | User5 | Address5
 (5 rows)
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 CREATE UNIQUE INDEX id_temp_idx ON public.pk_users (id);
 ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
@@ -219,7 +226,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 ---------------------------
 (0 rows)
 
-\c postgres
+\c :subscriber_dsn
 \d+ pk_users;
                          Table "public.pk_users"
    Column   |  Type   | Modifiers | Storage  | Stats target | Description 
@@ -238,7 +245,7 @@ SELECT pglogical.alter_subscription_disable('test_subscription', true);
  t
 (1 row)
 
-\c regression
+\c :provider_dsn
 DO $$
 BEGIN
 	FOR i IN 1..100 LOOP
@@ -263,7 +270,7 @@ SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 
 --------+------
 (0 rows)
 
-\c postgres
+\c :subscriber_dsn
 SELECT pglogical.alter_subscription_enable('test_subscription', true);
  alter_subscription_enable 
 ---------------------------
@@ -271,7 +278,7 @@ SELECT pglogical.alter_subscription_enable('test_subscription', true);
 (1 row)
 
 DELETE FROM pk_users WHERE id = 4;-- remove the offending entries.
-\c regression
+\c :provider_dsn
 DO $$
 BEGIN
 	FOR i IN 1..100 LOOP
@@ -289,7 +296,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM pk_users;
  id | another_id | a_id | name  |     address     
 ----+------------+------+-------+-----------------
@@ -298,7 +305,7 @@ SELECT * FROM pk_users;
   2 |         12 |    1 | User2 | UpdatedAddress2
 (3 rows)
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 DROP TABLE public.pk_users CASCADE;
 $$);

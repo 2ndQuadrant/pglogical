@@ -1,5 +1,12 @@
 /* First test whether a table's replication set can be properly manipulated */
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
 CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_publicschema(id serial primary key, data text);
@@ -62,13 +69,13 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM public.test_publicschema;
  id | data 
 ----+------
 (0 rows)
 
-\c regression
+\c :provider_dsn
 -- move tables back to the subscribed replication set
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_publicschema', true);
  replication_set_add_table 
@@ -88,7 +95,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS
  t
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
@@ -108,7 +115,7 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
  f         | 3848008564 |                   |                    | r
 (3 rows)
 
-\c regression
+\c :provider_dsn
 INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
@@ -119,7 +126,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM public.test_publicschema;
  id | data 
 ----+------
@@ -231,7 +238,7 @@ SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscrip
  t
 (1 row)
 
-\c regression
+\c :provider_dsn
 SELECT * FROM pglogical.replication_set_remove_table('repset_test', '"strange.schema-IS".test_strangeschema');
  replication_set_remove_table 
 ------------------------------
@@ -258,7 +265,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
 ----+------
@@ -275,7 +282,7 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
   4
 (4 rows)
 
-\c regression
+\c :provider_dsn
 SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := false, replicate_update := false, replicate_delete := false, replicate_truncate := false);
  alter_replication_set 
 -----------------------
@@ -287,7 +294,7 @@ INSERT INTO "strange.schema-IS".test_diff_repset VALUES(4);
 UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
 DELETE FROM "strange.schema-IS".test_diff_repset WHERE id < 3;
 TRUNCATE "strange.schema-IS".test_diff_repset;
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
 ----+------
@@ -295,7 +302,7 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
   4 | data
 (2 rows)
 
-\c regression
+\c :provider_dsn
 SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := true, replicate_truncate := true);
  alter_replication_set 
 -----------------------
@@ -304,7 +311,7 @@ SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert :=
 
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
 ----+------
@@ -314,9 +321,9 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
   6 | 
 (4 rows)
 
-\c regression
+\c :provider_dsn
 TRUNCATE "strange.schema-IS".test_diff_repset;
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
 ----+------
@@ -328,7 +335,7 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
  t
 (1 row)
 
-\c regression
+\c :provider_dsn
 DO $$
 BEGIN
 	FOR i IN 1..100 LOOP

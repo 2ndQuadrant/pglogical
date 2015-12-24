@@ -1,5 +1,12 @@
 --test COPY
-\c regression
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
      CREATE TABLE public.x (
 	a serial primary key,
@@ -53,7 +60,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  
 (1 row)
 
-\c postgres
+\c :subscriber_dsn
 SELECT * FROM x ORDER BY a;
    a   | b  |   c   |   d    | e  
 -------+----+-------+--------+----

@@ -1,4 +1,8 @@
-\c regression
+
+SELECT * FROM pglogical_regress_variables();
+\gset
+
+\c :provider_dsn
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_bidirectional',
@@ -17,7 +21,7 @@ BEGIN
     END LOOP;
 END;$$;
 
-\c postgres
+\c :subscriber_dsn
 SELECT pglogical.replicate_ddl_command($$
     CREATE TABLE public.basic_dml (
         id serial primary key,
@@ -31,7 +35,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
-\c regression
+\c :provider_dsn
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
 
@@ -45,24 +49,24 @@ VALUES (5, 'foo', '1 minute'::interval),
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
-\c postgres
+\c :subscriber_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
-\c regression
+\c :provider_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
-\c regression
+\c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml CASCADE;
 $$);
 
 SELECT pglogical.drop_subscription('test_bidirectional');
 
-\c postgres
+\c :subscriber_dsn
 
 SELECT count(1) FROM pg_stat_replication;
 SELECT slot_name FROM pg_replication_slots;
