@@ -1,5 +1,10 @@
+#ifndef PGLOGICAL_COMPAT_REPLICATION_ORIGIN_H
+#define PGLOGICAL_COMPAT_REPLICATION_ORIGIN_H
+
+#ifndef InvalidRepOriginId
 typedef uint16 RepOriginId;
 #define InvalidRepOriginId 0
+#endif
 
 extern PGDLLIMPORT RepOriginId replorigin_session_origin;
 extern PGDLLIMPORT XLogRecPtr replorigin_session_origin_lsn;
@@ -17,3 +22,5 @@ extern void replorigin_advance(RepOriginId node,
 				   XLogRecPtr remote_commit,
 				   XLogRecPtr local_commit,
 				   bool go_backward, bool wal_log);
+
+#endif
