@@ -9,6 +9,7 @@
 #else
 /* To allow the same signature on hooks in 9.4 */
 typedef uint16 RepOriginId;
+#define InvalidRepOriginId 0
 #endif
 
 /* 9.4 lacks PG_UINT32_MAX */
