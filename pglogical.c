@@ -396,6 +396,9 @@ _PG_init(void)
 {
 	BackgroundWorker bgw;
 
+	if (!process_shared_preload_libraries_in_progress)
+		elog(ERROR, "pglogical is not in shared_preload_libraries");
+
 	DefineCustomEnumVariable("pglogical.conflict_resolution",
 							 gettext_noop("Sets method used for conflict resolution for resolvable conflicts."),
 							 NULL,
@@ -416,9 +419,6 @@ _PG_init(void)
 
 	if (IsBinaryUpgrade)
 		return;
-
-	if (!process_shared_preload_libraries_in_progress)
-		elog(ERROR, "pglogical is not in shared_preload_libraries");
 
 	/* Init workers. */
 	pglogical_worker_shmem_init();
