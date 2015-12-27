@@ -47,6 +47,15 @@ PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ prin
 ifeq ($(PGVER),94)
 PG_CPPFLAGS += -Icompat
 OBJS += compat/pglogical_compat.o
+DATA += compat/pglogical_origin.control compat/pglogical_origin--1.0.0.sql
+REGRESS += --dbname=regression
+SCRIPTS_built += pglogical_dump/pglogical_dump
+SCRIPTS += pglogical_dump/pglogical_dump
+EXTRA_CLEAN += pglogical_dump/pg_dump.o pglogical_dump/common.o pglogical_dump/pg_dump_sort.o \
+        pglogical_dump/pg_backup_archiver.o pglogical_dump/pg_backup_db.o pglogical_dump/pg_backup_custom.o \
+        pglogical_dump/pg_backup_null.o pglogical_dump/pg_backup_tar.o pglogical_dump/pg_backup_directory.o \
+        pglogical_dump/pg_backup_utils.o pglogical_dump/parallel.o pglogical_dump/compress_io.o pglogical_dump/dumputils.o \
+        pglogical_dump/keywords.o pglogical_dump/kwlookup.o pglogical_dump/tar.o
 endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -69,6 +78,10 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 
 ifeq ($(PGVER),94)
 regresscheck: ;
+
+pglogical_dump/pglogical_dump:
+	$(MAKE) -C pglogical_dump
+
 else
 regresscheck:
 	$(MKDIR_P) regression_output
