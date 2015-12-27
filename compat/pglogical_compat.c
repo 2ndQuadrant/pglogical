@@ -296,9 +296,9 @@ replorigin_session_setup(RepOriginId node)
 	SysScanDesc		scan;
 	ScanKeyData		key;
 	HeapTuple		tuple;
-	bool			start_transaction = !IsTransactionState();
 	XLogRecPtr		remote_lsn = InvalidXLogRecPtr,
 					local_lsn = InvalidXLogRecPtr;
+    MemoryContext   oldcontext;
 
 	Assert(node != InvalidRepNodeId);
 
@@ -306,9 +306,6 @@ replorigin_session_setup(RepOriginId node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 		errmsg("cannot setup replication origin when one is already setup")));
-
-	if (start_transaction)
-		StartTransactionCommand();
 
 	ensure_replication_origin_relid();
 
@@ -338,13 +335,12 @@ replorigin_session_setup(RepOriginId node)
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
-	if (start_transaction)
-		CommitTransactionCommand();
-
+	oldcontext = MemoryContextSwitchTo(CacheMemoryContext);
 	session_replication_state = (ReplicationState *) palloc(sizeof(ReplicationState));
 	session_replication_state->roident = node;
 	session_replication_state->remote_lsn = remote_lsn;
 	session_replication_state->local_lsn = local_lsn;
+	MemoryContextSwitchTo(oldcontext);
 
 	RegisterXactCallback(session_origin_xact_cb, NULL);
 }
@@ -352,6 +348,8 @@ replorigin_session_setup(RepOriginId node)
 void
 replorigin_session_reset(void)
 {
+	ReplicationState *local_replication_state = session_replication_state;
+
 	if (session_replication_state == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -361,6 +359,8 @@ replorigin_session_reset(void)
 
 	session_replication_state->acquired_by = 0;
 	session_replication_state = NULL;
+
+	pfree(local_replication_state);
 }
 
 /*
