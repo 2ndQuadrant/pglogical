@@ -56,6 +56,13 @@
 
 #define CATALOG_LOCAL_SYNC_STATUS	"local_sync_status"
 
+#if PG_VERSION_NUM < 90500
+#define PGDUMP_BINARY "pglogical_dump"
+#else
+#define PGDUMP_BINARY "pg_dump"
+#endif
+#define PGRESTORE_BINARY "pg_restore"
+
 #define Natts_local_sync_state	5
 #define Anum_sync_kind			1
 #define Anum_sync_subid			2
@@ -77,7 +84,7 @@ dump_structure(PGLogicalSubscription *sub, const char *snapshot)
 	int			res;
 	StringInfoData	command;
 
-	if (find_other_exec_version(my_exec_path, "pg_dump", &version, pg_dump))
+	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump))
 		elog(ERROR, "pglogical subscriber init failed to find pg_dump relative to binary %s",
 			 my_exec_path);
 
@@ -87,7 +94,11 @@ dump_structure(PGLogicalSubscription *sub, const char *snapshot)
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
+#if PG_VERSION_NUM < 90500
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -N pglogical_origin -F c -f \"/tmp/pglogical-%d.dump\" \"%s\"",
+#else
 	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"/tmp/pglogical-%d.dump\" \"%s\"",
+#endif
 					 pg_dump, snapshot, EXTENSION_NAME, MyProcPid,
 					 sub->origin_if->dsn);
 
@@ -108,7 +119,7 @@ restore_structure(PGLogicalSubscription *sub, const char *section)
 	int			res;
 	StringInfoData	command;
 
-	if (find_other_exec_version(my_exec_path, "pg_restore", &version, pg_restore))
+	if (find_other_exec_version(my_exec_path, PGRESTORE_BINARY, &version, pg_restore))
 		elog(ERROR, "pglogical subscriber init failed to find pg_restore relative to binary %s",
 			 my_exec_path);
 
@@ -217,6 +228,7 @@ start_copy_target_tx(PGconn *conn)
 	PGresult	   *res;
 	const char	   *setup_query =
 		"BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;\n"
+		"SET session_replication_role = 'replica';\n"
 		"SET DATESTYLE = ISO;\n"
 		"SET INTERVALSTYLE = POSTGRES;\n"
 		"SET extra_float_digits TO 3;\n"
