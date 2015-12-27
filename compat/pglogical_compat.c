@@ -92,7 +92,7 @@ typedef struct ReplicationState
 	/*
 	 * Lock protecting remote_lsn and local_lsn.
 	 */
-	LWLock		lock;
+/*	LWLock		lock;*/
 } ReplicationState;
 
 static ReplicationState *session_replication_state = NULL;
@@ -375,10 +375,8 @@ replorigin_session_get_progress(bool flush)
 
 	Assert(session_replication_state != NULL);
 
-	LWLockAcquire(&session_replication_state->lock, LW_SHARED);
 	remote_lsn = session_replication_state->remote_lsn;
 	local_lsn = session_replication_state->local_lsn;
-	LWLockRelease(&session_replication_state->lock);
 
 	if (flush && local_lsn != InvalidXLogRecPtr)
 		XLogFlush(local_lsn);
@@ -457,12 +455,10 @@ replorigin_session_advance(XLogRecPtr remote_commit, XLogRecPtr local_commit)
 	Assert(session_replication_state != NULL);
 	Assert(session_replication_state->roident != InvalidRepOriginId);
 
-	LWLockAcquire(&session_replication_state->lock, LW_EXCLUSIVE);
 	if (session_replication_state->local_lsn < local_commit)
 		session_replication_state->local_lsn = local_commit;
 	if (session_replication_state->remote_lsn < remote_commit)
 		session_replication_state->remote_lsn = remote_commit;
-	LWLockRelease(&session_replication_state->lock);
 
 	replorigin_advance(session_replication_state->roident, remote_commit,
 					   local_commit, false, true);
