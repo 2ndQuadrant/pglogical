@@ -18,6 +18,7 @@
 
 #include "storage/ipc.h"
 #include "storage/proc.h"
+#include "storage/procsignal.h"
 
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
@@ -165,6 +166,10 @@ void
 pglogical_worker_attach(int slot)
 {
 	Assert(slot < PGLogicalCtx->total_workers);
+
+#if PG_VERSION_NUM < 90600
+	set_latch_on_sigusr1 = true;
+#endif
 
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
