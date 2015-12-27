@@ -4,6 +4,7 @@
 #ifndef InvalidRepOriginId
 typedef uint16 RepOriginId;
 #define InvalidRepOriginId 0
+#define DoNotReplicateId UINT16_MAX
 #endif
 
 extern PGDLLIMPORT RepOriginId replorigin_session_origin;
