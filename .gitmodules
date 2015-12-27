@@ -1,3 +1,6 @@
 [submodule "pglogical_output"]
 	path = pglogical_output
 	url = git@github.com:2ndQuadrant/pglogical_output.git
+[submodule "pglogical_dump"]
+	path = pglogical_dump
+	url = git@github.com:2ndQuadrant/pglogical_dump.git
