@@ -27,7 +27,7 @@ EXTRA_CLEAN += pglogical.control
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
-pglogical_version=$(shell awk '/\#define PGLOGICAL_VERSION[ \t]+\".*\"/ { print substr($$3,2,length($$3)-2) }' pglogical.h )
+pglogical_version=$(shell awk '/\#define PGLOGICAL_VERSION[ \t]+\".*\"/ { print substr($$3,2,length($$3)-2) }' $(realpath $(srcdir)/pglogical.h) )
 
 ifdef USE_PGXS
 
@@ -45,13 +45,14 @@ PG_CONFIG = pg_config
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
 ifeq ($(PGVER),94)
-PG_CPPFLAGS += -Icompat
-OBJS += compat/pglogical_compat.o
+PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat))
+OBJS += $(realpath $(srcdir)/compat/pglogical_compat.o)
 DATA += compat/pglogical_origin.control compat/pglogical_origin--1.0.0.sql
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
-EXTRA_CLEAN += pglogical_dump/pg_dump.o pglogical_dump/common.o pglogical_dump/pg_dump_sort.o \
+EXTRA_CLEAN += \
+	pglogical_dump/pg_dump.o pglogical_dump/common.o pglogical_dump/pg_dump_sort.o \
         pglogical_dump/pg_backup_archiver.o pglogical_dump/pg_backup_db.o pglogical_dump/pg_backup_custom.o \
         pglogical_dump/pg_backup_null.o pglogical_dump/pg_backup_tar.o pglogical_dump/pg_backup_directory.o \
         pglogical_dump/pg_backup_utils.o pglogical_dump/parallel.o pglogical_dump/compress_io.o pglogical_dump/dumputils.o \
@@ -64,6 +65,19 @@ include $(PGXS)
 pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(LIBS) -o $@$(X)
 
+ifeq ($(PGVER),94)
+regresscheck: ;
+
+$(srcdir)/pglogical_dump/pg_dump.c:
+	$(warning pglogical_dump empty, trying to fetch as submodule)
+	git submodule init
+	git submodule update
+
+pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
+	mkdir -p pglogical_dump
+	$(MAKE) -C pglogical_dump -f ../$(srcdir)/pglogical_dump/Makefile VPATH=../$(VPATH)/pglogical_dump all
+
+else
 # We can't do a normal 'make check' because PGXS doesn't support
 # creating a temp install. We don't want to use a normal PGXS
 # 'installcheck' though, because it's a pain to set up a temp install
@@ -75,14 +89,6 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 # install. Nobody with any sense runs 'make check' under a user with
 # write permissions to their production PostgreSQL install (right?)
 # but this is still not ideal.
-
-ifeq ($(PGVER),94)
-regresscheck: ;
-
-pglogical_dump/pglogical_dump:
-	$(MAKE) -C pglogical_dump
-
-else
 regresscheck:
 	$(MKDIR_P) regression_output
 	$(pg_regress_check) \
@@ -114,7 +120,7 @@ EXTRA_REGRESS_OPTS += $(top_srcdir)/contrib/regress-postgresql.conf
 endif
 
 pglogical.control: pglogical.control.in pglogical.h
-	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/' pglogical.control.in > pglogical.control
+	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
 
 all: pglogical.control
 
