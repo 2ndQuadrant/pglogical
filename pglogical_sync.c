@@ -452,8 +452,8 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
 		replorigin_session_reset();
-		replorigin_drop(replorigin_session_origin);
 		replorigin_session_origin = InvalidRepOriginId;
+		replorigin_drop(replorigin_session_origin);
 	}
 }
 
