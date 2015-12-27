@@ -69,10 +69,10 @@ $(srcdir)/pglogical_dump/pg_dump.c:
 
 pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
 	mkdir -p pglogical_dump
-	$(MAKE) -C pglogical_dump -f ../$(srcdir)/pglogical_dump/Makefile VPATH=../$(VPATH)/pglogical_dump all
+	$(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump all
 
 pglogical-dump-clean:
-	if [ -e pglogical_dump ]; then $(MAKE) -C pglogical_dump -f ../$(srcdir)/pglogical_dump/Makefile VPATH=../$(VPATH)/pglogical_dump clean; fi
+	if [ -e pglogical_dump ]; then $(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump clean; fi
 
 clean: pglogical-dump-clean
 
