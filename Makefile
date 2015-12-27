@@ -51,12 +51,6 @@ DATA += compat/pglogical_origin.control compat/pglogical_origin--1.0.0.sql
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
-EXTRA_CLEAN += \
-	pglogical_dump/pg_dump.o pglogical_dump/common.o pglogical_dump/pg_dump_sort.o \
-        pglogical_dump/pg_backup_archiver.o pglogical_dump/pg_backup_db.o pglogical_dump/pg_backup_custom.o \
-        pglogical_dump/pg_backup_null.o pglogical_dump/pg_backup_tar.o pglogical_dump/pg_backup_directory.o \
-        pglogical_dump/pg_backup_utils.o pglogical_dump/parallel.o pglogical_dump/compress_io.o pglogical_dump/dumputils.o \
-        pglogical_dump/keywords.o pglogical_dump/kwlookup.o pglogical_dump/tar.o
 endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -76,6 +70,13 @@ $(srcdir)/pglogical_dump/pg_dump.c:
 pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
 	mkdir -p pglogical_dump
 	$(MAKE) -C pglogical_dump -f ../$(srcdir)/pglogical_dump/Makefile VPATH=../$(VPATH)/pglogical_dump all
+
+pglogical-dump-clean:
+	if [ -e pglogical_dump ]; then $(MAKE) -C pglogical_dump -f ../$(srcdir)/pglogical_dump/Makefile VPATH=../$(VPATH)/pglogical_dump clean; fi
+
+clean: pglogical-dump-clean
+
+.PHONY: pglogical-dump-clean
 
 else
 # We can't do a normal 'make check' because PGXS doesn't support
