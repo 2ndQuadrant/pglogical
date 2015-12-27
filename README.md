@@ -12,7 +12,7 @@ reused from the earlier Slony technology:
 
 pglogical is new technology utilising the latest in-core features, so we have these version restrictions:
 * Provider & subscriber nodes must run PostgreSQL 9.4+
-* PostgreSQL 9.5+ is required for replication origin filtering
+* PostgreSQL 9.5+ is required for replication origin filtering and conflict detection
 
 Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
