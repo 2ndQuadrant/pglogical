@@ -2,7 +2,7 @@
 
 The pglogical module provides logical streaming replication for PostgreSQL,
 using a publish/subscribe module. It is based on technology developed as part
-of the BDR project.
+of the BDR project (http://2ndquadrant.com/BDR).
 
 We use the following terms to describe data streams between nodes, deliberately
 reused from the earlier Slony technology:
@@ -21,7 +21,7 @@ Use cases supported are:
 * Data gather/merge from multiple upstream servers
 
 Architectural details:
-* pglogical works on a per-database database level, not whole server level like
+* pglogical works on a per-database level, not whole server level like
   physical streaming replication
 * One Provider may feed multiple Subscribers without incurring additional disk
   write overhead
@@ -485,7 +485,8 @@ It omits some features found in BDR:
   where all nodes' queues are plugged by prevening new xacts from being
   committed, then flushed to the peer nodes. This ensures there are no xacts in
   the queue that can't be applied once table structure has changed. pglogical
-  doesn't do this, so care must be taken when using mutual multi-master.
+  doesn't do this so multi-master replication (where nodes replicate to each
+  other) is not yet supported.
   See "limitations".
 
 See "limitations and restrictions" for more information.
@@ -493,7 +494,7 @@ See "limitations and restrictions" for more information.
 It also adds some features:
 
 * Flexible connections between nodes; topology is not restricted to
-  mesh multi-master. Cascading logical replication is possible.
+  a mesh configuration like BDR's. Cascading logical replication is possible.
 
 * Loosely-coupled output plugin that's re-usable for other projects
 
