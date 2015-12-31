@@ -23,7 +23,7 @@ SHLIB_LINK = $(libpq)
 
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview bidirectional primary_key foreign_key functions copy drop
 
-EXTRA_CLEAN += pglogical.control
+EXTRA_CLEAN += pglogical.control compat/pglogical_compat.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
@@ -72,13 +72,6 @@ pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
 	mkdir -p pglogical_dump
 	$(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump all
 
-pglogical-dump-clean:
-	if [ -e pglogical_dump ]; then $(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump clean; fi
-
-clean: pglogical-dump-clean
-
-.PHONY: pglogical-dump-clean
-
 else
 # We can't do a normal 'make check' because PGXS doesn't support
 # creating a temp install. We don't want to use a normal PGXS
@@ -103,6 +96,16 @@ regresscheck:
 check: install regresscheck ;
 
 endif
+
+
+# Even if we don't build pglogical_dump we should still clean it
+# if the submodule exists
+pglogical-dump-clean:
+	if [ -e pglogical_dump/Makefile ]; then $(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump clean; fi
+
+clean: pglogical-dump-clean
+
+.PHONY: pglogical-dump-clean
 
 else
 
