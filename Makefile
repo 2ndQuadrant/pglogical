@@ -138,9 +138,12 @@ dist-common: clean
 	@if [ -n "`git ls-files --exclude-standard --others`" ]; then echo >&2 "WARNING: git working tree has unstaged files which were IGNORED!"; fi
 	@echo $(GITHASH) > .distgitrev
 	@git name-rev --tags --name-only `cat .distgitrev` > .distgittag
-	@git ls-tree -r -t --full-tree HEAD --name-only |\
-	  tar cjf "${distdir}.tar.bz2" --transform="s|^|${distdir}/|" -T - \
-	    .distgitrev .distgittag
+	@(git ls-tree -r -t --full-tree HEAD --name-only \
+	  && cd pglogical_dump\
+	  && git ls-tree -r -t --full-tree HEAD --name-only | sed 's/^/pglogical_dump\//'\
+	 ) |\
+	  tar cjf "${distdir}.tar.bz2" --transform="s|^|${distdir}/|" --no-recursion \
+	    -T - .distgitrev .distgittag
 	@echo >&2 "Prepared ${distdir}.tar.bz2 for rev=`cat .distgitrev`, tag=`cat .distgittag`"
 	@rm -f .distgitrev .distgittag
 	@md5sum "${distdir}.tar.bz2" > "${distdir}.tar.bz2.md5"
