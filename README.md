@@ -424,8 +424,6 @@ The advantages of logical decoding in general and `pglogical_output` in
 particular are discussed above. There are also some limitations that apply to
 `pglogical_output`, and to Pg's logical decoding in general.
 
-(TODO: move much of this to the main logical decoding docs)
-
 Notably:
 
 ## Doesn't replicate DDL
