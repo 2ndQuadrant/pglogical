@@ -46,7 +46,7 @@ PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ prin
 
 ifeq ($(PGVER),94)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat))
-OBJS += $(realpath $(srcdir)/compat/pglogical_compat.o)
+OBJS += $(srcdir)/compat/pglogical_compat.o
 DATA += compat/pglogical_origin.control compat/pglogical_origin--1.0.0.sql
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview primary_key foreign_key functions copy drop
 REGRESS += --dbname=regression
