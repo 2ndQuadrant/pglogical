@@ -439,6 +439,19 @@ created by the application to carry information from downstream to upstream.
 
 See "Protocol flow" in the protocol documentation for more information.
 
+## Doesn't replicate global objects/shared catalog changes
+
+PostgreSQL has a number of object types that exist across all databases, stored
+in *shared catalogs*. These include:
+
+* Roles (users/groups)
+* Security labels on users and databases
+
+Such objects cannot be replicated by `pglogical_output`. They're managed with DDL that
+can't be captured within a single database and isn't decoded anyway.
+
+DDL for global object changes must be synchronized via some external means.
+
 ## Physical replica failover
 
 Logical decoding cannot follow a physical replication failover because
