@@ -460,6 +460,31 @@ maintains solid backward compatibility but only limited forward compatibility.
 
 Replicating between different minor versions makes no difference at all.
 
+### Doesn't replicate DDL
+
+Logical decoding doesn't decode catalog changes directly. So the plugin can't
+just send a `CREATE TABLE` statement when a new table is added.
+
+If the data being decoded is being applied to another PostgreSQL database then
+its table definitions must be kept in sync via some means external to the logical
+decoding plugin its self, such as:
+
+* Event triggers using DDL deparse to capture DDL changes as they happen and write them to a table to be replicated and applied on the other end; or
+* doing DDL management via tools that synchronise DDL on all nodes
+
+### Doesn't replicate global objects/shared catalog changes
+
+PostgreSQL has a number of object types that exist across all databases, stored
+in *shared catalogs*. These include:
+
+* Roles (users/groups)
+* Security labels on users and databases
+
+Such objects cannot be replicated by `pglogical_output`. They're managed with DDL that
+can't be captured within a single database and isn't decoded anyway.
+
+DDL for global object changes must be synchronized via some external means.
+
 ## How does pglogical differ from BDR?
 
 `pglogical` is based on technology developed for BDR and shares some code with
