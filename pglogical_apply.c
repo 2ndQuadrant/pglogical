@@ -466,6 +466,8 @@ handle_insert(StringInfo s)
 
 	ExecCloseIndices(estate->es_result_relation_info);
 
+	PopActiveSnapshot();
+
 	/* if INSERT was into our queue, process the message. */
 	if (RelationGetRelid(rel->rel) == QueueRelid)
 	{
