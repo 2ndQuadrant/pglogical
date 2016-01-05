@@ -1,0 +1,188 @@
+SELECT * FROM pglogical_regress_variables();
+ provider_dsn | subscriber_dsn 
+--------------+----------------
+ regression   | postgres
+(1 row)
+
+\gset
+\c :provider_dsn
+SELECT * FROM pglogical.create_replication_set('parallel');
+ create_replication_set 
+------------------------
+             3731651575
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription_parallel',
+    provider_dsn := 'dbname=regression user=super',
+	replication_sets := '{parallel}',
+	forward_origins := '{}',
+	synchronize_structure := false,
+	synchronize_data := false
+);
+ create_subscription 
+---------------------
+          4051189029
+(1 row)
+
+DO $$
+BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
+-----------+------------+--------------+--------------+-------------
+ f         | 3848008564 |              |              | r
+ i         | 4051189029 |              |              | r
+(2 rows)
+
+SELECT * FROM pglogical.show_subscription_status();
+     subscription_name      |   status    | provider_node |         provider_dsn         |                 slot_name                  |                 replication_sets                  | forward_origins 
+----------------------------+-------------+---------------+------------------------------+--------------------------------------------+---------------------------------------------------+-----------------
+ test_subscription          | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sube55bf37 | {default_insert_only,ddl_sql,repset_test,default} | 
+ test_subscription_parallel | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_subf1783d2 | {parallel}                                        | 
+(2 rows)
+
+-- Make sure we see the slot and active connection
+\c :provider_dsn
+SELECT plugin, slot_type, database, active FROM pg_replication_slots;
+      plugin      | slot_type |  database  | active 
+------------------+-----------+------------+--------
+ pglogical_output | logical   | regression | t
+ pglogical_output | logical   | regression | t
+(2 rows)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     2
+(1 row)
+
+SELECT pglogical.replicate_ddl_command($$
+    CREATE TABLE public.basic_dml1 (
+        id serial primary key,
+        other integer,
+        data text,
+        something interval
+    );
+    CREATE TABLE public.basic_dml2 (
+        id serial primary key,
+        other integer,
+        data text,
+        something interval
+    );
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml1');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('parallel', 'basic_dml2');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+WITH one AS (
+INSERT INTO basic_dml1(other, data, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval),
+       (3, 'baz', '2 years 1 hour'::interval),
+       (2, 'qux', '8 months 2 days'::interval),
+       (1, NULL, NULL)
+RETURNING *
+)
+INSERT INTO basic_dml2 SELECT * FROM one;
+BEGIN;
+UPDATE basic_dml1 SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
+DELETE FROM basic_dml2 WHERE id < 3;
+COMMIT;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+SELECT * FROM basic_dml1;
+ id | other | data |     something      
+----+-------+------+--------------------
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+  1 |     1 | foo  | @ 50 secs
+  2 |     2 | bar  | @ 84 days -10 secs
+(5 rows)
+
+SELECT * FROM basic_dml2;
+ id | other | data |    something     
+----+-------+------+------------------
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(3 rows)
+
+\c :subscriber_dsn
+SELECT * FROM basic_dml1;
+ id | other | data |     something      
+----+-------+------+--------------------
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+  1 |     1 | foo  | @ 50 secs
+  2 |     2 | bar  | @ 84 days -10 secs
+(5 rows)
+
+SELECT * FROM basic_dml2;
+ id | other | data |    something     
+----+-------+------+------------------
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(3 rows)
+
+SELECT pglogical.drop_subscription('test_subscription_parallel');
+ drop_subscription 
+-------------------
+                 1
+(1 row)
+
+\c :provider_dsn
+SELECT * FROM pglogical.drop_replication_set('parallel');
+ drop_replication_set 
+----------------------
+ t
+(1 row)
+
+SELECT pglogical.replicate_ddl_command($$
+    DROP TABLE public.basic_dml1 CASCADE;
+    DROP TABLE public.basic_dml2 CASCADE;
+$$);
+NOTICE:  drop cascades to 1 other object
+DETAIL:  table public.basic_dml1 in replication set default
+CONTEXT:  during execution of queued SQL statement: 
+    DROP TABLE public.basic_dml1 CASCADE;
+    DROP TABLE public.basic_dml2 CASCADE;
+
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+

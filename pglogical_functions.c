@@ -276,6 +276,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	PGLogicalSubscription	sub;
 	PGLogicalSyncStatus		sync;
 	PGLogicalNode			origin;
+	PGLogicalNode		   *existing_origin;
 	PGlogicalInterface		originif;
 	PGLogicalLocalNode     *localnode;
 	PGlogicalInterface		targetif;
@@ -298,13 +299,28 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	PQfinish(conn);
 
 	/* Next, create local representation of remote node and interface. */
-	create_node(&origin);
+	existing_origin = get_node_by_name(origin.name, true);
 
-	originif.id = InvalidOid;
-	originif.name = origin.name;
-	originif.nodeid = origin.id;
-	originif.dsn = provider_dsn;
-	create_node_interface(&originif);
+	/*
+	 * TODO:
+	 * - sanity check dsn
+	 * - check for overlapping subscriptions
+	 */
+	if (!existing_origin)
+	{
+		create_node(&origin);
+
+		originif.id = InvalidOid;
+		originif.name = origin.name;
+		originif.nodeid = origin.id;
+		originif.dsn = provider_dsn;
+		create_node_interface(&originif);
+	}
+	else
+	{
+		memcpy(&originif, get_node_interface_by_name(origin.id, origin.name),
+			   sizeof(PGlogicalInterface));
+	}
 
 	/*
 	 * Next, create subscription.

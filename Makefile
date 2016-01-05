@@ -23,7 +23,7 @@ SHLIB_LINK = $(libpq)
 
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  toasted replication_set add_table matview bidirectional primary_key \
-		  foreign_key functions copy triggers drop
+		  foreign_key functions copy triggers parallel drop
 
 EXTRA_CLEAN += pglogical.control compat/pglogical_compat.o
 
@@ -50,7 +50,9 @@ ifeq ($(PGVER),94)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat))
 OBJS += $(srcdir)/compat/pglogical_compat.o
 DATA += compat/pglogical_origin.control compat/pglogical_origin--1.0.0.sql
-REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview primary_key foreign_key functions copy drop
+REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
+		  toasted replication_set add_table matview primary_key foreign_key \
+		  functions copy triggers parallel drop
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump

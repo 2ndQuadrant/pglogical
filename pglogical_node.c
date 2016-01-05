@@ -617,6 +617,54 @@ get_node_interface(Oid ifid)
 }
 
 /*
+ * Get the node interface by name.
+ */
+PGlogicalInterface *
+get_node_interface_by_name(Oid nodeid, const char *name)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[2];
+	NodeInterfaceTuple *iftup;
+	PGlogicalInterface *nodeif;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_NODE_INTERFACE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Search for interface record. */
+	ScanKeyInit(&key[0],
+				Anum_if_nodeid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(nodeid));
+	ScanKeyInit(&key[1],
+				Anum_if_name,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(name));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 2, key);
+	tuple = systable_getnext(scan);
+
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "node interface \"%s\" not found for nod %u",
+			 name, nodeid);
+
+	iftup = (NodeInterfaceTuple *) GETSTRUCT(tuple);
+	nodeif = (PGlogicalInterface *) palloc(sizeof(PGlogicalInterface));
+	nodeif->id = iftup->if_id;
+	nodeif->name = pstrdup(NameStr(iftup->if_name));
+	nodeif->nodeid = iftup->if_nodeid;
+	nodeif->dsn = pstrdup(text_to_cstring(&iftup->if_dsn));
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return nodeif;
+}
+
+/*
  * Add new subscription to catalog.
  */
 void

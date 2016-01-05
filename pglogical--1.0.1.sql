@@ -31,8 +31,7 @@ CREATE TABLE pglogical.subscription (
     sub_enabled boolean NOT NULL DEFAULT true,
     sub_slot_name name NOT NULL,
     sub_replication_sets text[],
-    sub_forward_origins text[],
-    UNIQUE (sub_origin, sub_target)
+    sub_forward_origins text[]
 );
 
 CREATE TABLE pglogical.local_sync_status (
