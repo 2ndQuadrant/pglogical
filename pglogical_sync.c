@@ -47,6 +47,7 @@
 
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/guc.h"
 #include "utils/pg_lsn.h"
 #include "utils/rel.h"
 #include "utils/resowner.h"
@@ -777,6 +778,24 @@ pglogical_sync_main(Datum main_arg)
 
 	/* Connect to our database. */
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
+
+	/* Setup synchronous commit according to the user's wishes */
+	SetConfigOption("synchronous_commit",
+					pglogical_synchronous_commit ? "local" : "off",
+					PGC_SUSET, PGC_S_OVERRIDE);	/* other context? */
+
+	/* Run as replica session replication role. */
+	SetConfigOption("session_replication_role", "replica",
+					PGC_BACKEND, PGC_S_OVERRIDE);	/* other context? */
+
+	/*
+	 * Disable function body checks during replay. That's necessary because a)
+	 * the creator of the function might have had it disabled b) the function
+	 * might be search_path dependant and we don't fix the contents of
+	 * functions.
+	 */
+	SetConfigOption("check_function_bodies", "off",
+					PGC_INTERNAL, PGC_S_OVERRIDE);
 
 	StartTransactionCommand();
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
