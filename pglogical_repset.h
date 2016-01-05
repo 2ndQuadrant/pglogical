@@ -28,6 +28,7 @@ typedef struct PGLogicalRepSet
 
 #define DEFAULT_REPSET_NAME "default"
 #define DEFAULT_INSONLY_REPSET_NAME "default_insert_only"
+#define DDL_SQL_REPSET_NAME "ddl_sql"
 
 /* This is only valid within one output plugin instance/walsender. */
 typedef struct PGLogicalRepSetRelation

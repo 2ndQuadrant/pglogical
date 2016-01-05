@@ -153,6 +153,15 @@ pglogical_create_node(PG_FUNCTION_ARGS)
 	repset.replicate_truncate = true;
 	create_replication_set(&repset);
 
+	repset.id = InvalidOid;
+	repset.nodeid = node.id;
+	repset.name = DDL_SQL_REPSET_NAME;
+	repset.replicate_insert = true;
+	repset.replicate_update = false;
+	repset.replicate_delete = false;
+	repset.replicate_truncate = false;
+	create_replication_set(&repset);
+
 	create_local_node(node.id, nodeif.id);
 
 	PG_RETURN_OID(node.id);
@@ -1199,7 +1208,8 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	 * Note, we keep "DDL" message type for the future when we have deparsing
 	 * support.
 	 */
-	queue_message(NULL, GetUserId(), QUEUE_COMMAND_TYPE_SQL, cmd.data);
+	queue_message(list_make1(DDL_SQL_REPSET_NAME), GetUserId(),
+				  QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
 	/* Execute the query locally. */
 	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
