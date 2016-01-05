@@ -404,6 +404,8 @@ handle_insert(StringInfo s)
 	estate = create_estate_for_relation(rel->rel);
 	econtext = GetPerTupleExprContext(estate);
 
+	PushActiveSnapshot(GetTransactionSnapshot());
+
 	MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
 	fill_tuple_defaults(rel, econtext, &newtup);
 

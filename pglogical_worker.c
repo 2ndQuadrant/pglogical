@@ -401,6 +401,9 @@ pglogical_worker_shmem_startup(void)
 {
 	bool        found;
 
+	if (prev_shmem_startup_hook != NULL)
+		prev_shmem_startup_hook();
+
 	/* Init signaling context for supervisor proccess. */
 	PGLogicalCtx = ShmemInitStruct("pglogical_context", worker_shmem_size(),
 								   &found);
