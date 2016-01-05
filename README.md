@@ -68,6 +68,10 @@ decoding:
     max_wal_senders = 10        # one per node needed on provider node
     shared_preload_libraries = 'pglogical'
     track_commit_timestamp = on # needed for last/first update wins conflict resolution
+                                # property available in PostgreSQL 9.5+
+
+`pg_hba.conf` has to allow replication connections from localhost, by a user
+with replication privilege.
 
 Next the `pglogical` extension has to be installed on all nodes:
 
@@ -354,7 +358,8 @@ The configuration of the conflicts resolver is done via the
   kept (this can be either local or remote version)
 
 When `track_commit_timestamp` is disabled, the only allowed value is
-`apply_remote`.
+`apply_remote`. As `track_commit_timestamp` is not available in PostgreSQL 9.4
+`pglogical.conflict_resolution` can only be `apply_remote` (default)
 
 ## Limitations and restrictions
 
