@@ -23,6 +23,7 @@
 
 #include "commands/dbcommands.h"
 #include "commands/tablecmds.h"
+#include "commands/trigger.h"
 
 #include "executor/executor.h"
 
@@ -282,16 +283,13 @@ create_estate_for_relation(Relation rel)
 	return estate;
 }
 
-static void
+static List *
 UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 {
-	/* HOT update does not require index inserts */
-	if (HeapTupleIsHeapOnly(slot->tts_tuple))
-		return;
+	List	   *recheckIndexes = NIL;
 
 	if (estate->es_result_relation_info->ri_NumIndices > 0)
 	{
-		List	   *recheckIndexes = NIL;
 		recheckIndexes = ExecInsertIndexTuples(slot,
 											   &slot->tts_tuple->t_self,
 											   estate
@@ -308,6 +306,8 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 
 		list_free(recheckIndexes);
 	}
+
+	return recheckIndexes;
 }
 
 static bool
@@ -378,23 +378,64 @@ fill_tuple_defaults(PGLogicalRelation *rel, ExprContext *econtext,
 												NULL);
 }
 
+typedef struct ApplyExecState {
+	EState			   *estate;
+	ExprContext		   *econtext;
+	EPQState		   epqstate;
+	ResultRelInfo	   *resultRelInfo;
+	TupleTableSlot	   *slot;
+	bool				fireBeforeTriggers;
+} ApplyExecState;
+
+static ApplyExecState *
+init_apply_exec_state(PGLogicalRelation *rel,
+					  PGLogicalTupleData *remotetup)
+{
+	EState			   *estate;
+	ExprContext		   *econtext;
+	ResultRelInfo	   *relinfo;
+	MemoryContext		oldcontext;
+	HeapTuple			tuple;
+	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
+
+	/* Initialize the executor state. */
+	aestate->estate = estate = create_estate_for_relation(rel->rel);
+	aestate->resultRelInfo = relinfo = estate->es_result_relation_info;
+	econtext = GetPerTupleExprContext(estate);
+
+	oldcontext = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
+	fill_tuple_defaults(rel, econtext, remotetup);
+
+	tuple = heap_form_tuple(RelationGetDescr(rel->rel),
+							remotetup->values, remotetup->nulls);
+
+	aestate->slot = ExecInitExtraTupleSlot(estate);
+	ExecSetSlotDescriptor(aestate->slot, RelationGetDescr(rel->rel));
+
+	ExecStoreTuple(tuple, aestate->slot, InvalidBuffer, true);
+
+	EvalPlanQualInit(&aestate->epqstate, estate, NULL, NIL, -1);
+
+	MemoryContextSwitchTo(oldcontext);
+
+	return aestate;
+}
+
 static void
 handle_insert(StringInfo s)
 {
-	PGLogicalTupleData	newtup;
+	PGLogicalTupleData	remotetup;
 	PGLogicalRelation  *rel;
-	EState			   *estate;
-	ExprContext		   *econtext;
+	ApplyExecState	   *aestate;
 	Oid					conflicts;
-	TupleTableSlot	   *localslot,
-					   *applyslot;
+	TupleTableSlot	   *localslot;
 	HeapTuple			remotetuple;
 	HeapTuple			applytuple;
-	MemoryContext		oldcontext = CurrentMemoryContext;
 	PGLogicalConflictResolution resolution;
 	bool				started_tx = ensure_transaction();
+	List			   *recheckIndexes = NIL;
 
-	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
+	rel = pglogical_read_insert(s, RowExclusiveLock, &remotetup);
 
 	/* If in list of relations which are being synchronized, skip. */
 	if (check_syncing_relation(rel->nspname, rel->relname))
@@ -404,30 +445,43 @@ handle_insert(StringInfo s)
 	}
 
 	/* Initialize the executor state. */
-	estate = create_estate_for_relation(rel->rel);
-	econtext = GetPerTupleExprContext(estate);
+	aestate = init_apply_exec_state(rel, &remotetup);
+	localslot = ExecInitExtraTupleSlot(aestate->estate);
+	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+
+	/* Prepare to catch AFTER triggers. */
+	AfterTriggerBeginQuery();
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
-	fill_tuple_defaults(rel, econtext, &newtup);
+	if (aestate->resultRelInfo->ri_TrigDesc &&
+		aestate->resultRelInfo->ri_TrigDesc->trig_insert_before_row)
+	{
+		aestate->slot = ExecBRInsertTriggers(aestate->estate,
+												   aestate->resultRelInfo,
+												   aestate->slot);
 
-	localslot = ExecInitExtraTupleSlot(estate);
-	applyslot = ExecInitExtraTupleSlot(estate);
-	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
-	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
+		if (aestate->slot == NULL)		/* "do nothing" */
+		{
+			/* TODO cleanup */
+			PopActiveSnapshot();
+			return;
+		}
 
-	ExecOpenIndices(estate->es_result_relation_info
+	}
+
+	/* trigger might have changed tuple */
+	remotetuple = ExecMaterializeSlot(aestate->slot);
+
+	ExecOpenIndices(aestate->resultRelInfo
 #if PG_VERSION_NUM >= 90500
 					, false
 #endif
 					);
 
-	conflicts = pglogical_tuple_find_conflict(estate, &newtup, localslot);
-
-	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
-								  newtup.values, newtup.nulls);
-	MemoryContextSwitchTo(oldcontext);
+	conflicts = pglogical_tuple_find_conflict(aestate->estate,
+											  &remotetup,
+											  localslot);
 
 	if (OidIsValid(conflicts))
 	{
@@ -442,32 +496,69 @@ handle_insert(StringInfo s)
 
 		if (apply)
 		{
-			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
+			if (applytuple != remotetuple)
+				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, true);
+
+			if (aestate->resultRelInfo->ri_TrigDesc &&
+				aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
+			{
+				aestate->slot = ExecBRUpdateTriggers(aestate->estate,
+													 &aestate->epqstate,
+													 aestate->resultRelInfo,
+													 &localslot->tts_tuple->t_self,
+													 localslot->tts_tuple,
+													 aestate->slot);
+
+				if (aestate->slot == NULL)		/* "do nothing" */
+				{
+					/* TODO cleanup */
+					PopActiveSnapshot();
+					return;
+				}
+
+			}
+
+			/* trigger might have changed tuple */
+			remotetuple = ExecMaterializeSlot(aestate->slot);
+
 			/* Check the constraints of the tuple */
 			if (rel->rel->rd_att->constr)
-				ExecConstraints(estate->es_result_relation_info, applyslot,
-								estate);
+				ExecConstraints(aestate->resultRelInfo, aestate->slot,
+								aestate->estate);
 
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
-							   applytuple);
-			/* TODO: check for HOT update? */
-			UserTableUpdateOpenIndexes(estate, applyslot);
+							   aestate->slot->tts_tuple);
+
+			if (!HeapTupleIsHeapOnly(aestate->slot->tts_tuple))
+				recheckIndexes = UserTableUpdateOpenIndexes(aestate->estate,
+															aestate->slot);
+
+			/* AFTER ROW UPDATE Triggers */
+			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
+								 &localslot->tts_tuple->t_self,
+								 localslot->tts_tuple, applytuple,
+								 recheckIndexes);
 		}
 	}
 	else
 	{
-		/* No conflict, insert the tuple. */
-		ExecStoreTuple(remotetuple, applyslot, InvalidBuffer, true);
 		/* Check the constraints of the tuple */
 		if (rel->rel->rd_att->constr)
-			ExecConstraints(estate->es_result_relation_info, applyslot,
-							estate);
+			ExecConstraints(aestate->resultRelInfo, aestate->slot,
+							aestate->estate);
 
-		simple_heap_insert(rel->rel, remotetuple);
-		UserTableUpdateOpenIndexes(estate, applyslot);
+		simple_heap_insert(rel->rel, aestate->slot->tts_tuple);
+		UserTableUpdateOpenIndexes(aestate->estate, aestate->slot);
+
+		/* AFTER ROW INSERT Triggers */
+		ExecARInsertTriggers(aestate->estate, aestate->resultRelInfo,
+							 remotetuple, recheckIndexes);
 	}
 
-	ExecCloseIndices(estate->es_result_relation_info);
+	ExecCloseIndices(aestate->resultRelInfo);
+
+	/* Handle queued AFTER triggers */
+	AfterTriggerEndQuery(aestate->estate);
 
 	PopActiveSnapshot();
 
@@ -483,13 +574,13 @@ handle_insert(StringInfo s)
 		 * Release transaction bound resources for CONCURRENTLY support.
 		 */
 		MemoryContextSwitchTo(MessageContext);
-		ht = heap_copytuple(applyslot->tts_tuple);
+		ht = heap_copytuple(aestate->slot->tts_tuple);
 
 		LockRelationIdForSession(&lockid, RowExclusiveLock);
 		pglogical_relation_close(rel, NoLock);
 
-		ExecResetTupleTable(estate->es_tupleTable, true);
-		FreeExecutorState(estate);
+		ExecResetTupleTable(aestate->estate->es_tupleTable, true);
+		FreeExecutorState(aestate->estate);
 
 		handle_queued_message(ht, started_tx);
 
@@ -506,8 +597,8 @@ handle_insert(StringInfo s)
 	{
 		/* Otherwise do normal cleanup. */
 		pglogical_relation_close(rel, NoLock);
-		ExecResetTupleTable(estate->es_tupleTable, true);
-		FreeExecutorState(estate);
+		ExecResetTupleTable(aestate->estate->es_tupleTable, true);
+		FreeExecutorState(aestate->estate);
 	}
 
 	CommandCounterIncrement();
@@ -520,14 +611,12 @@ handle_update(StringInfo s)
 	PGLogicalTupleData	newtup;
 	PGLogicalTupleData *searchtup;
 	PGLogicalRelation  *rel;
-	EState			   *estate;
-	ExprContext		   *econtext;
-	MemoryContext		oldcontext = CurrentMemoryContext;
+	ApplyExecState	   *aestate;
 	bool				found;
 	bool				hasoldtup;
-	TupleTableSlot	   *localslot,
-					   *applyslot;
+	TupleTableSlot	   *localslot;
 	HeapTuple			remotetuple;
+	List			   *recheckIndexes = NIL;
 
 	ensure_transaction();
 
@@ -542,26 +631,17 @@ handle_update(StringInfo s)
 	}
 
 	/* Initialize the executor state. */
-	estate = create_estate_for_relation(rel->rel);
-	econtext = GetPerTupleExprContext(estate);
-
-	MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
-	fill_tuple_defaults(rel, econtext, &newtup);
-
-	localslot = ExecInitExtraTupleSlot(estate);
-	applyslot = ExecInitExtraTupleSlot(estate);
+	aestate = init_apply_exec_state(rel, &newtup);
+	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
-	ExecSetSlotDescriptor(applyslot, RelationGetDescr(rel->rel));
+
+	/* Prepare to catch AFTER triggers. */
+	AfterTriggerBeginQuery();
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	searchtup = hasoldtup ? &oldtup : &newtup;
-	found = pglogical_tuple_find_replidx(estate, searchtup, localslot);
-
-	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
-								  newtup.values, newtup.nulls);
-
-	MemoryContextSwitchTo(oldcontext);
+	found = pglogical_tuple_find_replidx(aestate->estate, searchtup, localslot);
 
 	/*
 	 * Tuple found.
@@ -575,6 +655,27 @@ handle_update(StringInfo s)
 		RepOriginId		local_origin;
 		bool			apply;
 		HeapTuple		applytuple;
+
+		if (aestate->resultRelInfo->ri_TrigDesc &&
+			aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
+		{
+			aestate->slot = ExecBRUpdateTriggers(aestate->estate,
+												 &aestate->epqstate,
+												 aestate->resultRelInfo,
+												 &localslot->tts_tuple->t_self,
+												 localslot->tts_tuple,
+												 aestate->slot);
+
+			if (aestate->slot == NULL)		/* "do nothing" */
+			{
+				/* TODO cleanup */
+				PopActiveSnapshot();
+				return;
+			}
+		}
+
+		/* trigger might have changed tuple */
+		remotetuple = ExecMaterializeSlot(aestate->slot);
 
 		get_tuple_origin(localslot->tts_tuple, &xmin, &local_origin,
 						 &local_ts);
@@ -592,9 +693,12 @@ handle_update(StringInfo s)
 										 remotetuple, &applytuple,
 										 &resolution);
 
-			pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
+			pglogical_report_conflict(CONFLICT_UPDATE_UPDATE, rel->rel,
 									  localslot->tts_tuple, remotetuple,
 									  applytuple, resolution);
+
+			if (applytuple != remotetuple)
+				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, true);
 		}
 		else
 		{
@@ -604,26 +708,32 @@ handle_update(StringInfo s)
 
 		if (apply)
 		{
-			ExecStoreTuple(applytuple, applyslot, InvalidBuffer, true);
 			/* Check the constraints of the tuple */
 			if (rel->rel->rd_att->constr)
-				ExecConstraints(estate->es_result_relation_info, applyslot,
-								estate);
+				ExecConstraints(aestate->resultRelInfo, aestate->slot,
+								aestate->estate);
 
 			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
-							   applytuple);
+							   aestate->slot->tts_tuple);
 
 			/* Only update indexes if it's not HOT update. */
-			if (!HeapTupleIsHeapOnly(applyslot->tts_tuple))
+			if (!HeapTupleIsHeapOnly(aestate->slot->tts_tuple))
 			{
-				ExecOpenIndices(estate->es_result_relation_info
+				ExecOpenIndices(aestate->resultRelInfo
 #if PG_VERSION_NUM >= 90500
 								, false
 #endif
 							   );
-				UserTableUpdateOpenIndexes(estate, applyslot);
-				ExecCloseIndices(estate->es_result_relation_info);
+				recheckIndexes = UserTableUpdateOpenIndexes(aestate->estate,
+															aestate->slot);
+				ExecCloseIndices(aestate->resultRelInfo);
 			}
+
+			/* AFTER ROW UPDATE Triggers */
+			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
+								 &localslot->tts_tuple->t_self,
+								 localslot->tts_tuple, applytuple,
+								 recheckIndexes);
 		}
 	}
 	else
@@ -633,15 +743,20 @@ handle_update(StringInfo s)
 		 *
 		 * We can't do INSERT here because we might not have whole tuple.
 		 */
+		remotetuple = ExecMaterializeSlot(aestate->slot);
 		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel->rel, NULL,
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
 
-	/* Cleanup. */
 	PopActiveSnapshot();
+
+	/* Handle queued AFTER triggers */
+	AfterTriggerEndQuery(aestate->estate);
+
+	/* Cleanup. */
 	pglogical_relation_close(rel, NoLock);
-	ExecResetTupleTable(estate->es_tupleTable, true);
-	FreeExecutorState(estate);
+	ExecResetTupleTable(aestate->estate->es_tupleTable, true);
+	FreeExecutorState(aestate->estate);
 
 	CommandCounterIncrement();
 }
@@ -649,14 +764,14 @@ handle_update(StringInfo s)
 static void
 handle_delete(StringInfo s)
 {
-	PGLogicalTupleData	oldtup;
+	PGLogicalTupleData	remotetup;
 	PGLogicalRelation  *rel;
-	EState			   *estate;
+	ApplyExecState	   *aestate;
 	TupleTableSlot	   *localslot;
 
 	ensure_transaction();
 
-	rel = pglogical_read_delete(s, RowExclusiveLock, &oldtup);
+	rel = pglogical_read_delete(s, RowExclusiveLock, &remotetup);
 
 	/* If in list of relations which are being synchronized, skip. */
 	if (check_syncing_relation(rel->nspname, rel->relname))
@@ -666,32 +781,60 @@ handle_delete(StringInfo s)
 	}
 
 	/* Initialize the executor state. */
-	estate = create_estate_for_relation(rel->rel);
-	localslot = ExecInitExtraTupleSlot(estate);
+	aestate = init_apply_exec_state(rel, &remotetup);
+	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+
+	/* Prepare to catch AFTER triggers. */
+	AfterTriggerBeginQuery();
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (pglogical_tuple_find_replidx(estate, &oldtup, localslot))
+	if (pglogical_tuple_find_replidx(aestate->estate, &remotetup, localslot))
 	{
+		if (aestate->resultRelInfo->ri_TrigDesc &&
+			aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
+		{
+			bool dodelete = ExecBRDeleteTriggers(aestate->estate,
+												 &aestate->epqstate,
+												 aestate->resultRelInfo,
+												 &localslot->tts_tuple->t_self,
+												 localslot->tts_tuple);
+
+			if (!dodelete)		/* "do nothing" */
+			{
+				/* TODO cleanup */
+				PopActiveSnapshot();
+				return;
+			}
+		}
+
 		/* Tuple found, delete it. */
 		simple_heap_delete(rel->rel, &localslot->tts_tuple->t_self);
+
+		/* AFTER ROW DELETE Triggers */
+		ExecARDeleteTriggers(aestate->estate, aestate->resultRelInfo,
+							 &localslot->tts_tuple->t_self,
+							 localslot->tts_tuple);
 	}
 	else
 	{
 		/* The tuple to be deleted could not be found. */
 		HeapTuple remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
-												oldtup.values, oldtup.nulls);
+												remotetup.values, remotetup.nulls);
 		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel->rel, NULL,
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
 
 	PopActiveSnapshot();
 
+	/* Handle queued AFTER triggers */
+	AfterTriggerEndQuery(aestate->estate);
+
 	/* Cleanup. */
 	pglogical_relation_close(rel, NoLock);
-	ExecResetTupleTable(estate->es_tupleTable, true);
-	FreeExecutorState(estate);
+	ExecResetTupleTable(aestate->estate->es_tupleTable, true);
+	FreeExecutorState(aestate->estate);
 
 	CommandCounterIncrement();
 }
