@@ -148,12 +148,16 @@ pglogical_relcache_invalidate_callback(Datum arg, Oid reloid)
 
 	if (reloid != InvalidOid)
 	{
-		/* invalidate one entry */
-		entry = (PGLogicalRelation *) hash_search(PGLogicalRelationHash,
-				(void*) &reloid, HASH_FIND, NULL);
+		HASH_SEQ_STATUS status;
 
-		if (entry != NULL)
-			entry->reloid = InvalidOid;
+		hash_seq_init(&status, PGLogicalRelationHash);
+
+		/* TODO, use inverse lookup hastable */
+		while ((entry = (PGLogicalRelation *) hash_seq_search(&status)) != NULL)
+		{
+			if (entry->reloid == reloid)
+				entry->reloid = InvalidOid;
+		}
 	}
 	else
 	{
