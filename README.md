@@ -67,6 +67,11 @@ decoding:
     max_replication_slots = 10  # one per node needed on provider node
     max_wal_senders = 10        # one per node needed on provider node
     shared_preload_libraries = 'pglogical'
+
+If you are using PostgreSQL 9.5+ (this won't work on 9.4) and want to handle
+conflict resolution with last/first update wins (see [Conflicts](#conflicts)),
+you can add this additional option to postgresql.conf:
+
     track_commit_timestamp = on # needed for last/first update wins conflict resolution
                                 # property available in PostgreSQL 9.5+
 
