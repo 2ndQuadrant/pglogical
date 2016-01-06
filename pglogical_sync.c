@@ -782,11 +782,11 @@ pglogical_sync_main(Datum main_arg)
 	/* Setup synchronous commit according to the user's wishes */
 	SetConfigOption("synchronous_commit",
 					pglogical_synchronous_commit ? "local" : "off",
-					PGC_SUSET, PGC_S_OVERRIDE);	/* other context? */
+					PGC_BACKEND, PGC_S_OVERRIDE);	/* other context? */
 
 	/* Run as replica session replication role. */
 	SetConfigOption("session_replication_role", "replica",
-					PGC_BACKEND, PGC_S_OVERRIDE);	/* other context? */
+					PGC_SUSET, PGC_S_OVERRIDE);	/* other context? */
 
 	/*
 	 * Disable function body checks during replay. That's necessary because a)
