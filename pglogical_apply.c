@@ -88,6 +88,14 @@ typedef struct PGLFlushPosition
 
 dlist_head lsn_mapping = DLIST_STATIC_INIT(lsn_mapping);
 
+typedef struct ApplyExecState {
+	EState			   *estate;
+	ExprContext		   *econtext;
+	EPQState		   epqstate;
+	ResultRelInfo	   *resultRelInfo;
+	TupleTableSlot	   *slot;
+} ApplyExecState;
+
 static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
 static void handle_startup_param(const char *key, const char *value);
 static bool parse_bool_param(const char *key, const char *value);
@@ -253,7 +261,7 @@ handle_relation(StringInfo s)
 
 
 static EState *
-create_estate_for_relation(Relation rel)
+create_estate_for_relation(PGLogicalRelation *rel)
 {
 	EState	   *estate;
 	ResultRelInfo *resultRelInfo;
@@ -263,8 +271,8 @@ create_estate_for_relation(Relation rel)
 
 	rte = makeNode(RangeTblEntry);
 	rte->rtekind = RTE_RELATION;
-	rte->relid = RelationGetRelid(rel);
-	rte->relkind = rel->rd_rel->relkind;
+	rte->relid = RelationGetRelid(rel->rel);
+	rte->relkind = rel->rel->rd_rel->relkind;
 	estate->es_range_table = list_make1(rte);
 
 	resultRelInfo = makeNode(ResultRelInfo);
@@ -273,12 +281,30 @@ create_estate_for_relation(Relation rel)
 					  1,
 					  0);*/
 	resultRelInfo->ri_RangeTableIndex = 1;
-	resultRelInfo->ri_RelationDesc = rel;
+	resultRelInfo->ri_RelationDesc = rel->rel;
 	resultRelInfo->ri_TrigInstrument = NULL;
 
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
 	estate->es_result_relation_info = resultRelInfo;
+
+	if (rel->hasTriggers)
+		resultRelInfo->ri_TrigDesc = CopyTriggerDesc(rel->rel->trigdesc);
+
+	if (resultRelInfo->ri_TrigDesc)
+	{
+		int			n = resultRelInfo->ri_TrigDesc->numtriggers;
+
+		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
+			palloc0(n * sizeof(FmgrInfo));
+		resultRelInfo->ri_TrigWhenExprs = (List **)
+			palloc0(n * sizeof(List *));
+	}
+	else
+	{
+		resultRelInfo->ri_TrigFunctions = NULL;
+		resultRelInfo->ri_TrigWhenExprs = NULL;
+	}
 
 	return estate;
 }
@@ -378,15 +404,6 @@ fill_tuple_defaults(PGLogicalRelation *rel, ExprContext *econtext,
 												NULL);
 }
 
-typedef struct ApplyExecState {
-	EState			   *estate;
-	ExprContext		   *econtext;
-	EPQState		   epqstate;
-	ResultRelInfo	   *resultRelInfo;
-	TupleTableSlot	   *slot;
-	bool				fireBeforeTriggers;
-} ApplyExecState;
-
 static ApplyExecState *
 init_apply_exec_state(PGLogicalRelation *rel,
 					  PGLogicalTupleData *remotetup)
@@ -399,7 +416,7 @@ init_apply_exec_state(PGLogicalRelation *rel,
 	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
 
 	/* Initialize the executor state. */
-	aestate->estate = estate = create_estate_for_relation(rel->rel);
+	aestate->estate = estate = create_estate_for_relation(rel);
 	aestate->resultRelInfo = relinfo = estate->es_result_relation_info;
 	econtext = GetPerTupleExprContext(estate);
 
@@ -414,7 +431,8 @@ init_apply_exec_state(PGLogicalRelation *rel,
 
 	ExecStoreTuple(tuple, aestate->slot, InvalidBuffer, true);
 
-	EvalPlanQualInit(&aestate->epqstate, estate, NULL, NIL, -1);
+	if (relinfo->ri_TrigDesc)
+		EvalPlanQualInit(&aestate->epqstate, estate, NULL, NIL, -1);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -458,8 +476,8 @@ handle_insert(StringInfo s)
 		aestate->resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
 		aestate->slot = ExecBRInsertTriggers(aestate->estate,
-												   aestate->resultRelInfo,
-												   aestate->slot);
+											 aestate->resultRelInfo,
+											 aestate->slot);
 
 		if (aestate->slot == NULL)		/* "do nothing" */
 		{
@@ -506,7 +524,7 @@ handle_insert(StringInfo s)
 													 &aestate->epqstate,
 													 aestate->resultRelInfo,
 													 &localslot->tts_tuple->t_self,
-													 localslot->tts_tuple,
+													 NULL,
 													 aestate->slot);
 
 				if (aestate->slot == NULL)		/* "do nothing" */
@@ -536,8 +554,7 @@ handle_insert(StringInfo s)
 			/* AFTER ROW UPDATE Triggers */
 			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
 								 &localslot->tts_tuple->t_self,
-								 localslot->tts_tuple, applytuple,
-								 recheckIndexes);
+								 NULL, applytuple, recheckIndexes);
 		}
 	}
 	else
@@ -663,8 +680,7 @@ handle_update(StringInfo s)
 												 &aestate->epqstate,
 												 aestate->resultRelInfo,
 												 &localslot->tts_tuple->t_self,
-												 localslot->tts_tuple,
-												 aestate->slot);
+												 NULL, aestate->slot);
 
 			if (aestate->slot == NULL)		/* "do nothing" */
 			{
@@ -732,8 +748,7 @@ handle_update(StringInfo s)
 			/* AFTER ROW UPDATE Triggers */
 			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
 								 &localslot->tts_tuple->t_self,
-								 localslot->tts_tuple, applytuple,
-								 recheckIndexes);
+								 NULL, applytuple, recheckIndexes);
 		}
 	}
 	else
@@ -799,7 +814,7 @@ handle_delete(StringInfo s)
 												 &aestate->epqstate,
 												 aestate->resultRelInfo,
 												 &localslot->tts_tuple->t_self,
-												 localslot->tts_tuple);
+												 NULL);
 
 			if (!dodelete)		/* "do nothing" */
 			{
@@ -814,8 +829,7 @@ handle_delete(StringInfo s)
 
 		/* AFTER ROW DELETE Triggers */
 		ExecARDeleteTriggers(aestate->estate, aestate->resultRelInfo,
-							 &localslot->tts_tuple->t_self,
-							 localslot->tts_tuple);
+							 &localslot->tts_tuple->t_self, NULL);
 	}
 	else
 	{

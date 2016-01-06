@@ -14,6 +14,10 @@
 
 #include "access/heapam.h"
 
+#include "catalog/pg_trigger.h"
+
+#include "commands/trigger.h"
+
 #include "utils/builtins.h"
 #include "utils/catcache.h"
 #include "utils/hsearch.h"
@@ -86,6 +90,28 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 			entry->attmap[i] = tupdesc_get_att_by_name(desc, entry->attnames[i]);
 
 		entry->reloid = RelationGetRelid(entry->rel);
+
+		/* Cache trigger info. */
+		entry->hasTriggers = false;
+		if (entry->rel->rd_rel->relhastriggers)
+		{
+			TriggerDesc	   *trigdesc = entry->rel->trigdesc;
+			int				i;
+
+			for (i = 0; i < trigdesc->numtriggers; i++)
+			{
+				Trigger *trigger = &trigdesc->triggers[i];
+
+				/* We only fire replica triggers on rows */
+				if (!(trigger->tgenabled == TRIGGER_FIRES_ON_ORIGIN ||
+					  trigger->tgenabled == TRIGGER_DISABLED) &&
+					TRIGGER_FOR_ROW(trigger->tgtype))
+				{
+					entry->hasTriggers = true;
+					break;
+				}
+			}
+		}
 	}
 	else
 		entry->rel = heap_open(entry->reloid, lockmode);

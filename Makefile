@@ -21,7 +21,9 @@ SCRIPTS_built = pglogical_create_subscriber
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK = $(libpq)
 
-REGRESS = preseed infofuncs init_fail init preseed_check basic extended toasted replication_set add_table matview bidirectional primary_key foreign_key functions copy drop
+REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
+		  toasted replication_set add_table matview bidirectional primary_key \
+		  foreign_key functions copy triggers drop
 
 EXTRA_CLEAN += pglogical.control compat/pglogical_compat.o
 

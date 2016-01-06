@@ -26,6 +26,9 @@ typedef struct PGLogicalRelation
 	Oid			reloid;
 	Relation	rel;
 	int		   *attmap;
+
+	/* Additional cache, only valid as long as relation mapping is. */
+	bool		hasTriggers;
 } PGLogicalRelation;
 
 extern void pglogical_relation_cache_update(uint32 remoteid,
