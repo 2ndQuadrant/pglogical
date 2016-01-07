@@ -436,7 +436,27 @@ init_apply_exec_state(PGLogicalRelation *rel,
 
 	MemoryContextSwitchTo(oldcontext);
 
+	/* Prepare to catch AFTER triggers. */
+	AfterTriggerBeginQuery();
+
 	return aestate;
+}
+
+static void
+finish_apply_exec_state(ApplyExecState *aestate)
+{
+	/* Handle queued AFTER triggers. */
+	AfterTriggerEndQuery(aestate->estate);
+
+	/* Terminate EPQ execution if active. */
+	EvalPlanQualEnd(&aestate->epqstate);
+
+	/* Cleanup tuple table. */
+	ExecResetTupleTable(aestate->estate->es_tupleTable, true);
+
+	/* Free the memory. */
+	FreeExecutorState(aestate->estate);
+	pfree(aestate);
 }
 
 static void
@@ -467,9 +487,6 @@ handle_insert(StringInfo s)
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 
-	/* Prepare to catch AFTER triggers. */
-	AfterTriggerBeginQuery();
-
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	if (aestate->resultRelInfo->ri_TrigDesc &&
@@ -481,8 +498,9 @@ handle_insert(StringInfo s)
 
 		if (aestate->slot == NULL)		/* "do nothing" */
 		{
-			/* TODO cleanup */
 			PopActiveSnapshot();
+			finish_apply_exec_state(aestate);
+			pglogical_relation_close(rel, NoLock);
 			return;
 		}
 
@@ -529,9 +547,9 @@ handle_insert(StringInfo s)
 
 				if (aestate->slot == NULL)		/* "do nothing" */
 				{
-					/* TODO cleanup */
 					PopActiveSnapshot();
-					return;
+					finish_apply_exec_state(aestate);
+					pglogical_relation_close(rel, NoLock);
 				}
 
 			}
@@ -574,9 +592,6 @@ handle_insert(StringInfo s)
 
 	ExecCloseIndices(aestate->resultRelInfo);
 
-	/* Handle queued AFTER triggers */
-	AfterTriggerEndQuery(aestate->estate);
-
 	PopActiveSnapshot();
 
 	/* if INSERT was into our queue, process the message. */
@@ -593,11 +608,11 @@ handle_insert(StringInfo s)
 		MemoryContextSwitchTo(MessageContext);
 		ht = heap_copytuple(aestate->slot->tts_tuple);
 
-		LockRelationIdForSession(&lockid, RowExclusiveLock);
-		pglogical_relation_close(rel, NoLock);
+		finish_apply_exec_state(aestate);
 
-		ExecResetTupleTable(aestate->estate->es_tupleTable, true);
-		FreeExecutorState(aestate->estate);
+		LockRelationIdForSession(&lockid, RowExclusiveLock);
+
+		pglogical_relation_close(rel, NoLock);
 
 		handle_queued_message(ht, started_tx);
 
@@ -613,9 +628,8 @@ handle_insert(StringInfo s)
 	else
 	{
 		/* Otherwise do normal cleanup. */
+		finish_apply_exec_state(aestate);
 		pglogical_relation_close(rel, NoLock);
-		ExecResetTupleTable(aestate->estate->es_tupleTable, true);
-		FreeExecutorState(aestate->estate);
 	}
 
 	CommandCounterIncrement();
@@ -652,9 +666,6 @@ handle_update(StringInfo s)
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 
-	/* Prepare to catch AFTER triggers. */
-	AfterTriggerBeginQuery();
-
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	searchtup = hasoldtup ? &oldtup : &newtup;
@@ -684,8 +695,9 @@ handle_update(StringInfo s)
 
 			if (aestate->slot == NULL)		/* "do nothing" */
 			{
-				/* TODO cleanup */
 				PopActiveSnapshot();
+				finish_apply_exec_state(aestate);
+				pglogical_relation_close(rel, NoLock);
 				return;
 			}
 		}
@@ -763,15 +775,10 @@ handle_update(StringInfo s)
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
 
-	PopActiveSnapshot();
-
-	/* Handle queued AFTER triggers */
-	AfterTriggerEndQuery(aestate->estate);
-
 	/* Cleanup. */
+	PopActiveSnapshot();
+	finish_apply_exec_state(aestate);
 	pglogical_relation_close(rel, NoLock);
-	ExecResetTupleTable(aestate->estate->es_tupleTable, true);
-	FreeExecutorState(aestate->estate);
 
 	CommandCounterIncrement();
 }
@@ -800,9 +807,6 @@ handle_delete(StringInfo s)
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 
-	/* Prepare to catch AFTER triggers. */
-	AfterTriggerBeginQuery();
-
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	if (pglogical_tuple_find_replidx(aestate->estate, &remotetup, localslot))
@@ -818,8 +822,9 @@ handle_delete(StringInfo s)
 
 			if (!dodelete)		/* "do nothing" */
 			{
-				/* TODO cleanup */
 				PopActiveSnapshot();
+				finish_apply_exec_state(aestate);
+				pglogical_relation_close(rel, NoLock);
 				return;
 			}
 		}
@@ -840,15 +845,10 @@ handle_delete(StringInfo s)
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
 
-	PopActiveSnapshot();
-
-	/* Handle queued AFTER triggers */
-	AfterTriggerEndQuery(aestate->estate);
-
 	/* Cleanup. */
+	PopActiveSnapshot();
+	finish_apply_exec_state(aestate);
 	pglogical_relation_close(rel, NoLock);
-	ExecResetTupleTable(aestate->estate->es_tupleTable, true);
-	FreeExecutorState(aestate->estate);
 
 	CommandCounterIncrement();
 }
