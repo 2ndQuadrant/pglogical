@@ -226,13 +226,13 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
 	ResultRelInfo  *relinfo = estate->es_result_relation_info;
 	Relation		idxrel = replindex_open(relinfo->ri_RelationDesc,
 											RowExclusiveLock);
-	ScanKeyData		index_key;
+	ScanKeyData		index_key[INDEX_MAX_KEYS];
 	bool			found;
 
-	build_index_scan_key(&index_key, relinfo->ri_RelationDesc, idxrel, tuple);
+	build_index_scan_key(index_key, relinfo->ri_RelationDesc, idxrel, tuple);
 
 	/* Try to find the row. */
-	found = find_index_tuple(&index_key, relinfo->ri_RelationDesc, idxrel,
+	found = find_index_tuple(index_key, relinfo->ri_RelationDesc, idxrel,
 							 LockTupleExclusive, oldslot);
 
 	/* Don't release lock until commit. */
@@ -249,7 +249,7 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 							  TupleTableSlot *oldslot)
 {
 	Oid		conflict_idx = InvalidOid;
-	ScanKeyData	index_key;
+	ScanKeyData	index_key[INDEX_MAX_KEYS];
 	int			i;
 	ResultRelInfo *relinfo;
 	ItemPointerData conflicting_tid;
@@ -275,12 +275,12 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 
 		idxrel = relinfo->ri_IndexRelationDescs[i];
 
-		if (build_index_scan_key(&index_key, relinfo->ri_RelationDesc,
-							 idxrel, tuple))
+		if (build_index_scan_key(index_key, relinfo->ri_RelationDesc,
+								 idxrel, tuple))
 			continue;
 
 		/* Try to find conflicting row. */
-		found = find_index_tuple(&index_key, relinfo->ri_RelationDesc,
+		found = find_index_tuple(index_key, relinfo->ri_RelationDesc,
 								 idxrel, LockTupleExclusive, oldslot);
 
 		/* Alert if there's more than one conflicting unique key, we can't
