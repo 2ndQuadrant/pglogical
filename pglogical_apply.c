@@ -611,7 +611,6 @@ handle_insert(StringInfo s)
 		finish_apply_exec_state(aestate);
 
 		LockRelationIdForSession(&lockid, RowExclusiveLock);
-
 		pglogical_relation_close(rel, NoLock);
 
 		handle_queued_message(ht, started_tx);

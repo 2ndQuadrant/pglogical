@@ -13,7 +13,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
-CREATE TABLE test_trg_hist(table_name text, action text, action_ts timestamptz default now(), original_data text, new_data text);
+CREATE TABLE test_trg_hist(table_name text, action text, action_id serial, original_data text, new_data text);
 
 CREATE FUNCTION test_trg_data_hist_fn() RETURNS TRIGGER AS $$
 BEGIN

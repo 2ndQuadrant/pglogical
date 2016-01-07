@@ -27,7 +27,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-CREATE TABLE test_trg_hist(table_name text, action text, action_ts timestamptz default now(), original_data text, new_data text);
+CREATE TABLE test_trg_hist(table_name text, action text, action_id serial, original_data text, new_data text);
 CREATE FUNCTION test_trg_data_hist_fn() RETURNS TRIGGER AS $$
 BEGIN
     IF (TG_OP = 'UPDATE') THEN
@@ -67,7 +67,7 @@ SELECT * FROM test_trg_data;
 (1 row)
 
 SELECT * FROM test_trg_hist;
- table_name | action | action_ts | original_data | new_data 
+ table_name | action | action_id | original_data | new_data 
 ------------+--------+-----------+---------------+----------
 (0 rows)
 
@@ -89,13 +89,13 @@ SELECT * FROM test_trg_data;
 (0 rows)
 
 SELECT * FROM test_trg_hist;
-  table_name   | action |              action_ts              |  original_data  |    new_data     
----------------+--------+-------------------------------------+-----------------+-----------------
- test_trg_data | I      | Wed Jan 06 18:31:31.780465 2016 PST |                 | (2,yes_history)
- test_trg_data | U      | Wed Jan 06 18:31:31.780465 2016 PST | (1,no_history)  | (1,yes_history)
- test_trg_data | U      | Wed Jan 06 18:31:31.780465 2016 PST | (2,yes_history) | (2,yes_history)
- test_trg_data | D      | Wed Jan 06 18:31:31.780465 2016 PST | (1,yes_history) | 
- test_trg_data | D      | Wed Jan 06 18:31:31.780465 2016 PST | (2,yes_history) | 
+  table_name   | action | action_id |  original_data  |    new_data     
+---------------+--------+-----------+-----------------+-----------------
+ test_trg_data | I      |         1 |                 | (2,yes_history)
+ test_trg_data | U      |         2 | (1,no_history)  | (1,yes_history)
+ test_trg_data | U      |         3 | (2,yes_history) | (2,yes_history)
+ test_trg_data | D      |         4 | (1,yes_history) | 
+ test_trg_data | D      |         5 | (2,yes_history) | 
 (5 rows)
 
 DROP TABLE test_trg_hist CASCADE;
