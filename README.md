@@ -125,7 +125,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `dsn` - connection string to the node, for nodes that are supposed to be
     providers, this should be reachable from outside
 
-- `pglogical.pglogical_drop_node(node_name name, ifexists bool)`
+- `pglogical.drop_node(node_name name, ifexists bool)`
   Drops the pglogical node.
 
   Parameters:
@@ -155,7 +155,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     that didn't originate on provider node, or "{all}" which means replicate
     all changes no matter what is their origin, default is "{all}"
 
-- `pglogical.pglogical_drop_subscription(subscription_name name, ifexists bool)`
+- `pglogical.drop_subscription(subscription_name name, ifexists bool)`
   Disconnects the subscription and removes it from the catalog.
 
   Parameters:
