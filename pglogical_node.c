@@ -682,7 +682,7 @@ create_subscription(PGLogicalSubscription *sub)
 	/* Validate the new subscription name. */
 	validate_subscription_name(sub->name);
 
-	if (get_subscription_by_name(sub->name, true) != NULL)
+	if (get_subscription_by_name(sub->name, false, true) != NULL)
 		elog(ERROR, "subscription %s already exists", sub->name);
 
 	/* Generate new id unless one was already specified. */
@@ -950,7 +950,7 @@ get_subscription(Oid subid)
  * Load the info for specific subscriber.
  */
 PGLogicalSubscription *
-get_subscription_by_name(const char *name, bool missing_ok)
+get_subscription_by_name(const char *name, bool for_update, bool missing_ok)
 {
 	PGLogicalSubscription    *sub;
 	RangeVar	   *rv;
@@ -988,7 +988,7 @@ get_subscription_by_name(const char *name, bool missing_ok)
 	sub = subscription_fromtuple(tuple, desc);
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, for_update ? NoLock : RowExclusiveLock);
 
 	return sub;
 }
@@ -1008,7 +1008,10 @@ get_node_subscriptions(Oid nodeid, bool origin)
 	ScanKeyData		key[1];
 	List		   *res = NIL;
 
-	/* This specifically blocks against concurrent updates. */
+	/*
+	 * This specifically uses lock level which conflics with
+	 * RowEclusiveLock on catalog level.
+	 */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, ExclusiveLock);
 	desc = RelationGetDescr(rel);

@@ -374,7 +374,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalSubscription  *sub;
 
-	sub = get_subscription_by_name(sub_name, !ifexists);
+	sub = get_subscription_by_name(sub_name, true, !ifexists);
 
 	if (sub != NULL)
 	{
@@ -476,7 +476,8 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
+														   false);
 
 	sub->enabled = false;
 
@@ -504,7 +505,8 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
+														   false);
 
 	sub->enabled = true;
 
@@ -532,7 +534,8 @@ pglogical_alter_subscription_add_replication_set(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
+														   false);
 	ListCell			   *lc;
 	PGLogicalWorker		   *apply;
 
@@ -567,7 +570,8 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
+														   false);
 	ListCell			   *lc,
 						   *next,
 						   *prev;
@@ -613,7 +617,8 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					truncate = PG_GETARG_BOOL(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false,
+														   false);
 	PGconn				   *conn;
 	List				   *tables;
 	ListCell			   *lc;
@@ -668,7 +673,8 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	Oid						reloid = PG_GETARG_OID(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false,
+														   false);
 	PGLogicalSyncStatus	   *oldsync;
 	PGLogicalWorker		   *apply;
 	Relation				rel;
@@ -751,7 +757,8 @@ pglogical_show_subscription_table(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	Oid						reloid = PG_GETARG_OID(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false,
+														   false);
 	char				   *nspname;
 	char				   *relname;
 	PGLogicalSyncStatus	   *sync;
@@ -851,7 +858,8 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 	else
 	{
 		PGLogicalSubscription  *sub;
-		sub = get_subscription_by_name(NameStr(*PG_GETARG_NAME(0)), false);
+		sub = get_subscription_by_name(NameStr(*PG_GETARG_NAME(0)), false,
+									   false);
 		subscriptions = list_make1(sub);
 	}
 

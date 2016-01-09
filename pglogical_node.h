@@ -69,7 +69,9 @@ extern void alter_subscription(PGLogicalSubscription *sub);
 extern void drop_subscription(Oid subid);
 
 extern PGLogicalSubscription *get_subscription(Oid subid);
-extern PGLogicalSubscription *get_subscription_by_name(const char *name, bool missing_ok);
+extern PGLogicalSubscription *get_subscription_by_name(const char *name,
+													   bool for_update,
+													   bool missing_ok);
 extern List *get_node_subscriptions(Oid nodeid, bool origin);
 
 #endif /* PGLOGICAL_NODE_H */
