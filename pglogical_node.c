@@ -149,7 +149,7 @@ create_node(PGLogicalNode *node)
 	bool		nulls[Natts_node];
 	NameData	node_name;
 
-	if (get_node_by_name(node->name, true) != NULL)
+	if (get_node_by_name(node->name, false, true) != NULL)
 		elog(ERROR, "node %s already exists", node->name);
 
 	/* Generate new id unless one was already specified. */
@@ -179,7 +179,7 @@ create_node(PGLogicalNode *node)
 
 	/* Cleanup. */
 	heap_freetuple(tup);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
 }
@@ -216,7 +216,7 @@ drop_node(Oid nodeid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
 
@@ -274,7 +274,7 @@ get_node(Oid nodeid)
  * Load the info for specific node.
  */
 PGLogicalNode *
-get_node_by_name(const char *name, bool missing_ok)
+get_node_by_name(const char *name, bool for_update, bool missing_ok)
 {
 	PGLogicalNode  *node;
 	RangeVar	   *rv;

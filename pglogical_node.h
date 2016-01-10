@@ -51,7 +51,8 @@ extern void create_node(PGLogicalNode *node);
 extern void drop_node(Oid nodeid);
 
 extern PGLogicalNode *get_node(Oid nodeid);
-extern PGLogicalNode *get_node_by_name(const char *name, bool missing_ok);
+extern PGLogicalNode *get_node_by_name(const char *name, bool for_update,
+									   bool missing_ok);
 
 extern void create_node_interface(PGlogicalInterface *node);
 extern void drop_node_interface(Oid ifid);

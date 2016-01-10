@@ -10,6 +10,15 @@ SELECT * FROM pglogical.create_replication_set('parallel');
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription_parallel',
     provider_dsn := 'dbname=regression user=super',
+	replication_sets := '{parallel,default}',
+	forward_origins := '{}',
+	synchronize_structure := false,
+	synchronize_data := false
+);
+
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription_parallel',
+    provider_dsn := 'dbname=regression user=super',
 	replication_sets := '{parallel}',
 	forward_origins := '{}',
 	synchronize_structure := false,

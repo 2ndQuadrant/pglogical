@@ -179,7 +179,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalNode  *node;
 
-	node = get_node_by_name(node_name, !ifexists);
+	node = get_node_by_name(node_name, true, !ifexists);
 
 	if (node != NULL)
 	{
@@ -280,6 +280,9 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	PGlogicalInterface		originif;
 	PGLogicalLocalNode     *localnode;
 	PGlogicalInterface		targetif;
+	List				   *replication_sets;
+	List				   *other_subs;
+	ListCell			   *lc;
 	NameData				slot_name;
 
 	/* Check that this is actually a node. */
@@ -298,13 +301,14 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	conn = pglogical_connect(localnode->interface->dsn, "create_subscription");
 	PQfinish(conn);
 
-	/* Next, create local representation of remote node and interface. */
-	existing_origin = get_node_by_name(origin.name, true);
+	/*
+	 * Check for existing local representation of remote node and interface
+	 * and lock it if it already exists.
+	 */
+	existing_origin = get_node_by_name(origin.name, true, true);
 
 	/*
-	 * TODO:
-	 * - sanity check dsn
-	 * - check for overlapping subscriptions
+	 * If not found, crate local representation of remote node and interface.
 	 */
 	if (!existing_origin)
 	{
@@ -318,12 +322,53 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	}
 	else
 	{
-		memcpy(&originif, get_node_interface_by_name(origin.id, origin.name),
-			   sizeof(PGlogicalInterface));
+		PGlogicalInterface *existingif;
+
+		existingif = get_node_interface_by_name(origin.id, origin.name);
+		if (strcmp(existingif->dsn, provider_dsn) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("dsn \"%s\" points to existing node \"%s\" with different dsn \"%s\"",
+					 provider_dsn, origin.name, existingif->dsn)));
+
+		memcpy(&originif, existingif, sizeof(PGlogicalInterface));
 	}
 
 	/*
-	 * Next, create subscription.
+	 * Check for overlapping replication sets.
+	 *
+	 * Note that we can't use exclusion constraints as we use the
+	 * subscriptions table in same manner as system catalog.
+	 */
+	replication_sets = textarray_to_list(rep_set_names);
+	other_subs = get_node_subscriptions(originif.nodeid, true);
+	foreach (lc, other_subs)
+	{
+		PGLogicalSubscription  *esub = (PGLogicalSubscription *) lfirst(lc);
+		ListCell			   *esetcell;
+
+		foreach (esetcell, esub->replication_sets)
+		{
+			char	   *existingset = lfirst(esetcell);
+			ListCell   *nsetcell;
+
+			foreach (nsetcell, replication_sets)
+			{
+				char	   *newset = lfirst(nsetcell);
+
+				if (strcmp(newset, existingset) == 0)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("existing subscription \"%s\" to node "
+									"\"%s\" already subscribes to replication "
+									"set \"%s\"", esub->name, origin.name,
+									newset)));
+			}
+		}
+	}
+
+	/*
+	 * Create the subscription.
 	 *
 	 * Note for now we don't care much about the target interface so we fake
 	 * it here to be invalid.
@@ -334,7 +379,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	sub.name = sub_name;
 	sub.origin_if = &originif;
 	sub.target_if = &targetif;
-	sub.replication_sets = textarray_to_list(rep_set_names);
+	sub.replication_sets = replication_sets;
 	sub.forward_origins = textarray_to_list(forward_origin_names);
 	sub.enabled = true;
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
