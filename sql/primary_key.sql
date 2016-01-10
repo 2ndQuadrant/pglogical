@@ -92,7 +92,7 @@ ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
 $$);
 
 \d+ pk_users;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 \d+ pk_users;

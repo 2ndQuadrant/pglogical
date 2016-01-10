@@ -221,10 +221,11 @@ ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
 Indexes:
     "pk_users_pkey" PRIMARY KEY, btree (id)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
-(0 rows)
+ 
+(1 row)
 
 \c :subscriber_dsn
 \d+ pk_users;
