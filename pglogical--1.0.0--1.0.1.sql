@@ -3,7 +3,12 @@ CREATE OR REPLACE FUNCTION pglogical.create_subscription(subscription_name name,
     synchronize_data boolean = true, forward_origins text[] = '{all}')
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';
 
-SELECT * FROM pglogical.create_replication_set('ddl_sql', true, false, false, false);
+DO $$
+BEGIN
+	IF (SELECT count(1) FROM pglogical.nodes) > 0 THEN
+		SELECT * FROM pglogical.create_replication_set('ddl_sql', true, false, false, false);
+	END IF;
+END; $$;
 
 UPDATE pglogical.subscription SET sub_replication_sets = array_append(sub_replication_sets, 'ddl_sql');
 
