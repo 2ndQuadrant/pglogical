@@ -1,8 +1,6 @@
 #ifndef PG_LOGICAL_COMPAT_H
 #define PG_LOGICAL_COMPAT_H
 
-#include "pg_config.h"
-
 #include <signal.h>
 
 #include "access/xlog.h"
