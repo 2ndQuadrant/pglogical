@@ -21,13 +21,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "libpq-fe.h"
+#include "libpq-int.h"
+
 #define FRONTEND 1
 #include "postgres.h"
 
 #include "getopt_long.h"
-
-#include "libpq-fe.h"
-#include "libpq-int.h"
 
 #include "miscadmin.h"
 
