@@ -1,7 +1,7 @@
 #ifndef PG_LOGICAL_COMPAT_H
 #define PG_LOGICAL_COMPAT_H
 
-#include "pg_config.h"
+#include "postgres.h"
 
 /* 9.4 lacks replication origins */
 #if PG_VERSION_NUM >= 90500
