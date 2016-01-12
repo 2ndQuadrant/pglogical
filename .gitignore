@@ -6,6 +6,7 @@ tmp_check/
 log/
 *.o
 *.pyc
+*~
 pglogical-output-*.tar.bz2
 pglogical-output-*.tar.bz2.md5
 pglogical-output-*.tar.bz2.asc
