@@ -13,6 +13,8 @@
 
 #include "postgres.h"
 
+#include <unistd.h>
+
 #include "libpq-fe.h"
 
 #include "miscadmin.h"
@@ -77,7 +79,8 @@ static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
 
 static void
-dump_structure(PGLogicalSubscription *sub, const char *snapshot)
+dump_structure(PGLogicalSubscription *sub, const char *destfile,
+			   const char *snapshot)
 {
 	char		pg_dump[MAXPGPATH];
 	uint32		version;
@@ -95,12 +98,12 @@ dump_structure(PGLogicalSubscription *sub, const char *snapshot)
 
 	initStringInfo(&command);
 #if PG_VERSION_NUM < 90500
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -N pglogical_origin -F c -f \"/tmp/pglogical-%d.dump\" \"%s\"",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -N pglogical_origin -F c -f \"%s\" \"%s\"",
 #else
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"/tmp/pglogical-%d.dump\" \"%s\"",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
 #endif
-					 pg_dump, snapshot, EXTENSION_NAME, MyProcPid,
-					 sub->origin_if->dsn);
+					 pg_dump, snapshot, EXTENSION_NAME,
+					 destfile, sub->origin_if->dsn);
 
 	res = system(command.data);
 	if (res != 0)
@@ -112,7 +115,8 @@ dump_structure(PGLogicalSubscription *sub, const char *snapshot)
 
 /* TODO: switch to SPI? */
 static void
-restore_structure(PGLogicalSubscription *sub, const char *section)
+restore_structure(PGLogicalSubscription *sub, const char *srcfile,
+				  const char *section)
 {
 	char		pg_restore[MAXPGPATH];
 	uint32		version;
@@ -130,9 +134,8 @@ restore_structure(PGLogicalSubscription *sub, const char *section)
 
 	initStringInfo(&command);
 	appendStringInfo(&command,
-					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"/tmp/pglogical-%d.dump\"",
-					 pg_restore, section, sub->target_if->dsn,
-					 MyProcPid);
+					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
+					 pg_restore, section, sub->target_if->dsn, srcfile);
 
 	res = system(command.data);
 	if (res != 0)
@@ -464,6 +467,16 @@ pglogical_sync_worker_cleanup_cb(int code, Datum arg)
 	pglogical_sync_worker_cleanup(sub);
 }
 
+static void
+pglogical_sync_tmpfile_cleanup_cb(int code, Datum arg)
+{
+	const char *tmpfile = DatumGetCString(arg);
+
+	if (unlink(tmpfile) != 0 && errno != ENOENT)
+		elog(WARNING, "Failed to clean up pglogical temporary dump file \"%s\" on exit/error",
+			 tmpfile);
+}
+
 void
 pglogical_sync_subscription(PGLogicalSubscription *sub)
 {
@@ -523,88 +536,107 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
 								PointerGetDatum(sub));
 		{
-			StartTransactionCommand();
+			StringInfoData	tmpfile;
 
-			originid = ensure_replication_origin(sub->slot_name);
-			replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
+			oldctx = MemoryContextSwitchTo(myctx);
+			initStringInfo(&tmpfile);
+			appendStringInfo(&tmpfile, "%s/pglogical-%d.dump",
+							 pglogical_temp_directory, MyProcPid);
+			MemoryContextSwitchTo(oldctx);
 
-			CommitTransactionCommand();
-
-			if (SyncKindStructure(sync->kind))
+			PG_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
+									CStringGetDatum(tmpfile.data));
 			{
-				elog(INFO, "synchronizing structure");
-
-				status = SYNC_STATUS_STRUCTURE;
 				StartTransactionCommand();
-				set_subscription_sync_status(sub->id, status);
+
+				originid = ensure_replication_origin(sub->slot_name);
+				replorigin_advance(originid, lsn, XactLastCommitEnd, true,
+								   true);
+
 				CommitTransactionCommand();
 
-				/* Dump structure to temp storage. */
-				dump_structure(sub, snapshot);
-
-				/* Restore base pre-data structure (types, tables, etc). */
-				restore_structure(sub, "pre-data");
-			}
-
-			/* Copy data. */
-			if (SyncKindData(sync->kind))
-			{
-				List	   *tables;
-				ListCell   *lc;
-
-				elog(INFO, "synchronizing data");
-
-				status = SYNC_STATUS_DATA;
-				StartTransactionCommand();
-				set_subscription_sync_status(sub->id, status);
-				CommitTransactionCommand();
-
-				tables = copy_replication_sets_data(sub->origin_if->dsn,
-													sub->target_if->dsn,
-													snapshot,
-													sub->replication_sets);
-
-				/* Store info about all the synchronized tables. */
-				StartTransactionCommand();
-				foreach (lc, tables)
+				if (SyncKindStructure(sync->kind))
 				{
-					RangeVar	   *rv = (RangeVar *) lfirst(lc);
-					PGLogicalSyncStatus	   *oldsync;
+					elog(INFO, "synchronizing structure");
 
-					oldsync = get_table_sync_status(sub->id, rv->schemaname,
-													rv->relname, true);
-					if (oldsync)
-					{
-						set_table_sync_status(sub->id, rv->schemaname,
-											  rv->relname, SYNC_STATUS_READY);
-					}
-					else
-					{
-						PGLogicalSyncStatus	   newsync;
+					status = SYNC_STATUS_STRUCTURE;
+					StartTransactionCommand();
+					set_subscription_sync_status(sub->id, status);
+					CommitTransactionCommand();
 
-						newsync.kind = SYNC_KIND_FULL;
-						newsync.subid = sub->id;
-						newsync.nspname = rv->schemaname;
-						newsync.relname = rv->relname;
-						newsync.status = SYNC_STATUS_READY;
-						create_local_sync_status(&newsync);
-					}
+					/* Dump structure to temp storage. */
+					dump_structure(sub, tmpfile.data, snapshot);
+
+					/* Restore base pre-data structure (types, tables, etc). */
+					restore_structure(sub, tmpfile.data, "pre-data");
 				}
-				CommitTransactionCommand();
+
+				/* Copy data. */
+				if (SyncKindData(sync->kind))
+				{
+					List	   *tables;
+					ListCell   *lc;
+
+					elog(INFO, "synchronizing data");
+
+					status = SYNC_STATUS_DATA;
+					StartTransactionCommand();
+					set_subscription_sync_status(sub->id, status);
+					CommitTransactionCommand();
+
+					tables = copy_replication_sets_data(sub->origin_if->dsn,
+														sub->target_if->dsn,
+														snapshot,
+														sub->replication_sets);
+
+					/* Store info about all the synchronized tables. */
+					StartTransactionCommand();
+					foreach (lc, tables)
+					{
+						RangeVar	   *rv = (RangeVar *) lfirst(lc);
+						PGLogicalSyncStatus	   *oldsync;
+
+						oldsync = get_table_sync_status(sub->id,
+														rv->schemaname,
+														rv->relname, true);
+						if (oldsync)
+						{
+							set_table_sync_status(sub->id, rv->schemaname,
+												  rv->relname,
+												  SYNC_STATUS_READY);
+						}
+						else
+						{
+							PGLogicalSyncStatus	   newsync;
+
+							newsync.kind = SYNC_KIND_FULL;
+							newsync.subid = sub->id;
+							newsync.nspname = rv->schemaname;
+							newsync.relname = rv->relname;
+							newsync.status = SYNC_STATUS_READY;
+							create_local_sync_status(&newsync);
+						}
+					}
+					CommitTransactionCommand();
+				}
+
+				/* Restore post-data structure (indexes, constraints, etc). */
+				if (SyncKindStructure(sync->kind))
+				{
+					elog(INFO, "synchronizing constraints");
+
+					status = SYNC_STATUS_CONSTAINTS;
+					StartTransactionCommand();
+					set_subscription_sync_status(sub->id, status);
+					CommitTransactionCommand();
+
+					restore_structure(sub, tmpfile.data, "post-data");
+				}
 			}
-
-			/* Restore post-data structure (indexes, constraints, etc). */
-			if (SyncKindStructure(sync->kind))
-			{
-				elog(INFO, "synchronizing constraints");
-
-				status = SYNC_STATUS_CONSTAINTS;
-				StartTransactionCommand();
-				set_subscription_sync_status(sub->id, status);
-				CommitTransactionCommand();
-
-				restore_structure(sub, "post-data");
-			}
+			PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
+										CStringGetDatum(tmpfile.data));
+			pglogical_sync_tmpfile_cleanup_cb(0,
+											  CStringGetDatum(tmpfile.data));
 		}
 		PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
 									PointerGetDatum(sub));

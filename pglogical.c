@@ -47,7 +47,8 @@ static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{NULL, 0, false}
 };
 
-bool pglogical_synchronous_commit = false;
+bool	pglogical_synchronous_commit = false;
+char   *pglogical_temp_directory;
 
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
@@ -417,6 +418,18 @@ _PG_init(void)
 							 0,
 							 NULL, NULL, NULL);
 
+	/*
+	 * We can't use the temp_tablespace safely for our dumps, because Pg's
+	 * crash recovery is very careful to delete only particularly formatted
+	 * files. Instead for now just allow user to specify dump storage.
+	 */
+	DefineCustomStringVariable("pglogical.temp_directory",
+							   "Directory to store dumps for local restore",
+							   NULL,
+							   &pglogical_temp_directory,
+							   "/tmp", PGC_SIGHUP,
+							   0,
+							   NULL, NULL, NULL);
 	if (IsBinaryUpgrade)
 		return;
 
