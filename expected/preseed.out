@@ -7,12 +7,7 @@ SELECT
     current_setting('pglogical.provider_dsn'),
     current_setting('pglogical.subscriber_dsn')
 $f$;
-SELECT * FROM pglogical_regress_variables();
-   provider_dsn    | subscriber_dsn  
--------------------+-----------------
- dbname=regression | dbname=postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 /*
  * Cleanup so we don't leave function in case this is neither provider nor

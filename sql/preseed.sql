@@ -8,7 +8,7 @@ SELECT
     current_setting('pglogical.subscriber_dsn')
 $f$;
 
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 /*
