@@ -12,12 +12,6 @@ SELECT * FROM pglogical_regress_variables()
 \gset
 
 /*
- * Cleanup so we don't leave function in case this is neither provider nor
- * subscriber.
- */
-DROP FUNCTION public.pglogical_regress_variables();
-
-/*
  * Tests to ensure that objects/data that exists pre-clone is successfully
  * cloned. The results are checked, after the clone, in preseed_check.sql.
  */
