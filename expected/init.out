@@ -1,11 +1,6 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 SET client_min_messages = 'warning';
 DROP USER IF EXISTS nonsuper;
@@ -35,7 +30,7 @@ BEGIN
 		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
 	END IF;
 END;$$;
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
  create_node 
 -------------
   2689511696
@@ -50,21 +45,29 @@ BEGIN
 		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
 	END IF;
 END;$$;
-SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super');
  create_node 
 -------------
   1755434425
 (1 row)
 
+BEGIN;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	forward_origins := '{}');
  create_subscription 
 ---------------------
           3848008564
 (1 row)
 
+/*
+ * Remove the function we added in preseed because otherwise the restore of
+ * schema will fail. We do this in same transaction as create_subscription()
+ * because the subscription process will only start on commit.
+ */
+DROP FUNCTION IF EXISTS public.pglogical_regress_variables();
+COMMIT;
 DO $$
 BEGIN
     FOR i IN 1..300 LOOP

@@ -1,12 +1,12 @@
 
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_bidirectional',
-    provider_dsn := 'dbname=postgres user=super',
+    provider_dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super',
     synchronize_structure := false,
     synchronize_data := false,
     forward_origins := '{}');

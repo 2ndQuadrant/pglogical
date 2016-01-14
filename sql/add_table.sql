@@ -1,6 +1,6 @@
 /* First test whether a table's replication set can be properly manipulated */
 
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn

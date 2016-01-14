@@ -1,6 +1,6 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 SET client_min_messages = 'warning';
@@ -39,7 +39,7 @@ BEGIN
 	END IF;
 END;$$;
 
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
 
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
@@ -52,12 +52,20 @@ BEGIN
 	END IF;
 END;$$;
 
-SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super');
 
+BEGIN;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	forward_origins := '{}');
+/*
+ * Remove the function we added in preseed because otherwise the restore of
+ * schema will fail. We do this in same transaction as create_subscription()
+ * because the subscription process will only start on commit.
+ */
+DROP FUNCTION IF EXISTS public.pglogical_regress_variables();
+COMMIT;
 
 DO $$
 BEGIN

@@ -1,10 +1,5 @@
 -- Verify data from preseed.sql has correctly been cloned
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 \d some_local_tbl

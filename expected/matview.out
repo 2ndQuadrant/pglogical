@@ -1,10 +1,5 @@
 /* First test whether a table's replication set can be properly manipulated */
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$

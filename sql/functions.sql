@@ -1,5 +1,5 @@
 --Immutable, volatile functions and nextval in DEFAULT clause
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 

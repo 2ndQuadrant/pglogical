@@ -1,10 +1,5 @@
 --PRIMARY KEY
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 -- testing update of primary key

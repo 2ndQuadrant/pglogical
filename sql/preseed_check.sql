@@ -1,5 +1,5 @@
 -- Verify data from preseed.sql has correctly been cloned
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn

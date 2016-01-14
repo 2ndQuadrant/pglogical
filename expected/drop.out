@@ -1,9 +1,4 @@
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');

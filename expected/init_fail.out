@@ -1,9 +1,4 @@
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SET client_min_messages = 'warning';
@@ -18,11 +13,11 @@ CREATE EXTENSION IF NOT EXISTS pglogical;
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
 ERROR:  local node not found
 -- succeed
-SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=nonreplica');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
  create_node 
 -------------
   1755434425
@@ -31,7 +26,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbna
 -- fail (can't connect to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonexisting',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonexisting',
 	forward_origins := '{}');
 ERROR:  could not connect to the postgresql server: FATAL:  role "nonexisting" does not exist
 
@@ -39,14 +34,14 @@ DETAIL:  dsn was: dbname=regression user=nonexisting fallback_application_name='
 -- fail (remote node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
 ERROR:  could fetch remote node info: ERROR:  local node not found
 
 
 \c :provider_dsn
 -- succeed
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=postgres user=nonreplica');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
  create_node 
 -------------
   2689511696
@@ -56,7 +51,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname
 -- fail (can't connect with replication connection to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
 ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "[local]", user "nonreplica"
 
