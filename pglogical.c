@@ -134,20 +134,27 @@ PGconn *
 pglogical_connect(const char *connstring, const char *connname)
 {
 	PGconn		   *conn;
-	StringInfoData	dsn;
+	const char	   *keys[3];
+	const char	   *vals[3];
 
-	initStringInfo(&dsn);
-	appendStringInfo(&dsn,
-					"%s fallback_application_name='%s'",
-					connstring, connname);
+	/*
+	 * We use the expand_dbname parameter to process the connection string
+	 * (or URI), and pass some extra options.
+	 */
+	keys[0] = "dbname";
+	vals[0] = connstring;
+	keys[1] = "fallback_application_name";
+	vals[1] = connname;
+	keys[2] = NULL;
+	vals[2] = NULL;
 
-	conn = PQconnectdb(dsn.data);
+	conn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		ereport(ERROR,
 				(errmsg("could not connect to the postgresql server: %s",
 						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", dsn.data)));
+				 errdetail("dsn was: %s", connstring)));
 	}
 
 	return conn;
@@ -160,20 +167,29 @@ PGconn *
 pglogical_connect_replica(const char *connstring, const char *connname)
 {
 	PGconn		   *conn;
-	StringInfoData	dsn;
+	const char	   *keys[4];
+	const char	   *vals[4];
 
-	initStringInfo(&dsn);
-	appendStringInfo(&dsn,
-					"%s replication=database fallback_application_name='%s'",
-					connstring, connname);
+	/*
+	 * We use the expand_dbname parameter to process the connection string
+	 * (or URI), and pass some extra options.
+	 */
+	keys[0] = "dbname";
+	vals[0] = connstring;
+	keys[1] = "replication";
+	vals[1] = "database";
+	keys[2] = "fallback_application_name";
+	vals[2] = connname;
+	keys[3] = NULL;
+	vals[3] = NULL;
 
-	conn = PQconnectdb(dsn.data);
+	conn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		ereport(ERROR,
 				(errmsg("could not connect to the postgresql server in replication mode: %s",
 						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", dsn.data)));
+				 errdetail("dsn was: %s", connstring)));
 	}
 
 	return conn;

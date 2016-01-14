@@ -30,7 +30,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}');
 ERROR:  could not connect to the postgresql server: FATAL:  role "nonexisting" does not exist
 
-DETAIL:  dsn was: dbname=regression user=nonexisting fallback_application_name='create_subscription'
+DETAIL:  dsn was: dbname=regression user=nonexisting
 -- fail (remote node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
@@ -55,7 +55,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}');
 ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "[local]", user "nonreplica"
 
-DETAIL:  dsn was: dbname=regression user=nonreplica replication=database fallback_application_name='create_subscription'
+DETAIL:  dsn was: dbname=regression user=nonreplica
 -- cleanup
 SELECT * FROM pglogical.drop_node('test_subscriber');
  drop_node 
