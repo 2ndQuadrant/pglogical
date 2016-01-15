@@ -44,6 +44,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 SELECT * FROM pk_users;
 
 \c :provider_dsn
+\set VERBOSITY terse
 
 SELECT pglogical.replicate_ddl_command($$
 CREATE UNIQUE INDEX another_id_temp_idx ON public.pk_users (another_id);
@@ -84,6 +85,7 @@ INSERT INTO pk_users VALUES(4,15,2,'User5', 'Address5');
 SELECT * FROM pk_users;
 
 \c :provider_dsn
+\set VERBOSITY terse
 
 SELECT pglogical.replicate_ddl_command($$
 CREATE UNIQUE INDEX id_temp_idx ON public.pk_users (id);
@@ -139,6 +141,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_r
 SELECT * FROM pk_users;
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
-DROP TABLE public.pk_users CASCADE;
+	DROP TABLE public.pk_users CASCADE;
 $$);

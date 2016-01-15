@@ -98,14 +98,11 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 (5 rows)
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml CASCADE;
 $$);
 NOTICE:  drop cascades to 1 other object
-DETAIL:  table public.basic_dml in replication set default
-CONTEXT:  during execution of queued SQL statement: 
-    DROP TABLE public.basic_dml CASCADE;
-
  replicate_ddl_command 
 -----------------------
  t

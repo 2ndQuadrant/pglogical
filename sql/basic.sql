@@ -89,6 +89,7 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
 $$);

@@ -144,6 +144,7 @@ SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_norm
 --too short
 SELECT pglogical.create_replication_set('');
 ERROR:  replication set name cannot be empty
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;
@@ -151,54 +152,11 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_nopkey CASCADE;
 $$);
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table public.test_publicschema in replication set repset_replicate_all
-table public.test_publicschema in replication set default_insert_only
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP SCHEMA normalschema CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-	DROP TABLE public.test_nopkey CASCADE;
-
 NOTICE:  drop cascades to table normalschema.test_normalschema
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP SCHEMA normalschema CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-	DROP TABLE public.test_nopkey CASCADE;
-
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table normalschema.test_normalschema in replication set repset_replicate_instrunc
-table normalschema.test_normalschema in replication set repset_replicate_insupd
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP SCHEMA normalschema CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-	DROP TABLE public.test_nopkey CASCADE;
-
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP SCHEMA normalschema CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-	DROP TABLE public.test_nopkey CASCADE;
-
 NOTICE:  drop cascades to 1 other object
-DETAIL:  table strange.schema-IS.test_strangeschema in replication set repset_replicate_insupd
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP SCHEMA normalschema CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-	DROP TABLE public.test_nopkey CASCADE;
-
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table public.test_nopkey in replication set repset_replicate_instrunc
-table public.test_nopkey in replication set default_insert_only
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP SCHEMA normalschema CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-	DROP TABLE public.test_nopkey CASCADE;
-
  replicate_ddl_command 
 -----------------------
  t

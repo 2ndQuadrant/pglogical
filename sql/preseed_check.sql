@@ -30,6 +30,7 @@ SELECT * FROM some_local_tbl2 ORDER BY id;
 SELECT * FROM some_local_tbl3 ORDER BY id;
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
         DROP TABLE public.some_local_tbl;
         DROP TABLE public.some_local_tbl1;

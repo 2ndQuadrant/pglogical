@@ -43,8 +43,8 @@ SELECT * FROM public.f1k_orders;
 
 
 \c :provider_dsn
-
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
-DROP TABLE public.f1k_orders CASCADE;
-DROP TABLE public.f1k_products CASCADE;
+	DROP TABLE public.f1k_orders CASCADE;
+	DROP TABLE public.f1k_products CASCADE;
 $$);

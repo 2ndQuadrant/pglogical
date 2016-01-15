@@ -218,14 +218,14 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT * FROM public.not_nullcheck_tbl;
 
 \c :provider_dsn
-
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
-DROP TABLE public.funct CASCADE;
-DROP SEQUENCE public.INSERT_SEQ;
-DROP TABLE public.funct2 CASCADE;
-DROP TABLE public.funct5 CASCADE;
-DROP FUNCTION public.get_curr_century();
-DROP FUNCTION public.add(integer, integer);
-DROP TABLE public.nullcheck_tbl CASCADE;
-DROP TABLE public.not_nullcheck_tbl CASCADE;
+	DROP TABLE public.funct CASCADE;
+	DROP SEQUENCE public.INSERT_SEQ;
+	DROP TABLE public.funct2 CASCADE;
+	DROP TABLE public.funct5 CASCADE;
+	DROP FUNCTION public.get_curr_century();
+	DROP FUNCTION public.add(integer, integer);
+	DROP TABLE public.nullcheck_tbl CASCADE;
+	DROP TABLE public.not_nullcheck_tbl CASCADE;
 $$);

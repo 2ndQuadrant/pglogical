@@ -28,7 +28,7 @@ SELECT * FROM test_tbl;
 SELECT * FROM test_mv;
 
 \c :provider_dsn
-
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;
 $$);
