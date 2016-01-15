@@ -102,6 +102,40 @@ typedef struct SubscriptionTuple
 #define Anum_sub_forward_origins	10
 
 /*
+ * We impose same validation rules as replication slot name validation does.
+ */
+static void
+validate_subscription_name(const char *name)
+{
+	const char *cp;
+
+	if (strlen(name) == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_NAME),
+				 errmsg("subscription  name \"%s\" is too short", name)));
+
+	if (strlen(name) >= NAMEDATALEN)
+		ereport(ERROR,
+				(errcode(ERRCODE_NAME_TOO_LONG),
+				 errmsg("subscription name \"%s\" is too long", name)));
+
+	for (cp = name; *cp; cp++)
+	{
+		if (!((*cp >= 'a' && *cp <= 'z')
+			  || (*cp >= '0' && *cp <= '9')
+			  || (*cp == '_')))
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_NAME),
+					 errmsg("subscription name \"%s\" contains invalid character",
+							name),
+					 errhint("Subscription names may only contain lower case "
+							 "letters, numbers, and the underscore character.")));
+		}
+	}
+}
+
+/*
  * Add new node to catalog.
  */
 void
@@ -596,6 +630,9 @@ create_subscription(PGLogicalSubscription *sub)
 	bool		nulls[Natts_subscription];
 	NameData	sub_name;
 	NameData	slot_name;
+
+	/* Validate the new subscription name. */
+	validate_subscription_name(sub->name);
 
 	if (get_subscription_by_name(sub->name, true) != NULL)
 		elog(ERROR, "subscription %s already exists", sub->name);

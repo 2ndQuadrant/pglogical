@@ -20,6 +20,7 @@
 #include "miscadmin.h"
 
 #include "access/genam.h"
+#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/skey.h"
 #include "access/stratnum.h"
@@ -794,8 +795,9 @@ pglogical_sync_main(Datum main_arg)
 										   copytable->relname);
 
 	initStringInfo(&slot_name);
-	appendStringInfo(&slot_name, "%s_%s", MySubscription->slot_name,
-					 shorten_hash(tablename, 8));
+	appendStringInfo(&slot_name, "%s_%08x", MySubscription->slot_name,
+					 DatumGetUInt32(hash_any((unsigned char *) tablename,
+											 strlen(tablename))));
 	MySubscription->slot_name = slot_name.data;
 
 	elog(LOG, "starting sync of table %s.%s for subscriber %s",

@@ -1515,14 +1515,26 @@ static void
 gen_slot_name(Name slot_name, char *dbname, const char *provider_node,
 			  const char *subscription_name)
 {
+	char *cp;
+
 	memset(NameStr(*slot_name), 0, NAMEDATALEN);
 	snprintf(NameStr(*slot_name), NAMEDATALEN,
 			 "pgl_%s_%s_%s",
 			 shorten_hash(dbname, 16),
 			 shorten_hash(provider_node, 16),
 			 shorten_hash(subscription_name, 16));
-
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
+
+	/* Replace all the invalid characters in slot name with underscore. */
+	for (cp = NameStr(*slot_name); *cp; cp++)
+	{
+		if (!((*cp >= 'a' && *cp <= 'z')
+			  || (*cp >= '0' && *cp <= '9')
+			  || (*cp == '_')))
+		{
+			*cp = '_';
+		}
+	}
 }
 
 Datum
