@@ -9,6 +9,7 @@ GRANT ALL ON SCHEMA pglogical TO nonreplica;
 GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
+\set VERBOSITY terse
 CREATE EXTENSION IF NOT EXISTS pglogical;
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
@@ -30,7 +31,6 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}');
 ERROR:  could not connect to the postgresql server: FATAL:  role "nonexisting" does not exist
 
-DETAIL:  dsn was: dbname=regression user=nonexisting
 -- fail (remote node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
@@ -48,6 +48,7 @@ SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT
 (1 row)
 
 \c :subscriber_dsn
+\set VERBOSITY terse
 -- fail (can't connect with replication connection to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
@@ -55,7 +56,6 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}');
 ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "[local]", user "nonreplica"
 
-DETAIL:  dsn was: dbname=regression user=nonreplica
 -- cleanup
 SELECT * FROM pglogical.drop_node('test_subscriber');
  drop_node 

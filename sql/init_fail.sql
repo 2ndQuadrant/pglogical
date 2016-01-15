@@ -12,6 +12,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
 
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
+\set VERBOSITY terse
 CREATE EXTENSION IF NOT EXISTS pglogical;
 
 -- fail (local node not existing)
@@ -40,6 +41,7 @@ SELECT * FROM pglogical.create_subscription(
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
 
 \c :subscriber_dsn
+\set VERBOSITY terse
 
 -- fail (can't connect with replication connection to remote)
 SELECT * FROM pglogical.create_subscription(
