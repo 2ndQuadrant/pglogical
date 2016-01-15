@@ -2,6 +2,13 @@
 -- but it's blocked by bug 37906
 SELECT * FROM pglogical_regress_variables()
 \gset
+\c :provider_dsn
+SET client_min_messages = 'warning';
+DROP USER IF EXISTS nonsuper;
+DROP USER IF EXISTS super;
+CREATE USER nonsuper WITH replication;
+CREATE USER super SUPERUSER;
+\c :subscriber_dsn
 SET client_min_messages = 'warning';
 DROP USER IF EXISTS nonsuper;
 DROP USER IF EXISTS super;
