@@ -79,9 +79,9 @@ END;$$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
-SELECT * FROM pglogical.show_subscription_status();
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn
-SELECT plugin, slot_type, database, active FROM pg_replication_slots;
+SELECT plugin, slot_type, active FROM pg_replication_slots;
 SELECT count(*) FROM pg_stat_replication;

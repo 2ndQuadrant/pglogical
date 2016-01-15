@@ -83,18 +83,18 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
  f         | 3848008564 |              |              | r
 (1 row)
 
-SELECT * FROM pglogical.show_subscription_status();
- subscription_name |   status    | provider_node |         provider_dsn         |                 slot_name                  |           replication_sets            | forward_origins 
--------------------+-------------+---------------+------------------------------+--------------------------------------------+---------------------------------------+-----------------
- test_subscription | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sube55bf37 | {default,default_insert_only,ddl_sql} | 
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
+ subscription_name |   status    | provider_node |           replication_sets            | forward_origins 
+-------------------+-------------+---------------+---------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default,default_insert_only,ddl_sql} | 
 (1 row)
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn
-SELECT plugin, slot_type, database, active FROM pg_replication_slots;
-      plugin      | slot_type |  database  | active 
-------------------+-----------+------------+--------
- pglogical_output | logical   | regression | t
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+      plugin      | slot_type | active 
+------------------+-----------+--------
+ pglogical_output | logical   | t
 (1 row)
 
 SELECT count(*) FROM pg_stat_replication;
