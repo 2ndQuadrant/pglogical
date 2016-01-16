@@ -108,18 +108,6 @@ NOTICE:  drop cascades to 1 other object
  t
 (1 row)
 
-SELECT slot_name FROM pg_replication_slots WHERE database = current_database();
-                 slot_name                  
---------------------------------------------
- pgl_postgres_test_provider_test_sube55bf37
-(1 row)
-
-SELECT count(*) FROM pg_stat_replication WHERE application_name = 'test_bidirectional';
- count 
--------
-     1
-(1 row)
-
 SELECT pglogical.drop_subscription('test_bidirectional');
  drop_subscription 
 -------------------
@@ -127,14 +115,11 @@ SELECT pglogical.drop_subscription('test_bidirectional');
 (1 row)
 
 \c :subscriber_dsn
+\a
 SELECT slot_name FROM pg_replication_slots WHERE database = current_database();
- slot_name 
------------
+slot_name
 (0 rows)
-
 SELECT count(*) FROM pg_stat_replication WHERE application_name = 'test_bidirectional';
- count 
--------
-     0
+count
+0
 (1 row)
-
