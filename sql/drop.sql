@@ -5,7 +5,7 @@ SELECT * FROM pglogical_regress_variables()
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
 
-SELECT slot_name, plugin, slot_type, database, active FROM pg_replication_slots;
+SELECT plugin, slot_type, active FROM pg_replication_slots;
 SELECT count(*) FROM pg_stat_replication;
 
 \c :subscriber_dsn
@@ -15,5 +15,5 @@ SELECT * FROM pglogical.drop_node(node_name := 'test_subscriber');
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
 
-SELECT slot_name, plugin, slot_type, database, active FROM pg_replication_slots;
+SELECT plugin, slot_type, active FROM pg_replication_slots;
 SELECT count(*) FROM pg_stat_replication;
