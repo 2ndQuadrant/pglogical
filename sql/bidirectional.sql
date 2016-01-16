@@ -65,9 +65,12 @@ SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml CASCADE;
 $$);
 
+SELECT slot_name FROM pg_replication_slots WHERE database = current_database();
+SELECT count(*) FROM pg_stat_replication WHERE application_name = 'test_bidirectional';
+
 SELECT pglogical.drop_subscription('test_bidirectional');
 
 \c :subscriber_dsn
 
-SELECT count(1) FROM pg_stat_replication;
-SELECT slot_name FROM pg_replication_slots;
+SELECT slot_name FROM pg_replication_slots WHERE database = current_database();
+SELECT count(*) FROM pg_stat_replication WHERE application_name = 'test_bidirectional';
