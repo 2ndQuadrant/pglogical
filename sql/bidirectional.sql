@@ -1,12 +1,18 @@
 
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+	END IF;
+END;$$;
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_bidirectional',
-    provider_dsn := 'dbname=postgres user=super',
+    provider_dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super',
     synchronize_structure := false,
     synchronize_data := false,
     forward_origins := '{}');
@@ -60,13 +66,17 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml CASCADE;
 $$);
 
 SELECT pglogical.drop_subscription('test_bidirectional');
 
-\c :subscriber_dsn
+SET client_min_messages = 'warning';
+DROP EXTENSION IF EXISTS pglogical_origin;
 
-SELECT count(1) FROM pg_stat_replication;
-SELECT slot_name FROM pg_replication_slots;
+\c :subscriber_dsn
+\a
+SELECT slot_name FROM pg_replication_slots WHERE database = current_database();
+SELECT count(*) FROM pg_stat_replication WHERE application_name = 'test_bidirectional';

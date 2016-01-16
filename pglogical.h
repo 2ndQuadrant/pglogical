@@ -41,6 +41,7 @@
 #define REPLICATION_ORIGIN_ALL "all"
 
 extern bool pglogical_synchronous_commit;
+extern char *pglogical_temp_directory;
 
 extern char *shorten_hash(const char *str, int maxlen);
 

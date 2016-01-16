@@ -1,5 +1,5 @@
 
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
@@ -12,39 +12,41 @@ GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
 
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
+\set VERBOSITY terse
 CREATE EXTENSION IF NOT EXISTS pglogical;
 
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
 
 -- succeed
-SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=nonreplica');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
 
 -- fail (can't connect to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonexisting',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonexisting',
 	forward_origins := '{}');
 
 -- fail (remote node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
 
 \c :provider_dsn
 -- succeed
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=postgres user=nonreplica');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
 
 \c :subscriber_dsn
+\set VERBOSITY terse
 
 -- fail (can't connect with replication connection to remote)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=nonreplica',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
 
 -- cleanup

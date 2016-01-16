@@ -1,5 +1,5 @@
 /* First test whether a table's replication set can be properly manipulated */
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
@@ -55,6 +55,7 @@ SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_norm
 --too short
 SELECT pglogical.create_replication_set('');
 
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP SCHEMA normalschema CASCADE;

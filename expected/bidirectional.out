@@ -1,14 +1,15 @@
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+	END IF;
+END;$$;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_bidirectional',
-    provider_dsn := 'dbname=postgres user=super',
+    provider_dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super',
     synchronize_structure := false,
     synchronize_data := false,
     forward_origins := '{}');
@@ -103,14 +104,11 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 (5 rows)
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml CASCADE;
 $$);
 NOTICE:  drop cascades to 1 other object
-DETAIL:  table public.basic_dml in replication set default
-CONTEXT:  during execution of queued SQL statement: 
-    DROP TABLE public.basic_dml CASCADE;
-
  replicate_ddl_command 
 -----------------------
  t
@@ -122,16 +120,14 @@ SELECT pglogical.drop_subscription('test_bidirectional');
                  1
 (1 row)
 
+SET client_min_messages = 'warning';
+DROP EXTENSION IF EXISTS pglogical_origin;
 \c :subscriber_dsn
-SELECT count(1) FROM pg_stat_replication;
- count 
--------
-     1
+\a
+SELECT slot_name FROM pg_replication_slots WHERE database = current_database();
+slot_name
+(0 rows)
+SELECT count(*) FROM pg_stat_replication WHERE application_name = 'test_bidirectional';
+count
+0
 (1 row)
-
-SELECT slot_name FROM pg_replication_slots;
-                 slot_name                  
---------------------------------------------
- pgl_postgres_test_provider_test_sube55bf37
-(1 row)
-

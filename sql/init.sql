@@ -1,8 +1,17 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
+\c :provider_dsn
+SET client_min_messages = 'warning';
+DROP USER IF EXISTS nonsuper;
+DROP USER IF EXISTS super;
+
+CREATE USER nonsuper WITH replication;
+CREATE USER super SUPERUSER;
+
+\c :subscriber_dsn
 SET client_min_messages = 'warning';
 DROP USER IF EXISTS nonsuper;
 DROP USER IF EXISTS super;
@@ -32,14 +41,7 @@ GRANT ALL ON SCHEMA public TO nonsuper;
 SET client_min_messages = 'warning';
 CREATE EXTENSION IF NOT EXISTS pglogical;
 
-DO $$
-BEGIN
-	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
-		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
-	END IF;
-END;$$;
-
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
 
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
@@ -52,12 +54,20 @@ BEGIN
 	END IF;
 END;$$;
 
-SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super');
 
+BEGIN;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	forward_origins := '{}');
+/*
+ * Remove the function we added in preseed because otherwise the restore of
+ * schema will fail. We do this in same transaction as create_subscription()
+ * because the subscription process will only start on commit.
+ */
+DROP FUNCTION IF EXISTS public.pglogical_regress_variables();
+COMMIT;
 
 DO $$
 BEGIN
@@ -71,9 +81,9 @@ END;$$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
-SELECT * FROM pglogical.show_subscription_status();
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn
-SELECT plugin, slot_type, database, active FROM pg_replication_slots;
+SELECT plugin, slot_type, active FROM pg_replication_slots;
 SELECT count(*) FROM pg_stat_replication;

@@ -231,6 +231,9 @@ handle_origin(StringInfo s)
 	if (!in_remote_transaction || IsTransactionState())
 		elog(ERROR, "ORIGIN message sent out of order");
 
+	/* We have to start transaction here so that we can work with origins. */
+	ensure_transaction();
+
 	origin = pglogical_read_origin(s, &remote_origin_lsn);
 	remote_origin_id = replorigin_by_name(origin, false);
 }

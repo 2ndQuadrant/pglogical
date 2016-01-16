@@ -270,7 +270,7 @@ The following functions are provided for managing the replication sets:
   - `replicate_delete` - specifies if `DELETE` is replicated, default true
   - `replicate_truncate` - specifies if `TRUNCATE` is replicated, default true
 
-- `pglogical.delete_replication_set(set_name text)`
+- `pglogical.drop_replication_set(set_name text)`
   Removes the replication set.
 
   Parameters:

@@ -1,10 +1,5 @@
 /* First test whether a table's replication set can be properly manipulated */
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
@@ -346,43 +341,16 @@ BEGIN
 	END LOOP;
 END;
 $$;
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table public.test_publicschema in replication set repset_test
-table public.test_publicschema in replication set default
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP TABLE public.test_nosync CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table public.test_nosync in replication set repset_test
-table public.test_nosync in replication set default
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP TABLE public.test_nosync CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  drop cascades to table "strange.schema-IS".test_strangeschema
-drop cascades to table "strange.schema-IS".test_diff_repset
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP TABLE public.test_nosync CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-
 NOTICE:  drop cascades to 2 other objects
-DETAIL:  table strange.schema-IS.test_strangeschema in replication set default
-table strange.schema-IS.test_diff_repset in replication set repset_test
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_publicschema CASCADE;
-	DROP TABLE public.test_nosync CASCADE;
-	DROP SCHEMA "strange.schema-IS" CASCADE;
-
  replicate_ddl_command 
 -----------------------
  t

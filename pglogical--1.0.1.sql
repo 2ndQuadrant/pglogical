@@ -1,4 +1,4 @@
-\echo Use "CREATE EXTENSION pglogical_origin" to load this file. \quit
+\echo Use "CREATE EXTENSION pglogical" to load this file. \quit
 
 CREATE TABLE pglogical.node (
     node_id oid NOT NULL PRIMARY KEY,

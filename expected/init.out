@@ -1,12 +1,14 @@
 -- This should be done with pg_regress's --create-role option
 -- but it's blocked by bug 37906
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
+\c :provider_dsn
+SET client_min_messages = 'warning';
+DROP USER IF EXISTS nonsuper;
+DROP USER IF EXISTS super;
+CREATE USER nonsuper WITH replication;
+CREATE USER super SUPERUSER;
+\c :subscriber_dsn
 SET client_min_messages = 'warning';
 DROP USER IF EXISTS nonsuper;
 DROP USER IF EXISTS super;
@@ -29,13 +31,7 @@ GRANT ALL ON SCHEMA public TO nonsuper;
 \c :provider_dsn
 SET client_min_messages = 'warning';
 CREATE EXTENSION IF NOT EXISTS pglogical;
-DO $$
-BEGIN
-	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
-		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
-	END IF;
-END;$$;
-SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=regression user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
  create_node 
 -------------
   2689511696
@@ -50,21 +46,29 @@ BEGIN
 		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
 	END IF;
 END;$$;
-SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := 'dbname=postgres user=super');
+SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super');
  create_node 
 -------------
   1755434425
 (1 row)
 
+BEGIN;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	forward_origins := '{}');
  create_subscription 
 ---------------------
           3848008564
 (1 row)
 
+/*
+ * Remove the function we added in preseed because otherwise the restore of
+ * schema will fail. We do this in same transaction as create_subscription()
+ * because the subscription process will only start on commit.
+ */
+DROP FUNCTION IF EXISTS public.pglogical_regress_variables();
+COMMIT;
 DO $$
 BEGIN
     FOR i IN 1..300 LOOP
@@ -80,18 +84,18 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
  f         | 3848008564 |              |              | r
 (1 row)
 
-SELECT * FROM pglogical.show_subscription_status();
- subscription_name |   status    | provider_node |         provider_dsn         |                 slot_name                  |           replication_sets            | forward_origins 
--------------------+-------------+---------------+------------------------------+--------------------------------------------+---------------------------------------+-----------------
- test_subscription | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sube55bf37 | {default,default_insert_only,ddl_sql} | 
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
+ subscription_name |   status    | provider_node |           replication_sets            | forward_origins 
+-------------------+-------------+---------------+---------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default,default_insert_only,ddl_sql} | 
 (1 row)
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn
-SELECT plugin, slot_type, database, active FROM pg_replication_slots;
-      plugin      | slot_type |  database  | active 
-------------------+-----------+------------+--------
- pglogical_output | logical   | regression | t
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+      plugin      | slot_type | active 
+------------------+-----------+--------
+ pglogical_output | logical   | t
 (1 row)
 
 SELECT count(*) FROM pg_stat_replication;

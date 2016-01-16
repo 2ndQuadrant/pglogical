@@ -1,5 +1,5 @@
 -- complex datatype handling
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
@@ -547,6 +547,7 @@ SELECT a, b, c FROM tst_range_array ORDER BY a;
 
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.tst_one_array CASCADE;
 	DROP TABLE public.tst_arrays CASCADE;

@@ -1,6 +1,6 @@
 /* First test whether a table's replication set can be properly manipulated */
 
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
@@ -188,6 +188,7 @@ BEGIN
 END;
 $$;
 
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
 	DROP TABLE public.test_nosync CASCADE;
