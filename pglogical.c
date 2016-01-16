@@ -143,7 +143,7 @@ pglogical_connect(const char *connstring, const char *connname)
 	 */
 	keys[0] = "dbname";
 	vals[0] = connstring;
-	keys[1] = "fallback_application_name";
+	keys[1] = "application_name";
 	vals[1] = connname;
 	keys[2] = NULL;
 	vals[2] = NULL;
@@ -178,7 +178,7 @@ pglogical_connect_replica(const char *connstring, const char *connname)
 	vals[0] = connstring;
 	keys[1] = "replication";
 	vals[1] = "database";
-	keys[2] = "fallback_application_name";
+	keys[2] = "application_name";
 	vals[2] = connname;
 	keys[3] = NULL;
 	vals[3] = NULL;
