@@ -1,6 +1,12 @@
 SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+	END IF;
+END;$$;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_bidirectional',
     provider_dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=super',
@@ -114,6 +120,8 @@ SELECT pglogical.drop_subscription('test_bidirectional');
                  1
 (1 row)
 
+SET client_min_messages = 'warning';
+DROP EXTENSION IF EXISTS pglogical_origin;
 \c :subscriber_dsn
 \a
 SELECT slot_name FROM pg_replication_slots WHERE database = current_database();

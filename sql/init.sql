@@ -41,13 +41,6 @@ GRANT ALL ON SCHEMA public TO nonsuper;
 SET client_min_messages = 'warning';
 CREATE EXTENSION IF NOT EXISTS pglogical;
 
-DO $$
-BEGIN
-	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
-		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
-	END IF;
-END;$$;
-
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
 
 \c :subscriber_dsn
