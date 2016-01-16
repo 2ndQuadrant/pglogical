@@ -98,13 +98,9 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
-#if PG_VERSION_NUM < 90500
 	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -N pglogical_origin -F c -f \"%s\" \"%s\"",
-#else
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
-#endif
-					 pg_dump, snapshot, EXTENSION_NAME,
-					 destfile, sub->origin_if->dsn);
+					 pg_dump, snapshot, EXTENSION_NAME, destfile,
+					 sub->origin_if->dsn);
 
 	res = system(command.data);
 	if (res != 0)
