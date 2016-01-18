@@ -48,7 +48,13 @@ Tables on the provider and subscriber must have the same columns, with the same
 data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc must
 be the same or weaker (more permissive) on the subscriber than the provider.
 
-Tables must have the same Primary Keys and be related by the same Foreign Keys.
+Tables must have the same `PRIMARY KEY`s. It is not recommended to add additional
+`UNIQUE` constraints other than the `PRIMARY KEY` (see below).
+
+Any `FOREIGN KEY`s on the subscriber must also be present on the provider with
+all rows on the subscriber present on the provider. In other words a
+subscriber's FK constraints must always permit a write if the provider's FK
+constraints permitted it.
 
 Some additional requirements are covered in "Limitations and Restrictions", below.
 
@@ -94,8 +100,12 @@ Add all tables in `public` schema to the `default` replication set.
     SELECT pglogical.replication_set_add_all_tables('default', ARRAY['public']);
 
 Optionally you can also create additional replication sets and add tables to
-them (see [Replication sets](#replication-sets)). It's usually better to create
-replication sets beforehand.
+them (see [Replication sets](#replication-sets)).
+
+It's usually better to create replication sets before subscribing so that all
+tables are synchronized during initial replication setup in a single initial
+transaction. However, users of bigger databases may instead wish to create them
+incrementally for better control.
 
 Once the provider node is setup, subscribers can be subscribed to it. First the
 subscriber node must be created:
@@ -392,6 +402,19 @@ has no way to find the tuple that should be updated/deleted since there is no
 unique identifier.
 
 See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
+
+### Only one unique index/constraint/PK
+
+If more than one upstream is configured or the downstream accepts local writes
+then only one `UNIQUE` index should be present on downstream replicated tables.
+Conflict resolution can only use one index at a time so conflicting rows may
+`ERROR` if a row satisfies the `PRIMARY KEY` but violates a `UNIQUE` constraint
+on on the downstream side. This will stop replication until the downstream table
+is modified to remove the violation.
+
+It's fine to have extra unique constraints on an upstream if the downstream only
+gets writes from that upstream and nowhere else. The rule is that the downstream
+constraints must *not be more restrictive* than those on the upstream(s).
 
 ### DDL
 
