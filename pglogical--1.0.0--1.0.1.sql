@@ -5,19 +5,17 @@ RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_s
 
 DO $$
 BEGIN
-	IF (SELECT count(1) FROM pglogical.nodes) > 0 THEN
+	IF (SELECT count(1) FROM pglogical.node) > 0 THEN
 		SELECT * FROM pglogical.create_replication_set('ddl_sql', true, false, false, false);
 	END IF;
 END; $$;
 
 UPDATE pglogical.subscription SET sub_replication_sets = array_append(sub_replication_sets, 'ddl_sql');
 
-BEGIN;
-	WITH applys AS (
-		SELECT sub_name FROM pglogical.subscription WHERE sub_enabled
-	),
-	WITH disable AS (
-		SELECT pglogical.alter_subscription_disable(sub_name, true) FROM applys
-	)
-	SELECT pglogical.alter_subscription_enable(sub_name, true) FROM applys;
-COMMIT;
+WITH applys AS (
+	SELECT sub_name FROM pglogical.subscription WHERE sub_enabled
+),
+disable AS (
+	SELECT pglogical.alter_subscription_disable(sub_name, true) FROM applys
+)
+SELECT pglogical.alter_subscription_enable(sub_name, true) FROM applys;
