@@ -13,7 +13,8 @@ GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
 \set VERBOSITY terse
-CREATE EXTENSION IF NOT EXISTS pglogical;
+CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
+ALTER EXTENSION pglogical UPDATE;
 
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
@@ -52,6 +53,7 @@ SELECT * FROM pglogical.create_subscription(
 -- cleanup
 
 SELECT * FROM pglogical.drop_node('test_subscriber');
+DROP EXTENSION pglogical;
 
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node('test_provider');
@@ -59,3 +61,4 @@ SELECT * FROM pglogical.drop_node('test_provider');
 SET client_min_messages = 'warning';
 DROP OWNED BY nonreplica;
 DROP ROLE IF EXISTS nonreplica;
+DROP EXTENSION pglogical;
