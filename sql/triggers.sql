@@ -1,4 +1,4 @@
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
@@ -69,7 +69,7 @@ SELECT * FROM test_trg_hist;
 DROP TABLE test_trg_hist CASCADE;
 
 \c :provider_dsn
-
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_trg_data CASCADE;
 $$);

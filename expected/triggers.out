@@ -1,9 +1,4 @@
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
@@ -100,14 +95,11 @@ SELECT * FROM test_trg_hist;
 
 DROP TABLE test_trg_hist CASCADE;
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_trg_data CASCADE;
 $$);
 NOTICE:  drop cascades to 1 other object
-DETAIL:  table public.test_trg_data in replication set default
-CONTEXT:  during execution of queued SQL statement: 
-	DROP TABLE public.test_trg_data CASCADE;
-
  replicate_ddl_command 
 -----------------------
  t
