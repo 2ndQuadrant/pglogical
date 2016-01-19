@@ -1,9 +1,4 @@
-SELECT * FROM pglogical_regress_variables();
- provider_dsn | subscriber_dsn 
---------------+----------------
- regression   | postgres
-(1 row)
-
+SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT * FROM pglogical.create_replication_set('parallel');
@@ -15,7 +10,7 @@ SELECT * FROM pglogical.create_replication_set('parallel');
 \c :subscriber_dsn
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription_parallel',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel,default}',
 	forward_origins := '{}',
 	synchronize_structure := false,
@@ -24,7 +19,7 @@ SELECT * FROM pglogical.create_subscription(
 ERROR:  existing subscription "test_subscription" to node "test_provider" already subscribes to replication set "default"
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription_parallel',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel}',
 	forward_origins := '{}',
 	synchronize_structure := false,
@@ -45,11 +40,14 @@ BEGIN
     END LOOP;
 END;$$;
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
------------+------------+--------------+--------------+-------------
- f         | 3848008564 |              |              | r
- i         | 4051189029 |              |              | r
-(2 rows)
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
+-----------+------------+-------------------+--------------------+-------------
+ d         | 3848008564 | public            | test_nosync        | r
+ d         | 3848008564 | public            | test_publicschema  | r
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | r
+ f         | 3848008564 |                   |                    | r
+ i         | 4051189029 |                   |                    | r
+(5 rows)
 
 SELECT * FROM pglogical.show_subscription_status();
      subscription_name      |   status    | provider_node |         provider_dsn         |                 slot_name                  |                 replication_sets                  | forward_origins 
@@ -174,6 +172,7 @@ SELECT pglogical.drop_subscription('test_subscription_parallel');
 (1 row)
 
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT * FROM pglogical.drop_replication_set('parallel');
  drop_replication_set 
 ----------------------
@@ -185,11 +184,6 @@ SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml2 CASCADE;
 $$);
 NOTICE:  drop cascades to 1 other object
-DETAIL:  table public.basic_dml1 in replication set default
-CONTEXT:  during execution of queued SQL statement: 
-    DROP TABLE public.basic_dml1 CASCADE;
-    DROP TABLE public.basic_dml2 CASCADE;
-
  replicate_ddl_command 
 -----------------------
  t

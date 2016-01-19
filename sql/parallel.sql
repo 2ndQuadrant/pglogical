@@ -1,4 +1,4 @@
-SELECT * FROM pglogical_regress_variables();
+SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
@@ -9,7 +9,7 @@ SELECT * FROM pglogical.create_replication_set('parallel');
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription_parallel',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel,default}',
 	forward_origins := '{}',
 	synchronize_structure := false,
@@ -18,7 +18,7 @@ SELECT * FROM pglogical.create_subscription(
 
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription_parallel',
-    provider_dsn := 'dbname=regression user=super',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel}',
 	forward_origins := '{}',
 	synchronize_structure := false,
@@ -93,7 +93,7 @@ SELECT * FROM basic_dml2;
 SELECT pglogical.drop_subscription('test_subscription_parallel');
 
 \c :provider_dsn
-
+\set VERBOSITY terse
 SELECT * FROM pglogical.drop_replication_set('parallel');
 
 SELECT pglogical.replicate_ddl_command($$
