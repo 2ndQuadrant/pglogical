@@ -51,11 +51,6 @@ be the same or weaker (more permissive) on the subscriber than the provider.
 Tables must have the same `PRIMARY KEY`s. It is not recommended to add additional
 `UNIQUE` constraints other than the `PRIMARY KEY` (see below).
 
-Any `FOREIGN KEY`s on the subscriber must also be present on the provider with
-all rows on the subscriber present on the provider. In other words a
-subscriber's FK constraints must always permit a write if the provider's FK
-constraints permitted it.
-
 Some additional requirements are covered in "Limitations and Restrictions", below.
 
 ## Usage
@@ -447,13 +442,16 @@ generating new xacts with the old structure after the schema change is
 committed on the publisher. Users will have to ensure writes are stopped on all
 nodes and all slots are caught up before making schema changes.
 
+### FOREIGN KEYS
+
+Foreign keys constaints are not enforced for the replication process - what
+succeeds on provider side gets applied to subscriber even if the `FOREIGN KEY`
+would be violated.
+
 ### TRUNCATE
 
-Truncating a table that has foreign key relationships on the subscriber but not
-the provider will fail on the subscriber. Replication will stop. To allow
-replication to continue the foreign key relationship must be dropped. Using
-`TRUNCATE ... CASCADE` will not help because the `CASCADE` only applies to tables
-on the provider side.
+Using `TRUNCATE ... CASCADE` will only apply the `CASCADE` option on the
+provider side.
 
 (Properly handling this would probably require the addition of `ON TRUNCATE CASCADE`
 support for foreign keys in PostgreSQL).
@@ -476,10 +474,9 @@ offset on each node. Use the `INCREMENT BY` option for `CREATE SEQUENCE` or
 
 ### Triggers
 
-No triggers are fired when applying changes on the subscriber.
-
-Firing of `ENABLE REPLICA` and `ENABLE ALWAYS` triggers may be added by a later
-version.
+Apply process and the initial COPY process both run with
+`session_replication_role` set to `replica` which means that `ENABLE REPLICA`
+and `ENABLE ALWAYS` triggers will be fired.
 
 ### PostgreSQL Version differences
 
@@ -523,7 +520,7 @@ It omits some features found in BDR:
   pglogical provides queue functions to help with this.
 
 * Global DDL locking. There's no DDL replication so no global locking is
-  required.... but that introduces problems with mutual multi-master replication.
+  required....only applies to tables but that introduces problems with mutual multi-master replication.
   See next point.
 
 * Global flush-to-consistent-state. Part of BDR's DDL locking is a step
