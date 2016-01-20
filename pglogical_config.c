@@ -140,11 +140,11 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 	 * delay the ERROR until after the startup reply.
 	 */
 	val = get_param(options, "max_proto_version", false, false,
-					OUTPUT_PARAM_TYPE_UINT32, &found);
+					OUTPUT_PARAM_TYPE_UINT32, NULL);
 	data->client_max_proto_version = DatumGetUInt32(val);
 
 	val = get_param(options, "min_proto_version", false, false,
-					OUTPUT_PARAM_TYPE_UINT32, &found);
+					OUTPUT_PARAM_TYPE_UINT32, NULL);
 	data->client_min_proto_version = DatumGetUInt32(val);
 
 	/* Examine all the other params in the v1 message. */
@@ -157,8 +157,6 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 		/* Check each param, whether or not we recognise it */
 		switch(get_param_key(elem->defname))
 		{
-			val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_UINT32);
-
 			case PARAM_BINARY_BIGENDIAN:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
 				data->client_binary_bigendian_set = true;
@@ -267,18 +265,20 @@ int
 process_parameters(List *options, PGLogicalOutputData *data)
 {
 	Datum	val;
-	bool    found;
 	int		params_format;
 
 	val = get_param(options, "startup_params_format", false, false,
-					OUTPUT_PARAM_TYPE_UINT32, &found);
+					OUTPUT_PARAM_TYPE_UINT32, NULL);
 
 	params_format = DatumGetUInt32(val);
 
 	if (params_format == 1)
-	{
 		process_parameters_v1(options, data);
-	}
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("startup_params_format %d not supported, only version 1 supported",
+					 params_format)));
 
 	return params_format;
 }
@@ -326,7 +326,10 @@ get_param(List *options, const char *name, bool missing_ok, bool null_ok,
 {
 	ListCell	   *option;
 
-	*found = false;
+	if (found != NULL)
+		*found = false;
+	else
+		Assert(!missing_ok);
 
 	foreach(option, options)
 	{
@@ -338,7 +341,8 @@ get_param(List *options, const char *name, bool missing_ok, bool null_ok,
 		if (pg_strcasecmp(name, elem->defname))
 			continue;
 
-		*found = true;
+		if (found != NULL)
+			*found = true;
 
 		return get_param_value(elem, null_ok, type);
 	}

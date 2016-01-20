@@ -49,6 +49,13 @@ SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
 	'max_proto_version', '1',
 	'startup_params_format', '2');
 
+-- error, missing startup params format
+SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',
+	NULL, NULL,
+	'expected_encoding', 'UTF8',
+	'min_proto_version', '1',
+	'max_proto_version', '1');
+
 -- Should be OK and result in proto version 1 selection, though we won't
 -- see that here.
 SELECT data FROM pg_logical_slot_get_binary_changes('regression_slot',

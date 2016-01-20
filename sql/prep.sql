@@ -2,7 +2,7 @@ CREATE TABLE excluded_startup_keys (key_name text primary key);
 
 INSERT INTO excluded_startup_keys
 VALUES
-('pg_version_num'),('pg_version'),('pg_catversion'),('binary.basetypes_major_version'),('binary.integer_datetimes'),('binary.bigendian'),('binary.maxalign'),('binary.binary_pg_version'),('sizeof_int'),('sizeof_long'),('sizeof_datum');
+('pg_version_num'),('pg_version'),('pg_catversion'),('binary.basetypes_major_version'),('binary.integer_datetimes'),('binary.bigendian'),('binary.maxalign'),('binary.binary_pg_version'),('sizeof_int'),('sizeof_long'),('sizeof_datum'),('pglogical_output_version');
 
 CREATE UNLOGGED TABLE json_decoding_output(ch jsonb, rn integer);
 

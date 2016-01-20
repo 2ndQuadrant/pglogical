@@ -28,23 +28,16 @@
 #define PGLOGICAL_OUTPUT_VERSION_NUM 10000
 #define PGLOGICAL_OUTPUT_VERSION "1.0.0"
 
-/* Protocol capabilities */
+/*
+ * Protocol capabilities
+ *
+ * PGLOGICAL_PROTO_VERSION_NUM is our native protocol and the greatest version
+ * we can support. PGLOGICAL_PROTO_MIN_VERSION_NUM is the oldest version we
+ * have backwards compatibility for. We negotiate protocol versions during the
+ * startup handshake. See the protocol documentation for details.
+ */
 #define PGLOGICAL_PROTO_VERSION_NUM 1
 #define PGLOGICAL_PROTO_MIN_VERSION_NUM 1
-
-/*
- * The name of a hook function. This is used instead of the usual List*
- * because can serve as a hash key.
- *
- * Must be zeroed on allocation if used as a hash key since padding is
- * *not* ignored on compare.
- */
-typedef struct HookFuncName
-{
-	/* funcname is more likely to be unique, so goes first */
-	char    function[NAMEDATALEN];
-	char    schema[NAMEDATALEN];
-} HookFuncName;
 
 struct PGLogicalProtoAPI;
 
@@ -100,12 +93,5 @@ typedef struct PGLogicalOutputData
 	/* DefElem<String> list populated by startup hook */
 	List *extra_startup_params;
 } PGLogicalOutputData;
-
-typedef struct PGLogicalTupleData
-{
-	Datum	values[MaxTupleAttributeNumber];
-	bool	nulls[MaxTupleAttributeNumber];
-	bool	changed[MaxTupleAttributeNumber];
-} PGLogicalTupleData;
 
 #endif /* PG_LOGICAL_OUTPUT_H */

@@ -109,42 +109,42 @@ check_binary_compatibility(PGLogicalOutputData *data)
 	if (data->client_binary_sizeofdatum != 0
 		&& data->client_binary_sizeofdatum != sizeof(Datum))
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(Datum) mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client sizeof(Datum) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_sizeofint != 0
 		&& data->client_binary_sizeofint != sizeof(int))
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(int) mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client sizeof(int) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_sizeoflong != 0
 		&& data->client_binary_sizeoflong != sizeof(long))
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian sizeof(long) mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client sizeof(long) mismatch");
 		return false;
 	}
 
 	if (data->client_binary_float4byval_set
 		&& data->client_binary_float4byval != server_float4_byval())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian float4byval mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client float4byval mismatch");
 		return false;
 	}
 
 	if (data->client_binary_float8byval_set
 		&& data->client_binary_float8byval != server_float8_byval())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian float8byval mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client float8byval mismatch");
 		return false;
 	}
 
 	if (data->client_binary_intdatetimes_set
 		&& data->client_binary_intdatetimes != server_integer_datetimes())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian integer datetimes mismatch");
+		elog(DEBUG1, "Binary mode rejected: Server and client integer datetimes mismatch");
 		return false;
 	}
 
@@ -158,7 +158,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 {
 	PGLogicalOutputData  *data = palloc0(sizeof(PGLogicalOutputData));
 
-	data->context = AllocSetContextCreate(TopMemoryContext,
+	data->context = AllocSetContextCreate(ctx->context,
 										  "pglogical conversion context",
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
@@ -561,9 +561,8 @@ static void pg_decode_shutdown(LogicalDecodingContext * ctx)
 
 	call_shutdown_hook(data);
 
-	if (data->hooks_mctxt != NULL)
-	{
-		MemoryContextDelete(data->hooks_mctxt);
-		data->hooks_mctxt = NULL;
-	}
+	/*
+	 * no need to delete data->context or data->hooks_mctxt as they're children
+	 * of ctx->context which will expire on return.
+	 */
 }
