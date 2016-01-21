@@ -272,12 +272,12 @@ process_parameters(List *options, PGLogicalOutputData *data)
 
 	params_format = DatumGetUInt32(val);
 
-	if (params_format == 1)
+	if (params_format == PGLOGICAL_STARTUP_PARAM_FORMAT_FLAT)
 		process_parameters_v1(options, data);
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("startup_params_format %d not supported, only version 1 supported",
+				 errmsg("startup_params_format %d not supported, only version 1 (flat) supported",
 					 params_format)));
 
 	return params_format;

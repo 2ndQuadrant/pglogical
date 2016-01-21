@@ -327,7 +327,7 @@ write_startup_message(StringInfo out, List *msg)
 	ListCell *lc;
 
 	pq_sendbyte(out, 'S');	/* message type field */
-	pq_sendbyte(out, 1); 	/* startup message version */
+	pq_sendbyte(out, PGLOGICAL_STARTUP_MSG_FORMAT_FLAT); 	/* startup message version */
 	foreach (lc, msg)
 	{
 		DefElem *param = (DefElem*)lfirst(lc);

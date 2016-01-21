@@ -14,6 +14,15 @@
 #define PG_LOGICAL_PROTO_NATIVE_H
 
 
+/*
+ * For similar reasons to the startup params
+ * (PGLOGICAL_STARTUP_PARAM_FORMAT_FLAT) the startup reply message format is
+ * versioned separately to the rest of the protocol. The client has to be able
+ * to read it to find out what protocol version was selected by the upstream
+ * when using the native protocol.
+ */
+#define PGLOGICAL_STARTUP_MSG_FORMAT_FLAT 1
+
 extern void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 							struct PGLRelMetaCacheEntry *cache_entry);
 

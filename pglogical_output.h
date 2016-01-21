@@ -39,6 +39,17 @@
 #define PGLOGICAL_PROTO_VERSION_NUM 1
 #define PGLOGICAL_PROTO_MIN_VERSION_NUM 1
 
+/*
+ * The startup parameter format is versioned separately to the rest of the wire
+ * protocol because we negotiate the wire protocol version using the startup
+ * parameters sent to us. It hopefully won't ever need to change, but this
+ * field is present in case we do need to change it, e.g. to a structured json
+ * object. We can look at the startup params version to see whether we can
+ * understand the startup params sent by the client and to fall back to
+ * reading an older format if needed.
+ */
+#define PGLOGICAL_STARTUP_PARAM_FORMAT_FLAT 1
+
 struct PGLogicalProtoAPI;
 
 typedef struct PGLogicalOutputData
