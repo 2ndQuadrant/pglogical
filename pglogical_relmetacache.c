@@ -23,88 +23,71 @@
 static void relmeta_cache_callback(Datum arg, Oid relid);
 
 /*
- * We need a global hash table that invalidation callbacks can
- * access because they survive past the logical decoding context and
- * therefore past our local PGLogicalOutputData's lifetime when
- * using the SQL interface. We cannot just pass them a pointer to a
- * palloc'd struct.
+ * We need a global that invalidation callbacks can access because they
+ * survive past the logical decoding context and therefore past our
+ * local PGLogicalOutputData's lifetime when using the SQL interface. We
+ * cannot just pass them a pointer to a palloc'd struct.
+ *
+ * If the hash table has been destroyed the callbacks know to do nothing.
  */
 static HTAB *RelMetaCache = NULL;
 
+/*
+ * The callback persists across decoding sessions so we should only
+ * register it once.
+ */
+static bool callback_registered = false;
+
 
 /*
- * Initialize the relation metadata cache if not already initialized.
+ * Initialize the relation metadata cache for a decoding session.
  *
- * Purge it if it already exists.
- *
- * The hash table its self must be in CacheMemoryContext or TopMemoryContext
- * since it persists outside the decoding session.
+ * The hash table is destoyed at the end of a decoding session. While
+ * relcache invalidations still exist and will still be invoked, they
+ * will just see the null hash table global and take no action.
  */
 void
-pglogical_init_relmetacache(void)
+pglogical_init_relmetacache(MemoryContext decoding_context)
 {
 	HASHCTL	ctl;
 
-	if (RelMetaCache == NULL)
-	{
-		/* first time, init the cache */
-		int hash_flags = HASH_ELEM | HASH_CONTEXT;
+	Assert(RelMetaCache == NULL);
 
-		/* Make sure we've initialized CacheMemoryContext. */
-		if (CacheMemoryContext == NULL)
-			CreateCacheMemoryContext();
+	/* Make a new hash table for the cache */
+	int hash_flags = HASH_ELEM | HASH_CONTEXT;
 
-		MemSet(&ctl, 0, sizeof(ctl));
-		ctl.keysize = sizeof(Oid);
-		ctl.entrysize = sizeof(struct PGLRelMetaCacheEntry);
-		/* safe to allocate to CacheMemoryContext since it's never reset */
-		ctl.hcxt = CacheMemoryContext;
+	MemSet(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(Oid);
+	ctl.entrysize = sizeof(struct PGLRelMetaCacheEntry);
+	ctl.hcxt = decoding_context;
 
 #if PG_VERSION_NUM >= 90500
-		hash_flags |= HASH_BLOBS;
+	hash_flags |= HASH_BLOBS;
 #else
-		ctl.hash = tag_hash;
-		hash_flags |= HASH_FUNCTION;
+	ctl.hash = tag_hash;
+	hash_flags |= HASH_FUNCTION;
 #endif
 
-		RelMetaCache = hash_create("pglogical relation metadata cache", 128,
-									&ctl, hash_flags);
+	RelMetaCache = hash_create("pglogical relation metadata cache", 128,
+								&ctl, hash_flags);
 
-		Assert(RelMetaCache != NULL);
+	Assert(RelMetaCache != NULL);
 
-		/*
-		 * Watch for invalidation events.
-		 *
-		 * We don't pass PGLogicalOutputData here because it's scoped to the
-		 * individual decoding session, which with the SQL interface has a shorter
-		 * lifetime than the relcache invalidation callback registration. We have
-		 * no way to remove invalidation callbacks at the end of the decoding
-		 * session so we have to cope with them being called later.
-		 */
-		CacheRegisterRelcacheCallback(relmeta_cache_callback, (Datum)0);
-	}
-	else
+	/*
+	 * Watch for invalidation events.
+	 *
+	 * We don't pass PGLogicalOutputData here because it's scoped to the
+	 * individual decoding session, which with the SQL interface has a
+	 * shorter lifetime than the relcache invalidation callback
+	 * registration. We have no way to remove invalidation callbacks at
+	 * the end of the decoding session or change them - so we have to
+	 * cope with them being called later. If we wanted to pass the
+	 * decoding private data we'd need to stash it in a global.
+	 */
+	if (!callback_registered)
 	{
-		/*
-		 * On re-init we must flush the cache since there could be
-		 * dangling pointers to api_private data in the freed
-		 * decoding context of a prior session. We could go through
-		 * and clear them and the is_cached flag but it seems best
-		 * to have a clean slate.
-		 */
-		HASH_SEQ_STATUS status;
-		struct PGLRelMetaCacheEntry *hentry;
-		hash_seq_init(&status, RelMetaCache);
-
-		while ((hentry = (struct PGLRelMetaCacheEntry*) hash_seq_search(&status)) != NULL)
-		{
-			if (hash_search(RelMetaCache,
-						(void *) &hentry->relid,
-						HASH_REMOVE, NULL) == NULL)
-				elog(ERROR, "pglogical RelMetaCache hash table corrupted");
-		}
-
-		return;
+		CacheRegisterRelcacheCallback(relmeta_cache_callback, (Datum)0);
+		callback_registered = true;
 	}
 }
 
@@ -115,6 +98,14 @@ pglogical_init_relmetacache(void)
 static void
 relmeta_cache_callback(Datum arg, Oid relid)
  {
+	/*
+	 * We can be called after decoding session teardown becaues the
+	 * relcache callback isn't cleared. In that case there's no action
+	 * to take.
+	 */
+	if (RelMetaCache == NULL)
+		return;
+
 	/*
 	 * Nobody keeps pointers to entries in this hash table around so
 	 * it's safe to directly HASH_REMOVE the entries as soon as they are
@@ -176,12 +167,13 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 
 
 /*
- * Tear down the relation metadata cache.
+ * Tear down the relation metadata cache at the end of a decoding
+ * session.
  *
- * Do *not* call this at decoding shutdown. The hash table must
- * continue to exist so that relcache invalidation callbacks can
- * continue to reference it after a SQL decoding session finishes.
- * It must be called at backend shutdown only.
+ * The api_private data need not be freed explicitly; it'll be purged
+ * by destruction of the memory context. The main reason we do this
+ * much is to make sure we nullify the global, making sure that
+ * callbacks will see that there's nothing to do.
  */
 void
 pglogical_destroy_relmetacache(void)

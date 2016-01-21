@@ -376,7 +376,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 
 		/* if cache enabled, init it */
 		if (data->relmeta_cache_size != 0)
-			pglogical_init_relmetacache();
+			pglogical_init_relmetacache(ctx->context);
 	}
 }
 
@@ -560,6 +560,8 @@ static void pg_decode_shutdown(LogicalDecodingContext * ctx)
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	call_shutdown_hook(data);
+
+	pglogical_destroy_relmetacache();
 
 	/*
 	 * no need to delete data->context or data->hooks_mctxt as they're children

@@ -129,7 +129,6 @@ void
 process_parameters_v1(List *options, PGLogicalOutputData *data)
 {
 	Datum		val;
-	bool    	found;
 	ListCell	*lc;
 
 	/*
@@ -277,8 +276,8 @@ process_parameters(List *options, PGLogicalOutputData *data)
 	else
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("startup_params_format %d not supported, only version 1 (flat) supported",
-					 params_format)));
+				 errmsg("startup_params_format %d not supported, only version %d supported",
+					 params_format, PGLOGICAL_STARTUP_PARAM_FORMAT_FLAT)));
 
 	return params_format;
 }
