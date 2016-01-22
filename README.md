@@ -10,8 +10,8 @@ consume.
 The primary purpose of `pglogical_output` is to supply data to logical
 streaming replication solutions, but any application can potentially use its
 data stream. The output stream is designed to be compact and fast to decode,
-and the plugin supports upstream filtering of data so that only the required
-information is sent.
+and the plugin supports upstream filtering of data (through hooks) so that only
+the required information is sent.
 
 Only one database is replicated, rather than the whole PostgreSQL install. A
 subset of that database may be selected for replication, currently based on
@@ -19,13 +19,13 @@ table and on replication origin. Filtering by a WHERE clause can be supported
 easily in future.
 
 No triggers are required to collect the change stream and no external ticker or
-other daemon is required. It's accumulated using
+other daemon is required. The stream of changes is accumulated using
 [replication slots](http://www.postgresql.org/docs/current/static/logicaldecoding-explanation.html#AEN66446),
 as supported in PostgreSQL 9.4 or newer, and sent on top of the
 [PostgreSQL streaming replication protocol](http://www.postgresql.org/docs/current/static/protocol-replication.html).
 
 Unlike block-level ("physical") streaming replication, the change stream from
-the `pglogical` output plugin is compatible across different PostgreSQL
+`pglogical_output` is compatible across different PostgreSQL
 versions and can even be consumed by non-PostgreSQL clients.
 
 Because logical decoding is used, only the changed rows are sent on the wire.
@@ -167,7 +167,7 @@ parameters are discussed in the separate `pglogical` protocol documentation.
 
 ## Process the startup message
 
-`pglogical`'s output plugin will send a `CopyData` message containing its
+`pglogical_output` will send a `CopyData` message containing its
 startup message as the first protocol message. This message contains a
 set of key/value entries describing the capabilities of the upstream output
 plugin, its version and the Pg version, the tuple format options selected,
@@ -180,7 +180,7 @@ first connection's startup message.
 
 ## Consume the change stream
 
-`pglogical`'s output plugin now sends a continuous series of `CopyData`
+`pglogical_output` now sends a continuous series of `CopyData`
 protocol messages, each of which encapsulates a `pglogical` protocol message
 as documented in the separate protocol docs.
 
@@ -277,9 +277,9 @@ server-side so that only a subset of changes is replicated.
 `pglogical_output` exposes a number of extension points where applications can
 modify or override its behaviour.
 
-All hooks are called in their own memory context, which lasts for the duration
-of the logical decoding session. They may switch to longer lived contexts if
-needed, but are then responsible for their own cleanup.
+All hooks are called in a memory context that lasts for the duration of the
+logical decoding session. They may switch to longer lived contexts if needed,
+but are then responsible for their own cleanup.
 
 ## Hook setup function
 
@@ -410,8 +410,9 @@ session might just terminate. It's mostly useful for cleanup to handle repeated
 invocations under the SQL interface to logical decoding.
 
 You don't need a hook to free memory you allocated, unless you explicitly
-switched to a longer lived memory context like TopMemoryContext. Memory allocated
-in the hook context will be automatically when the decoding session shuts down.
+switched to a longer lived memory context like `TopMemoryContext`. Memory
+allocated in the hook context will be automatically freed when the decoding
+session shuts down.
 
 ## Writing hooks in procedural languages
 
@@ -450,7 +451,7 @@ in *shared catalogs*. These include:
 Such objects cannot be replicated by `pglogical_output`. They're managed with DDL that
 can't be captured within a single database and isn't decoded anyway.
 
-DDL for global object changes must be synchronized via some external means.
+Global object changes must be synchronized via some external means.
 
 ## Physical replica failover
 
@@ -525,8 +526,8 @@ slot.
 Use `pg_logical_slot_peek_changes` to examine the change stream without
 destructively consuming changes. This is extremely helpful when trying to
 determine why an error occurs in a downstream, since you can examine a
-json-ified representation of the xact. It's necessary to supply a minimal
-set of required parameters to the output plugin.
+transaction in json (rather than binary) format. It's necessary to supply a
+minimal set of required parameters to the output plugin.
 
 e.g. given setup:
 
@@ -581,7 +582,7 @@ replication slot. This is usually an error recovery step when problems arise
 with the downstream code that's replaying from the slot.
 
 You can use the peek functions to determine the point in the stream you want to
-discard up to, as identifed by LSN (log sequence number). See
+discard up to, as identified by LSN (log sequence number). See
 "non-destructively previewing pending data on a slot" above for details.
 
 You can't control the point you start discarding from, it's always from the
@@ -592,8 +593,8 @@ In other words there's no way to cut a sequence of changes out of the middle of
 the pending change stream.
 
 Once you've peeked the stream and know the LSN you want to discard up to, you
-can use `pg_logical_slot_peek_changes`, specifying an `upto_lsn`, to consume
-changes from the slot up to but not including that point, i.e. that will be the
+can use `pg_logical_slot_get_changes`, specifying an `upto_lsn`, to consume
+changes from the slot up to but not including that point. That will be the
 point at which replay resumes.
 
 For example, if you wanted to discard the first transaction in the example
