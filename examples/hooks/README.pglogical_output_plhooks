@@ -14,9 +14,9 @@ want efficiency, write your hook in C.
 Simple pointless example
 ===
 
-To compile and install, just "make USE_PGXS=1 install". Note that pglogical
-must already be installed so that its headers can be found. You might have
-to set the `PATH` so that `pg_config` can be found.
+To compile and install, just "make USE_PGXS=1 install". Note that
+`pglogical_output` must already be installed so that its headers can be found.
+You might have to set the `PATH` so that `pg_config` can be found.
 
 To use it:
 
@@ -142,7 +142,7 @@ Called for each row. Return true to replicate the row, false to discard it.
 
 Arguments are the oid of the affected relation, and the change type: 'I'nsert,
 'U'pdate or 'D'elete. There is no way to access the change data - columns changed,
-new values, etc.
+new values, etc - from a plpgsql change hook.
 
 Signature:
 
