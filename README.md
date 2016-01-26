@@ -311,7 +311,7 @@ The following functions are provided for managing the replication sets:
   - `table_name` - name or OID of the table to be removed from the set
 
 You can view the information about which table is in which set by querying the
-`pglogical.replication_set_tables` view.
+`pglogical.tables` view.
 
 #### Automatic assignment of replication sets for new tables
 
