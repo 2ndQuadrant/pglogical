@@ -30,7 +30,7 @@ typedef struct PGlogicalInterface
 typedef struct PGLogicalLocalNode
 {
 	PGLogicalNode	*node;
-	PGlogicalInterface *interface;
+	PGlogicalInterface *node_if;
 } PGLogicalLocalNode;
 
 typedef struct PGLogicalSubscription

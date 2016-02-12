@@ -65,8 +65,6 @@
 /* Node management. */
 PG_FUNCTION_INFO_V1(pglogical_create_node);
 PG_FUNCTION_INFO_V1(pglogical_drop_node);
-PG_FUNCTION_INFO_V1(pglogical_alter_node_disable);
-PG_FUNCTION_INFO_V1(pglogical_alter_node_enable);
 
 /* Subscription management. */
 PG_FUNCTION_INFO_V1(pglogical_create_subscription);
@@ -298,7 +296,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	PQfinish(conn);
 
 	/* Check that local connection works. */
-	conn = pglogical_connect(localnode->interface->dsn, "create_subscription");
+	conn = pglogical_connect(localnode->node_if->dsn, "create_subscription");
 	PQfinish(conn);
 
 	/*
@@ -373,7 +371,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	 * Note for now we don't care much about the target interface so we fake
 	 * it here to be invalid.
 	 */
-	targetif.id = localnode->interface->id;
+	targetif.id = localnode->node_if->id;
 	targetif.nodeid = localnode->node->id;
 	sub.id = InvalidOid;
 	sub.name = sub_name;

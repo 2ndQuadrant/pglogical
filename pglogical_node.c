@@ -59,7 +59,7 @@ typedef struct NodeTuple
 
 #define Natts_local_node			2
 #define Anum_node_local_id			1
-#define Anum_node_local_interface	2
+#define Anum_node_local_node_if		2
 
 typedef struct NodeInterfaceTuple
 {
@@ -340,7 +340,7 @@ create_local_node(Oid nodeid, Oid ifid)
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_node_local_id - 1] = ObjectIdGetDatum(nodeid);
-	values[Anum_node_local_interface - 1] = ObjectIdGetDatum(ifid);
+	values[Anum_node_local_node_if - 1] = ObjectIdGetDatum(ifid);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -430,7 +430,7 @@ get_local_node(bool missing_ok)
 
 	nodeid = DatumGetObjectId(fastgetattr(tuple, Anum_node_local_id, desc,
 										  &isnull));
-	nodeifid = DatumGetObjectId(fastgetattr(tuple, Anum_node_local_interface,
+	nodeifid = DatumGetObjectId(fastgetattr(tuple, Anum_node_local_node_if,
 											desc, &isnull));
 
 	systable_endscan(scan);
@@ -438,7 +438,7 @@ get_local_node(bool missing_ok)
 
 	res = (PGLogicalLocalNode *) palloc(sizeof(PGLogicalLocalNode));
 	res->node = get_node(nodeid);
-	res->interface = get_node_interface(nodeifid);
+	res->node_if = get_node_interface(nodeifid);
 
 	return res;
 }

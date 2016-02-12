@@ -21,17 +21,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* Note the order is important for debian here. */
 #include "libpq-fe.h"
-#include "libpq-int.h"
-
-#define FRONTEND 1
-#include "postgres.h"
+#include "postgres_fe.h"
+#include "pqexpbuffer.h"
 
 #include "getopt_long.h"
 
 #include "miscadmin.h"
 
-#include "access/hash.h"
 #include "access/timeline.h"
 #include "access/xlog_internal.h"
 #include "catalog/pg_control.h"
