@@ -25,7 +25,8 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  toasted replication_set add_table matview bidirectional primary_key \
 		  foreign_key functions copy triggers parallel drop
 
-EXTRA_CLEAN += pglogical.control compat/pglogical_compat.o
+EXTRA_CLEAN += pglogical.control compat94/pglogical_compat.o \
+			   compat95/pglogical_compat.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
@@ -47,15 +48,19 @@ PG_CONFIG = pg_config
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
 ifeq ($(PGVER),94)
-PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat))
-OBJS += $(srcdir)/compat/pglogical_compat.o
-DATA += compat/pglogical_origin.control compat/pglogical_origin--1.0.0.sql
+PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat94))
+OBJS += $(srcdir)/compat94/pglogical_compat.o
+DATA += compat94/pglogical_origin.control compat94/pglogical_origin--1.0.0.sql
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  toasted replication_set add_table matview primary_key foreign_key \
 		  functions copy triggers parallel drop
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
+endif
+ifeq ($(PGVER),95)
+PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
+OBJS += $(srcdir)/compat95/pglogical_compat.o
 endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)

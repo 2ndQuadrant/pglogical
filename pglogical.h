@@ -22,7 +22,7 @@
 #include "pglogical_fe.h"
 #include "pglogical_node.h"
 
-#if PG_VERSION_NUM < 90500
+#if PG_VERSION_NUM < 90600
 #include "pglogical_compat.h"
 #endif
 
