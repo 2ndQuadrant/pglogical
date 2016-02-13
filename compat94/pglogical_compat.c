@@ -566,3 +566,25 @@ strlist_to_textarray(List *list)
 
 	return arr;
 }
+
+
+LWLockPadded tmplock;
+
+LWLockPadded *
+GetNamedLWLockTranche(const char *tranche_name)
+{
+    LWLock     *lock = LWLockAssign();
+
+    tmplock.lock = lock;
+
+    return &tmplock;
+}
+
+void
+RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)
+{
+    Assert(num_lwlocks == 1);
+
+    RequestAddinLWLocks(num_lwlocks);
+}
+
