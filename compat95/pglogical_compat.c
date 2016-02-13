@@ -15,16 +15,12 @@
 
 #include "pglogical_compat.h"
 
-LWLockPadded tmplock;
-
 LWLockPadded *
 GetNamedLWLockTranche(const char *tranche_name)
 {
 	LWLock	   *lock = LWLockAssign();
 
-	tmplock.lock = lock;
-
-	return &tmplock;
+	return (LWLockPadded *)tmplock;
 }
 
 void

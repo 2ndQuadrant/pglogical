@@ -568,16 +568,12 @@ strlist_to_textarray(List *list)
 }
 
 
-LWLockPadded tmplock;
-
 LWLockPadded *
 GetNamedLWLockTranche(const char *tranche_name)
 {
     LWLock     *lock = LWLockAssign();
 
-    tmplock.lock = lock;
-
-    return &tmplock;
+    return (LWLockPadded *)lock;
 }
 
 void
