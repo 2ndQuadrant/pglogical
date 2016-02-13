@@ -20,7 +20,7 @@ GetNamedLWLockTranche(const char *tranche_name)
 {
 	LWLock	   *lock = LWLockAssign();
 
-	return (LWLockPadded *)tmplock;
+	return (LWLockPadded *)lock;
 }
 
 void
