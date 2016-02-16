@@ -124,6 +124,13 @@ manage_apply_workers(void)
 		proc_exit(0);
 }
 
+
+static void
+synchronize_sequences(void)
+{
+
+}
+
 /*
  * Entry point for manager worker.
  */
