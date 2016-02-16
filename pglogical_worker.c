@@ -69,7 +69,7 @@ find_empty_worker_slot(void)
 			return i;
 	}
 
-	return i;
+	return -1;
 }
 
 /*
@@ -88,7 +88,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
 	slot = find_empty_worker_slot();
-	if (slot >= PGLogicalCtx->total_workers)
+	if (slot == -1)
 	{
 		LWLockRelease(PGLogicalCtx->lock);
 		elog(ERROR, "could not register pglogical worker: all background worker slots are already used");
@@ -135,9 +135,10 @@ pglogical_worker_register(PGLogicalWorker *worker)
 
 	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
 	{
+		PGLogicalCtx->workers[slot].worker_type = PGLOGICAL_WORKER_NONE;
 		ereport(ERROR,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
-				 errmsg("worker registration failed, you might want to increate max_worker_processes setting")));
+				 errmsg("worker registration failed, you might want to increase max_worker_processes setting")));
 	}
 
 	/* TODO: handle crash? */
