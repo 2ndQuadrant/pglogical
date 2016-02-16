@@ -1249,10 +1249,40 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 Datum
 pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 {
-	text   *command = PG_GETARG_TEXT_PP(0);
-	char   *query = text_to_cstring(command);
-	int		save_nestlevel;
-	StringInfoData	cmd;
+	text	   *command = PG_GETARG_TEXT_PP(0);
+	char	   *query = text_to_cstring(command);
+	int			save_nestlevel;
+	List	   *replication_sets;
+	ListCell   *lc;
+	PGLogicalLocalNode *node;
+	StringInfoData		cmd;
+
+	node = get_local_node(true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
+
+
+	/* XXX: This is here for backwards compatibility with pre 1.1 extension. */
+	if (PG_NARGS() < 2)
+	{
+		replication_sets = list_make1(DDL_SQL_REPSET_NAME);
+	}
+	else
+	{
+		ArrayType  *rep_set_names = PG_GETARG_ARRAYTYPE_P(1);
+		replication_sets = textarray_to_list(rep_set_names);
+	}
+
+	/* Validate replication sets. */
+	foreach(lc, replication_sets)
+	{
+		char   *setname = lfirst(lc);
+
+		(void) get_replication_set_by_name(node->node->id, setname, false);		
+	}
 
 	save_nestlevel = NewGUCNestLevel();
 
@@ -1269,13 +1299,8 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	initStringInfo(&cmd);
 	escape_json(&cmd, query);
 
-	/*
-	 * Queue the query for replication.
-	 *
-	 * Note, we keep "DDL" message type for the future when we have deparsing
-	 * support.
-	 */
-	queue_message(list_make1(DDL_SQL_REPSET_NAME), GetUserId(),
+	/* Queue the query for replication. */
+	queue_message(replication_sets, GetUserId(),
 				  QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
 	/* Execute the query locally. */
