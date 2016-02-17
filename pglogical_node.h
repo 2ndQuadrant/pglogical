@@ -59,7 +59,8 @@ extern void drop_node_interface(Oid ifid);
 extern void drop_node_interfaces(Oid nodeid);
 extern PGlogicalInterface *get_node_interface(Oid ifid);
 extern PGlogicalInterface *get_node_interface_by_name(Oid nodeid,
-													  const char *name);
+													  const char *name,
+													  bool missing_ok);
 
 extern void create_local_node(Oid nodeid, Oid ifid);
 extern void drop_local_node(void);

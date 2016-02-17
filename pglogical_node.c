@@ -620,7 +620,7 @@ get_node_interface(Oid ifid)
  * Get the node interface by name.
  */
 PGlogicalInterface *
-get_node_interface_by_name(Oid nodeid, const char *name)
+get_node_interface_by_name(Oid nodeid, const char *name, bool missing_ok)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -647,8 +647,18 @@ get_node_interface_by_name(Oid nodeid, const char *name)
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "node interface \"%s\" not found for nod %u",
-			 name, nodeid);
+	{
+		if (missing_ok)
+		{
+			systable_endscan(scan);
+			heap_close(rel, RowExclusiveLock);
+
+			return NULL;
+		}
+		else
+			elog(ERROR, "node interface \"%s\" not found for nod %u",
+				 name, nodeid);
+	}
 
 	iftup = (NodeInterfaceTuple *) GETSTRUCT(tuple);
 	nodeif = (PGlogicalInterface *) palloc(sizeof(PGlogicalInterface));

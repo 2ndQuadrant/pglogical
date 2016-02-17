@@ -65,10 +65,14 @@
 /* Node management. */
 PG_FUNCTION_INFO_V1(pglogical_create_node);
 PG_FUNCTION_INFO_V1(pglogical_drop_node);
+PG_FUNCTION_INFO_V1(pglogical_alter_node_add_interface);
+PG_FUNCTION_INFO_V1(pglogical_alter_node_drop_interface);
 
 /* Subscription management. */
 PG_FUNCTION_INFO_V1(pglogical_create_subscription);
 PG_FUNCTION_INFO_V1(pglogical_drop_subscription);
+
+PG_FUNCTION_INFO_V1(pglogical_alter_subscription_interface);
 
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_disable);
 PG_FUNCTION_INFO_V1(pglogical_alter_subscription_enable);
@@ -259,6 +263,71 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Add interface to a node.
+ */
+Datum
+pglogical_alter_node_add_interface(PG_FUNCTION_ARGS)
+{
+	char	   *node_name = NameStr(*PG_GETARG_NAME(0));
+	char	   *if_name = NameStr(*PG_GETARG_NAME(1));
+	char	   *if_dsn = text_to_cstring(PG_GETARG_TEXT_PP(2));
+	PGLogicalNode	   *node;
+	PGlogicalInterface *oldif,
+						newif;
+
+	node = get_node_by_name(node_name, true, false);
+	if (node == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("node \"%s\" not found", node_name)));
+
+	oldif = get_node_interface_by_name(node->id, if_name, true);
+	if (oldif != NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("node \"%s\" already has interface named \"%s\"",
+				 node_name, if_name)));
+
+	newif.id = InvalidOid;
+	newif.name = if_name;
+	newif.nodeid = node->id;
+	newif.dsn = if_dsn;
+	create_node_interface(&newif);
+
+	PG_RETURN_OID(newif.id);
+}
+
+/*
+ * Drop interface from a node.
+ */
+Datum
+pglogical_alter_node_drop_interface(PG_FUNCTION_ARGS)
+{
+	char	   *node_name = NameStr(*PG_GETARG_NAME(0));
+	char	   *if_name = NameStr(*PG_GETARG_NAME(1));
+	PGLogicalNode	   *node;
+	PGlogicalInterface *oldif;
+
+	node = get_node_by_name(node_name, true, false);
+	if (node == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("node \"%s\" not found", node_name)));
+
+	oldif = get_node_interface_by_name(node->id, if_name, true);
+	if (oldif == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("interface \"%s\" for node node \"%s\" not found",
+				 if_name, node_name)));
+
+	drop_node_interface(oldif->id);
+
+	PG_RETURN_BOOL(true);
+}
+
+
+/*
  * Connect two existing nodes.
  */
 Datum
@@ -322,7 +391,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	{
 		PGlogicalInterface *existingif;
 
-		existingif = get_node_interface_by_name(origin.id, origin.name);
+		existingif = get_node_interface_by_name(origin.id, origin.name, false);
 		if (strcmp(existingif->dsn, provider_dsn) != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -565,6 +634,38 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 			SetLatch(&manager->proc->procLatch);
 		LWLockRelease(PGLogicalCtx->lock);
 	}
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Switch interface the subscription is using.
+ */
+Datum
+pglogical_alter_subscription_interface(PG_FUNCTION_ARGS)
+{
+	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
+	char				   *if_name = NameStr(*PG_GETARG_NAME(1));
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
+														   false);
+	PGlogicalInterface	   *new_if;
+	PGLogicalWorker		   *apply;
+
+	new_if = get_node_interface_by_name(sub->origin->id, if_name, false);
+
+	if (new_if->id == sub->origin_if->id)
+		PG_RETURN_BOOL(false);
+
+	sub->origin_if = new_if;
+	alter_subscription(sub);
+
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+	apply = pglogical_apply_find(MyDatabaseId, sub->id);
+	if (pglogical_worker_running(apply))
+		kill(apply->proc->pid, SIGTERM);
+	LWLockRelease(PGLogicalCtx->lock);
+
+	pglogical_connections_changed();
 
 	PG_RETURN_BOOL(true);
 }

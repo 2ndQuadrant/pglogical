@@ -1,0 +1,93 @@
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+CREATE USER super2 SUPERUSER;
+\c :subscriber_dsn
+SELECT * FROM pglogical.alter_node_add_interface('test_provider', 'super2', (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super2');
+ alter_node_add_interface 
+--------------------------
+               3319308158
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_interface('test_subscription', 'super2');
+ alter_subscription_interface 
+------------------------------
+ t
+(1 row)
+
+DO $$
+BEGIN
+    FOR i IN 1..100 LOOP
+        IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status != 'down') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
+ subscription_name |   status    | provider_node |                 replication_sets                  | forward_origins 
+-------------------+-------------+---------------+---------------------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default_insert_only,ddl_sql,repset_test,default} | 
+(1 row)
+
+\c :provider_dsn
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+      plugin      | slot_type | active 
+------------------+-----------+--------
+ pglogical_output | logical   | t
+(1 row)
+
+SELECT usename FROM pg_stat_replication WHERE application_name = 'test_subscription';
+ usename 
+---------
+ super2
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM pglogical.alter_subscription_interface('test_subscription', 'test_provider');
+ alter_subscription_interface 
+------------------------------
+ t
+(1 row)
+
+DO $$
+BEGIN
+    FOR i IN 1..100 LOOP
+        IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status != 'down') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
+SELECT pg_sleep(0.1);
+ pg_sleep 
+----------
+ 
+(1 row)
+
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
+ subscription_name |   status    | provider_node |                 replication_sets                  | forward_origins 
+-------------------+-------------+---------------+---------------------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default_insert_only,ddl_sql,repset_test,default} | 
+(1 row)
+
+\c :provider_dsn
+DROP USER super2;
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+      plugin      | slot_type | active 
+------------------+-----------+--------
+ pglogical_output | logical   | t
+(1 row)
+
+SELECT usename FROM pg_stat_replication WHERE application_name = 'test_subscription';
+ usename 
+---------
+ super
+(1 row)
+

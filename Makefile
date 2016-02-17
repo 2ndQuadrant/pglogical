@@ -23,7 +23,7 @@ SHLIB_LINK = $(libpq)
 
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  toasted replication_set add_table matview bidirectional primary_key \
-		  foreign_key functions copy triggers parallel drop
+		  interfaces foreign_key functions copy triggers parallel drop
 
 EXTRA_CLEAN += pglogical.control compat94/pglogical_compat.o \
 			   compat95/pglogical_compat.o
