@@ -163,3 +163,41 @@ pglogical_remote_node_info(PGconn *conn, Oid *nodeid, char **node_name, char **s
 
 	PQclear(res);
 }
+
+bool
+pglogical_remote_function_exists(PGconn *conn, const char *nspname,
+								 const char *relname, int nargs)
+{
+	PGresult	   *res;
+	char			nargs_str[30];
+	const char	   *values[3];
+	Oid				types[3] = { TEXTOID, TEXTOID, INT4OID };
+	bool			ret;
+
+	snprintf(nargs_str, sizeof(nargs_str) - 1, "%d", nargs);
+	values[0] = relname;
+	values[1] = nspname;
+	values[2] = nargs_str;
+
+	res = PQexecParams(conn,
+					   "SELECT oid "
+					   "  FROM pg_catalog.pg_proc "
+					   " WHERE proname = $1 "
+                       "   AND pronamespace = "
+					   "       (SELECT oid "
+                       "          FROM pg_catalog.pg_namespace "
+                       "         WHERE nspname = $2) "
+                       "   AND pronargs = $3",
+					   3, types, values, NULL, NULL, 0);
+
+
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		elog(ERROR, "could fetch remote function info: %s\n",
+			PQerrorMessage(conn));
+
+	ret = PQntuples(res) > 0;
+
+	PQclear(res);
+
+	return ret;
+}

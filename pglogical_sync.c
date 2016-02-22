@@ -149,7 +149,7 @@ restore_structure(PGLogicalSubscription *sub, const char *srcfile,
  */
 static char *
 ensure_replication_slot_snapshot(PGconn *origin_conn, char *slot_name,
-								 XLogRecPtr *lsn)
+								 bool use_failover_slot, XLogRecPtr *lsn)
 {
 	PGresult	   *res;
 	StringInfoData	query;
@@ -157,8 +157,9 @@ ensure_replication_slot_snapshot(PGconn *origin_conn, char *slot_name,
 
 	initStringInfo(&query);
 
-	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s",
-					 slot_name, "pglogical_output");
+	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s%s",
+					 slot_name, "pglogical_output",
+					 use_failover_slot ? " FAILOVER" : "");
 
 	res = PQexec(origin_conn, query.data);
 
@@ -518,18 +519,28 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 	if (status == SYNC_STATUS_INIT)
 	{
+		PGconn	   *origin_conn;
 		PGconn	   *origin_conn_repl;
 		RepOriginId	originid;
 		char	   *snapshot;
+		bool		use_failover_slot;
 
 		elog(INFO, "initializing subscriber %s", sub->name);
+
+		origin_conn = pglogical_connect(sub->origin_if->dsn,
+										EXTENSION_NAME "_snapshot");
+		use_failover_slot = pglogical_remote_function_exists(origin_conn,
+															 "pg_catalog",
+										  "pg_create_logical_replication_slot",
+															 3);
+		PQfinish(origin_conn);
 
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 													 EXTENSION_NAME "_snapshot");
 
 		snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
 													sub->slot_name,
-													&lsn);
+													use_failover_slot, &lsn);
 
 		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
 								PointerGetDatum(sub));
@@ -697,7 +708,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 												 EXTENSION_NAME "_copy");
 
 	snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
-												sub->slot_name, &lsn);
+												sub->slot_name, false, &lsn);
 
 	/* Make sure we cleanup the slot if something goes wrong. */
 	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
