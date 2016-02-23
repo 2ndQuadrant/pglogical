@@ -134,9 +134,29 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   Drops the pglogical node.
 
   Parameters:
-  - `node_name` - name of the existing node
+  - `node_name` - name of an existing node
   - `ifexists` - if true, error is not thrown when subscription does not exist,
     default is false
+
+- `pglogical.alter_node_add_interface(node_name name, interface_name name, dsn text)`
+  Adds additional interface to a node.
+
+  When node is created, the interface for it is also created with the `dsn`
+  specified in the `create_node` and with the same name as the node. This
+  interface allows adding alternative interfaces with different connection
+  strings to an existing node.
+
+  Parameters:
+  - `node_name` - name of an existing node
+  - `interface_name` - name of a new interface to be added
+  - `dsn` - connetion string to the node used for the new interface
+
+- `pglogical.alter_node_drop_interface(node_name name, interface_name name)`
+  Remove existing interface from a node.
+
+  Parameters:
+  - `node_name` - name of and existing node
+  - `interface_name` - name of an existing interface
 
 ### Subscription management
 
@@ -183,6 +203,15 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `immediate` - if true, the subscription is started immediately, otherwise
     it will be only started at the end of current transaction, default is false
+
+- `pglogical.alter_subscription_interface(subscription_name name, interface_name name)`
+  Switch the subscription to use different interface to connect to provider
+  node.
+
+  Parameters:
+  - `subscription_name` - name of an existing subscription
+  - `interface_name` - name of an existing interface of the current provider
+    node
 
 - `pglogical.alter_subscription_synchronize(subscription_name name, truncate bool)`
   All unsynchronized tables in all sets are synchronized in a single operation.
