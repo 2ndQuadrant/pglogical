@@ -334,7 +334,7 @@ start_manager_workers(void)
 
 		/* Worker already attached, nothing to do. */
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-		if (pglogical_manager_find(dboid))
+		if (pglogical_worker_running(pglogical_manager_find(dboid)))
 		{
 			LWLockRelease(PGLogicalCtx->lock);
 			continue;

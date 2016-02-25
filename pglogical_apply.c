@@ -1694,7 +1694,8 @@ process_syncing_tables(XLogRecPtr end_lsn)
 				worker = pglogical_sync_find(MyDatabaseId,
 											 MyApplyWorker->subid,
 											 rv->schemaname, rv->relname);
-				if (worker && end_lsn >= worker->worker.apply.replay_stop_lsn)
+				if (pglogical_worker_running(worker) &&
+					end_lsn >= worker->worker.apply.replay_stop_lsn)
 				{
 					worker->worker.apply.replay_stop_lsn = end_lsn;
 
@@ -1712,7 +1713,6 @@ process_syncing_tables(XLogRecPtr end_lsn)
 													rv->relname,
 													SYNC_STATUS_READY))
 						status = SYNC_STATUS_READY;
-
 				}
 				else
 					LWLockRelease(PGLogicalCtx->lock);
@@ -1737,14 +1737,22 @@ process_syncing_tables(XLogRecPtr end_lsn)
 	 */
 	if (list_length(SyncingTables) > 0)
 	{
-		int		workers;
+		List		   *workers;
+		ListCell	   *lc;
+		int				nworkers = 0;
 
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-		workers = list_length(pglogical_sync_find_all(MyDatabaseId,
-													  MyApplyWorker->subid));
+		workers = pglogical_sync_find_all(MyDatabaseId, MyApplyWorker->subid);
+		foreach (lc, workers)
+		{
+			PGLogicalWorker	   *worker = (PGLogicalWorker *) lfirst(lc);
+
+			if (pglogical_worker_running(worker))
+				nworkers++;
+		}
 		LWLockRelease(PGLogicalCtx->lock);
 
-		if (workers < 1)
+		if (nworkers < 1)
 		{
 			RangeVar	   *rv = linitial(SyncingTables);
 
