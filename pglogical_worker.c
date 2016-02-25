@@ -180,6 +180,10 @@ pglogical_worker_attach(int slot)
 	MyPGLogicalWorker->proc = MyProc;
 
 	LWLockRelease(PGLogicalCtx->lock);
+
+	/* Make it easy to identify our processes. */
+	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
+					PGC_USERSET, PGC_S_SESSION);
 }
 
 /*
