@@ -255,8 +255,6 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 
 		/* Drop the node itself. */
 		drop_node(node->id);
-
-		pglogical_connections_changed();
 	}
 
 	PG_RETURN_BOOL(node != NULL);
@@ -471,8 +469,6 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	sync.status = SYNC_STATUS_INIT;
 	create_local_sync_status(&sync);
 
-	pglogical_connections_changed();
-
 	PG_RETURN_OID(sub.id);
 }
 
@@ -572,9 +568,6 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		originid = replorigin_by_name(sub->slot_name, true);
 		if (originid != InvalidRepOriginId)
 			replorigin_drop(originid);
-
-		/* Notify manager of the change. */
-		pglogical_connections_changed();
 	}
 
 	PG_RETURN_BOOL(sub != NULL);
@@ -665,8 +658,6 @@ pglogical_alter_subscription_interface(PG_FUNCTION_ARGS)
 		kill(apply->proc->pid, SIGTERM);
 	LWLockRelease(PGLogicalCtx->lock);
 
-	pglogical_connections_changed();
-
 	PG_RETURN_BOOL(true);
 }
 
@@ -700,8 +691,6 @@ pglogical_alter_subscription_add_replication_set(PG_FUNCTION_ARGS)
 	if (pglogical_worker_running(apply))
 		kill(apply->proc->pid, SIGTERM);
 	LWLockRelease(PGLogicalCtx->lock);
-
-	pglogical_connections_changed();
 
 	PG_RETURN_BOOL(true);
 }
@@ -741,8 +730,6 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 			if (pglogical_worker_running(apply))
 				kill(apply->proc->pid, SIGTERM);
 			LWLockRelease(PGLogicalCtx->lock);
-
-			pglogical_connections_changed();
 
 			PG_RETURN_BOOL(true);
 		}
