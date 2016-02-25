@@ -19,6 +19,9 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
+#include "storage/procarray.h"
+
+#include "utils/guc.h"
 
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
@@ -35,6 +38,9 @@ static bool xacthook_signal_workers = false;
 
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
+static void pglogical_worker_detach(bool crash);
+static void wait_for_worker_startup(PGLogicalWorker *worker,
+									BackgroundWorkerHandle *handle);
 static void signal_worker_xact_callback(XactEvent event, void *arg);
 
 
@@ -141,10 +147,49 @@ pglogical_worker_register(PGLogicalWorker *worker)
 				 errmsg("worker registration failed, you might want to increase max_worker_processes setting")));
 	}
 
-	/* TODO: handle crash? */
-	WaitForBackgroundWorkerStartup(bgw_handle, &pid);
+	wait_for_worker_startup(&PGLogicalCtx->workers[slot], bgw_handle);
 
 	return slot;
+}
+
+/*
+ * This is our own version of WaitForBackgroundWorkerStartup where we wait
+ * until worker actually attaches to our shmem.
+ */
+static void
+wait_for_worker_startup(PGLogicalWorker *worker,
+						BackgroundWorkerHandle *handle)
+{
+	BgwHandleStatus status;
+	int			rc;
+
+	for (;;)
+	{
+		pid_t		pid;
+
+		CHECK_FOR_INTERRUPTS();
+
+		status = GetBackgroundWorkerPid(handle, &pid);
+		if (status == BGWH_STARTED && pglogical_worker_running(worker))
+		{
+			break;
+		}
+		if (status == BGWH_STOPPED)
+		{
+			worker->crashed_at = GetCurrentTimestamp();
+			break;
+		}
+
+		Assert(status == BGWH_NOT_YET_STARTED || status == BGWH_STARTED);
+
+		rc = WaitLatch(MyLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
+
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+
+		ResetLatch(MyLatch);
+	}
 }
 
 /*
@@ -191,8 +236,8 @@ pglogical_worker_attach(int slot)
  *
  * Called during master worker exit.
  */
-void
-pglogical_worker_detach(bool signal_supervisor)
+static void
+pglogical_worker_detach(bool crash)
 {
 	/* Nothing to detach. */
 	if (MyPGLogicalWorker == NULL)
