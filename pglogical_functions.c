@@ -523,8 +523,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		/* Kill the apply to unlock the resources. */
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		apply = pglogical_apply_find(MyDatabaseId, sub->id);
-		if (pglogical_worker_running(apply))
-			kill(apply->proc->pid, SIGTERM);
+		pglogical_worker_kill(apply);
 		LWLockRelease(PGLogicalCtx->lock);
 
 		/* Wait for the apply to die. */
@@ -592,10 +591,15 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 	{
 		PGLogicalWorker		   *apply;
 
+		if ((IsTransactionBlock() || IsSubTransaction()))
+			ereport(ERROR,
+					(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+					 errmsg("alter_subscription_disable with immediate = true "
+							"cannot be run inside a transaction block")));
+
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		apply = pglogical_apply_find(MyDatabaseId, sub->id);
-		if (pglogical_worker_running(apply))
-			kill(apply->proc->pid, SIGTERM);
+		pglogical_worker_kill(apply);
 		LWLockRelease(PGLogicalCtx->lock);
 	}
 
@@ -617,15 +621,16 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 
 	alter_subscription(sub);
 
-	if (immediate)
+	/*
+	 * There is nothing more to immediate here than running it outside of
+	 * transaction.
+	 */
+	if (immediate && (IsTransactionBlock() || IsSubTransaction()))
 	{
-		PGLogicalWorker		   *manager;
-
-		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-		manager = pglogical_manager_find(MyDatabaseId);
-		if (pglogical_worker_running(manager))
-			SetLatch(&manager->proc->procLatch);
-		LWLockRelease(PGLogicalCtx->lock);
+		ereport(ERROR,
+				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+				 errmsg("alter_subscription_enable with immediate = true "
+						"cannot be run inside a transaction block")));
 	}
 
 	PG_RETURN_BOOL(true);
@@ -654,8 +659,7 @@ pglogical_alter_subscription_interface(PG_FUNCTION_ARGS)
 
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (pglogical_worker_running(apply))
-		kill(apply->proc->pid, SIGTERM);
+	pglogical_worker_kill(apply);
 	LWLockRelease(PGLogicalCtx->lock);
 
 	PG_RETURN_BOOL(true);
@@ -688,8 +692,7 @@ pglogical_alter_subscription_add_replication_set(PG_FUNCTION_ARGS)
 	/* Apply as to reconnect to be able to receive new repset. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (pglogical_worker_running(apply))
-		kill(apply->proc->pid, SIGTERM);
+	pglogical_worker_kill(apply);
 	LWLockRelease(PGLogicalCtx->lock);
 
 	PG_RETURN_BOOL(true);
@@ -727,8 +730,7 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 			/* Apply as to reconnect to be able to receive new repset. */
 			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 			apply = pglogical_apply_find(MyDatabaseId, sub->id);
-			if (pglogical_worker_running(apply))
-				kill(apply->proc->pid, SIGTERM);
+			pglogical_worker_kill(apply);
 			LWLockRelease(PGLogicalCtx->lock);
 
 			PG_RETURN_BOOL(true);
@@ -787,7 +789,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	/* Tell apply to re-read sync statuses. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (apply)
+	if (pglogical_worker_running(apply))
 		apply->worker.apply.sync_pending = true;
 	LWLockRelease(PGLogicalCtx->lock);
 
@@ -843,7 +845,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	/* Tell apply to re-read sync statuses. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (apply)
+	if (pglogical_worker_running(apply))
 		apply->worker.apply.sync_pending = true;
 	LWLockRelease(PGLogicalCtx->lock);
 
