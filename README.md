@@ -1,7 +1,7 @@
 # pglogical replication
 
-The pglogical module provides logical streaming replication for PostgreSQL,
-using a publish/subscribe module. It is based on technology developed as part
+The pglogical extension provides logical streaming replication for PostgreSQL,
+using a publish/subscribe model. It is based on technology developed as part
 of the BDR project (http://2ndquadrant.com/BDR).
 
 We use the following terms to describe data streams between nodes, deliberately
