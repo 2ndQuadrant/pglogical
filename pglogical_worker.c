@@ -71,7 +71,8 @@ find_empty_worker_slot(void)
 
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
-		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_NONE)
+		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_NONE ||
+			PGLogicalCtx->workers[i].crashed_at != 0)
 			return i;
 	}
 
@@ -88,7 +89,6 @@ pglogical_worker_register(PGLogicalWorker *worker)
 {
 	BackgroundWorker	bgw;
 	BackgroundWorkerHandle *bgw_handle;
-	pid_t				pid;
 	int					slot;
 
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
@@ -101,6 +101,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 	}
 
 	memcpy(&PGLogicalCtx->workers[slot], worker, sizeof(PGLogicalWorker));
+	PGLogicalCtx->workers[slot].crashed_at = 0;
 
 	LWLockRelease(PGLogicalCtx->lock);
 
@@ -141,7 +142,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 
 	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
 	{
-		PGLogicalCtx->workers[slot].worker_type = PGLOGICAL_WORKER_NONE;
+		PGLogicalCtx->workers[slot].crashed_at = GetCurrentTimestamp();
 		ereport(ERROR,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("worker registration failed, you might want to increase max_worker_processes setting")));
@@ -246,14 +247,32 @@ pglogical_worker_detach(bool crash)
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
 	Assert(MyPGLogicalWorker->proc = MyProc);
-	MyPGLogicalWorker->worker_type = PGLOGICAL_WORKER_NONE;
 	MyPGLogicalWorker->proc = NULL;
-	MyPGLogicalWorker->dboid = InvalidOid;
-	MyPGLogicalWorker = NULL;
 
-	/* Signal the supervisor process. */
-	if (signal_supervisor && PGLogicalCtx->supervisor)
-		SetLatch(&PGLogicalCtx->supervisor->procLatch);
+	/*
+	 * If we crashed we need to report it.
+	 *
+	 * The crash logic only works because all of the workers are attached
+	 * to shmem and the serious crashes that we can't catch here cause
+	 * postmaster to restart whole server killing all our workers and cleaning
+	 * shmem so we start from clean state in that scenario.
+	 */
+	if (crash)
+	{
+		MyPGLogicalWorker->crashed_at = GetCurrentTimestamp();
+
+		/* Signal the supervisor process. */
+		if (PGLogicalCtx->supervisor)
+			SetLatch(&PGLogicalCtx->supervisor->procLatch);
+	}
+	else
+	{
+		/* Worker has finished work, clean up its state from shmem. */
+		MyPGLogicalWorker->worker_type = PGLOGICAL_WORKER_NONE;
+		MyPGLogicalWorker->dboid = InvalidOid;
+	}
+
+	MyPGLogicalWorker = NULL;
 
 	LWLockRelease(PGLogicalCtx->lock);
 }
@@ -380,9 +399,17 @@ pglogical_get_worker(int slot)
  * Is the worker running?
  */
 bool
-pglogical_worker_running(PGLogicalWorker *w)
+pglogical_worker_running(PGLogicalWorker *worker)
 {
-	return w && w->proc;
+	return worker && worker->proc;
+}
+
+void
+pglogical_worker_kill(PGLogicalWorker *worker)
+{
+	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
+	if (pglogical_worker_running(worker))
+		kill(worker->proc->pid, SIGTERM);
 }
 
 static void

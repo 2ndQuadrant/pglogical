@@ -43,6 +43,9 @@ typedef struct PGLogicalWorker {
 	/* Pointer to proc array. NULL if not running. */
 	PGPROC *proc;
 
+	/* Time at which worker crashed (normally 0). */
+	TimestampTz	crashed_at;
+
 	/* Database id to connect to. */
 	Oid		dboid;
 
@@ -85,7 +88,6 @@ extern void pglogical_worker_shmem_init(void);
 
 extern int pglogical_worker_register(PGLogicalWorker *worker);
 extern void pglogical_worker_attach(int slot);
-extern void pglogical_worker_detach(bool signal_supervisor);
 
 extern PGLogicalWorker *pglogical_manager_find(Oid dboid);
 extern PGLogicalWorker *pglogical_apply_find(Oid dboid, Oid subscriberid);
@@ -97,5 +99,6 @@ extern List *pglogical_sync_find_all(Oid dboid, Oid subscriberid);
 
 extern PGLogicalWorker *pglogical_get_worker(int slot);
 extern bool pglogical_worker_running(PGLogicalWorker *w);
+extern void pglogical_worker_kill(PGLogicalWorker *worker);
 
 #endif /* PGLOGICAL_WORKER_H */

@@ -12,8 +12,6 @@
  */
 #include "postgres.h"
 
-#include "libpq-fe.h"
-
 #include "access/xact.h"
 
 #include "commands/extension.h"
@@ -28,19 +26,24 @@
 #include "pglogical_worker.h"
 #include "pglogical.h"
 
+#define NORMAL_SLEEP 180000L
+#define MINIMAL_SLEEP 5000L
+
 void pglogical_manager_main(Datum main_arg);
 
 /*
  * Manage the apply workers - start new ones, kill old ones.
  */
-static void
+static bool
 manage_apply_workers(void)
 {
 	PGLogicalLocalNode *node;
 	List	   *subscriptions;
 	List	   *workers;
+	List	   *subs_to_start = NIL;
 	ListCell   *slc,
 			   *wlc;
+	bool		ret = true;
 
 	/* Get list of existing workers. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
@@ -57,14 +60,13 @@ manage_apply_workers(void)
 	/* Get list of subscribers. */
 	subscriptions = get_node_subscriptions(node->node->id, false);
 
-	/* Register apply worker for each subscriber. */
+	/* Check for active workers for each subscription. */
 	foreach (slc, subscriptions)
 	{
 		PGLogicalSubscription  *sub = (PGLogicalSubscription *) lfirst(slc);
-		PGLogicalWorker			apply;
+		PGLogicalWorker		   *apply = NULL;
 		ListCell			   *next,
 							   *prev;
-		bool					found = false;
 
 		/*
 		 * Skip if subscriber not enabled.
@@ -78,15 +80,14 @@ manage_apply_workers(void)
 		prev = NULL;
 		for (wlc = list_head(workers); wlc; wlc = next)
 		{
-			PGLogicalWorker *worker = (PGLogicalWorker *) lfirst(wlc);
+			apply = (PGLogicalWorker *) lfirst(wlc);
 
 			/* We might delete the cell so advance it now. */
 			next = lnext(wlc);
 
-			if (worker->worker.apply.subid == sub->id)
+			if (apply->worker.apply.subid == sub->id)
 			{
 				workers = list_delete_cell(workers, wlc, prev);
-				found = true;
 				break;
 			}
 			else
@@ -94,8 +95,31 @@ manage_apply_workers(void)
 		}
 
 		/* Skip if the worker was alrady registered. */
-		if (found)
+		if (pglogical_worker_running(apply))
 			continue;
+
+		/* Check if this is crashed worker and if we want to restart it now. */
+		if (apply && apply->crashed_at != 0)
+		{
+			TimestampTz	restart_time;
+
+			restart_time = TimestampTzPlusMilliseconds(apply->crashed_at,
+													   MINIMAL_SLEEP);
+
+			if (restart_time > GetCurrentTimestamp())
+			{
+				ret = false;
+				continue;
+			}
+		}
+
+		subs_to_start = lappend(subs_to_start, sub);
+	}
+
+	foreach (slc, subs_to_start)
+	{
+		PGLogicalSubscription  *sub = (PGLogicalSubscription *) lfirst(slc);
+		PGLogicalWorker			apply;
 
 		memset(&apply, 0, sizeof(PGLogicalWorker));
 		apply.worker_type = PGLOGICAL_WORKER_APPLY;
@@ -109,19 +133,24 @@ manage_apply_workers(void)
 
 	CommitTransactionCommand();
 
-	/* Kill any remaining workers. */
+	/* Kill any remaining running workers. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	foreach (wlc, workers)
 	{
 		PGLogicalWorker *worker = (PGLogicalWorker *) lfirst(wlc);
-		if (pglogical_worker_running(worker))
-			kill(worker->proc->pid, SIGTERM);
+		pglogical_worker_kill(worker);
+
+		/* Cleanup old info about crashed apply workers. */
+		if (worker && worker->crashed_at != 0)
+			worker->worker_type = PGLOGICAL_WORKER_NONE;
 	}
 	LWLockRelease(PGLogicalCtx->lock);
 
 	/* No subscribers, exit. */
 	if (list_length(subscriptions) == 0)
 		proc_exit(0);
+
+	return ret;
 }
 
 /*
@@ -158,14 +187,15 @@ pglogical_manager_main(Datum main_arg)
 	/* Main wait loop. */
 	while (!got_SIGTERM)
     {
-		int rc;
+		int		rc;
+		bool	processed_all;
 
 		/* Launch the apply workers. */
-		manage_apply_workers();
+		processed_all = manage_apply_workers();
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   180000L);
+					   processed_all ? NORMAL_SLEEP : MINIMAL_SLEEP);
 
         ResetLatch(&MyProc->procLatch);
 
