@@ -368,7 +368,7 @@ pglogical_supervisor_main(Datum main_arg)
 
 	/* Assign the latch in shared memory to our process latch. */
 	PGLogicalCtx->supervisor = MyProc;
-	PGLogicalCtx->connections_changed = true;
+	PGLogicalCtx->subscriptions_changed = true;
 
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
 #if PG_VERSION_NUM >= 90500
@@ -382,9 +382,9 @@ pglogical_supervisor_main(Datum main_arg)
     {
 		int rc;
 
-		if (PGLogicalCtx->connections_changed)
+		if (PGLogicalCtx->subscriptions_changed)
 		{
-			PGLogicalCtx->connections_changed = false;
+			PGLogicalCtx->subscriptions_changed = false;
 			StartTransactionCommand();
 			start_manager_workers();
 			CommitTransactionCommand();

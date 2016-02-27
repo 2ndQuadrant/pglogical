@@ -71,7 +71,7 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 	/* pglogical_output assures us that we'll be called in a tx */
 	Assert(IsTransactionState());
 
-	node = get_local_node(false);
+	node = get_local_node(false, false);
 
 	/* Allocated in hook memory context, scoped to the logical decoding session: */
 	startup_args->private_data = private = (PGLogicalHooksPrivate*)palloc0(sizeof(PGLogicalHooksPrivate));

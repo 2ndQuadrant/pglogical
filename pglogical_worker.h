@@ -65,8 +65,8 @@ typedef struct PGLogicalContext {
 	/* Supervisor process. */
 	PGPROC	   *supervisor;
 
-	/* Signal that connections have changed. */
-	bool		connections_changed;
+	/* Signal that subscription info have changed. */
+	bool		subscriptions_changed;
 
 	/* Background workers. */
 	int			total_workers;
@@ -82,7 +82,7 @@ extern volatile sig_atomic_t got_SIGTERM;
 
 extern void handle_sigterm(SIGNAL_ARGS);
 
-extern void pglogical_connections_changed(void);
+extern void pglogical_subscription_changed(Oid subid);
 
 extern void pglogical_worker_shmem_init(void);
 

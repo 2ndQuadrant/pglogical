@@ -1832,10 +1832,11 @@ pglogical_apply_main(Datum main_arg)
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
 
+	elog(LOG, "starting apply for subscription %s", MySubscription->name);
+
 	/* If the subscription isn't initialized yet, initialize it. */
 	pglogical_sync_subscription(MySubscription);
 
-	elog(LOG, "starting apply for subscription %s", MySubscription->name);
 	elog(DEBUG1, "conneting to provider %s, dsn %s",
 		 MySubscription->origin->name, MySubscription->origin_if->dsn);
 

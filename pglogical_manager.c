@@ -53,7 +53,7 @@ manage_apply_workers(void)
 	StartTransactionCommand();
 
 	/* Get local node, exit if no found. */
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		proc_exit(0);
 
@@ -133,7 +133,7 @@ manage_apply_workers(void)
 
 	CommitTransactionCommand();
 
-	/* Kill any remaining running workers. */
+	/* Kill any remaining running workers that should not be running. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	foreach (wlc, workers)
 	{

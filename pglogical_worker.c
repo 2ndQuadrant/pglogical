@@ -22,6 +22,7 @@
 #include "storage/procarray.h"
 
 #include "utils/guc.h"
+#include "utils/memutils.h"
 
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
@@ -426,7 +427,16 @@ signal_worker_xact_callback(XactEvent event, void *arg)
 
 				LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
-				PGLogicalCtx->connections_changed = true;
+				if (arg != NULL)
+				{
+					Oid					subid = *(Oid *) arg;
+					PGLogicalWorker	   *apply;
+
+					apply = pglogical_apply_find(MyDatabaseId, subid);
+					pglogical_worker_kill(apply);
+				}
+
+				PGLogicalCtx->subscriptions_changed = true;
 
 				w = pglogical_manager_find(MyDatabaseId);
 
@@ -454,11 +464,19 @@ signal_worker_xact_callback(XactEvent event, void *arg)
  * Enqueue singal for supervisor/manager at COMMIT.
  */
 void
-pglogical_connections_changed(void)
+pglogical_subscription_changed(Oid subid)
 {
 	if (!xacthook_signal_workers)
 	{
-		RegisterXactCallback(signal_worker_xact_callback, NULL);
+		void *arg = NULL;
+
+		if (OidIsValid(subid))
+		{
+			arg = MemoryContextAlloc(TopTransactionContext, sizeof(subid));
+			memcpy(arg, &subid, sizeof(subid));
+		}
+
+		RegisterXactCallback(signal_worker_xact_callback, arg);
 		xacthook_signal_workers = true;
 	}
 }

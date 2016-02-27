@@ -149,7 +149,7 @@ create_node(PGLogicalNode *node)
 	bool		nulls[Natts_node];
 	NameData	node_name;
 
-	if (get_node_by_name(node->name, false, true) != NULL)
+	if (get_node_by_name(node->name, true) != NULL)
 		elog(ERROR, "node %s already exists", node->name);
 
 	/* Generate new id unless one was already specified. */
@@ -219,8 +219,6 @@ drop_node(Oid nodeid)
 	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
-
-	pglogical_connections_changed();
 }
 
 static PGLogicalNode *
@@ -274,7 +272,7 @@ get_node(Oid nodeid)
  * Load the info for specific node.
  */
 PGLogicalNode *
-get_node_by_name(const char *name, bool for_update, bool missing_ok)
+get_node_by_name(const char *name, bool missing_ok)
 {
 	PGLogicalNode  *node;
 	RangeVar	   *rv;
@@ -333,7 +331,7 @@ create_local_node(Oid nodeid, Oid ifid)
 	tupDesc = RelationGetDescr(rel);
 
 	/* TODO: better error message */
-	if (get_local_node(true))
+	if (get_local_node(false, true))
 		elog(ERROR, "current database is already configured as pglogical node");
 
 	/* Form a tuple. */
@@ -392,7 +390,7 @@ drop_local_node(void)
  * Return local node.
  */
 PGLogicalLocalNode *
-get_local_node(bool missing_ok)
+get_local_node(bool for_update, bool missing_ok)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -405,7 +403,8 @@ get_local_node(bool missing_ok)
 	PGLogicalLocalNode *res;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = heap_openrv(rv, for_update ?
+					  ShareUpdateExclusiveLock : RowExclusiveLock);
 
 	/* Find the local node tuple. */
 	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
@@ -417,7 +416,8 @@ get_local_node(bool missing_ok)
 		if (missing_ok)
 		{
 			systable_endscan(scan);
-			heap_close(rel, RowExclusiveLock);
+			heap_close(rel, for_update ?
+					   NoLock : RowExclusiveLock);
 			return NULL;
 		}
 
@@ -434,7 +434,7 @@ get_local_node(bool missing_ok)
 											desc, &isnull));
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, for_update ? NoLock : RowExclusiveLock);
 
 	res = (PGLogicalLocalNode *) palloc(sizeof(PGLogicalLocalNode));
 	res->node = get_node(nodeid);
@@ -530,11 +530,9 @@ drop_node_interface(Oid ifid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
-
-	pglogical_connections_changed();
 }
 
 /*
@@ -566,11 +564,9 @@ drop_node_interfaces(Oid nodeid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
-
-	pglogical_connections_changed();
 }
 
 /*
@@ -692,7 +688,7 @@ create_subscription(PGLogicalSubscription *sub)
 	/* Validate the new subscription name. */
 	validate_subscription_name(sub->name);
 
-	if (get_subscription_by_name(sub->name, false, true) != NULL)
+	if (get_subscription_by_name(sub->name, true) != NULL)
 		elog(ERROR, "subscription %s already exists", sub->name);
 
 	/* Generate new id unless one was already specified. */
@@ -745,7 +741,7 @@ create_subscription(PGLogicalSubscription *sub)
 
 	CommandCounterIncrement();
 
-	pglogical_connections_changed();
+	pglogical_subscription_changed(sub->id);
 }
 
 /*
@@ -827,11 +823,11 @@ alter_subscription(PGLogicalSubscription *sub)
 	/* Cleanup. */
 	heap_freetuple(newtup);
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
 
-	pglogical_connections_changed();
+	pglogical_subscription_changed(sub->id);
 }
 
 /*
@@ -870,7 +866,7 @@ drop_subscription(Oid subid)
 
 	CommandCounterIncrement();
 
-	pglogical_connections_changed();
+	pglogical_subscription_changed(subid);
 }
 
 
@@ -960,7 +956,7 @@ get_subscription(Oid subid)
  * Load the info for specific subscriber.
  */
 PGLogicalSubscription *
-get_subscription_by_name(const char *name, bool for_update, bool missing_ok)
+get_subscription_by_name(const char *name, bool missing_ok)
 {
 	PGLogicalSubscription    *sub;
 	RangeVar	   *rv;
@@ -998,7 +994,7 @@ get_subscription_by_name(const char *name, bool for_update, bool missing_ok)
 	sub = subscription_fromtuple(tuple, desc);
 
 	systable_endscan(scan);
-	heap_close(rel, for_update ? NoLock : RowExclusiveLock);
+	heap_close(rel, RowExclusiveLock);
 
 	return sub;
 }
@@ -1018,12 +1014,8 @@ get_node_subscriptions(Oid nodeid, bool origin)
 	ScanKeyData		key[1];
 	List		   *res = NIL;
 
-	/*
-	 * This specifically uses lock level which conflics with
-	 * RowEclusiveLock on catalog level.
-	 */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
-	rel = heap_openrv(rv, ExclusiveLock);
+	rel = heap_openrv(rv, RowExclusiveLock);
 	desc = RelationGetDescr(rel);
 
 	ScanKeyInit(&key[0],
@@ -1041,7 +1033,7 @@ get_node_subscriptions(Oid nodeid, bool origin)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, ExclusiveLock);
+	heap_close(rel, RowExclusiveLock);
 
 	return res;
 }

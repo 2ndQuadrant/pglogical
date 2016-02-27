@@ -181,7 +181,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalNode  *node;
 
-	node = get_node_by_name(node_name, true, !ifexists);
+	node = get_node_by_name(node_name, !ifexists);
 
 	if (node != NULL)
 	{
@@ -198,7 +198,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 					 errhint("drop the subscriptions first")));
 
 		/* If the node is local node, drop the record as well. */
-		local_node = get_local_node(true);
+		local_node = get_local_node(true, true);
 		if (local_node && local_node->node->id == node->id)
 		{
 			int		slotno;
@@ -273,7 +273,7 @@ pglogical_alter_node_add_interface(PG_FUNCTION_ARGS)
 	PGlogicalInterface *oldif,
 						newif;
 
-	node = get_node_by_name(node_name, true, false);
+	node = get_node_by_name(node_name, false);
 	if (node == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -306,7 +306,7 @@ pglogical_alter_node_drop_interface(PG_FUNCTION_ARGS)
 	PGLogicalNode	   *node;
 	PGlogicalInterface *oldif;
 
-	node = get_node_by_name(node_name, true, false);
+	node = get_node_by_name(node_name, false);
 	if (node == NULL)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -351,7 +351,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	NameData				slot_name;
 
 	/* Check that this is actually a node. */
-	localnode = get_local_node(false);
+	localnode = get_local_node(true, false);
 
 	/* Now, fetch info about remote node. */
 	conn = pglogical_connect(provider_dsn, "create_subscription");
@@ -370,7 +370,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	 * Check for existing local representation of remote node and interface
 	 * and lock it if it already exists.
 	 */
-	existing_origin = get_node_by_name(origin.name, true, true);
+	existing_origin = get_node_by_name(origin.name, true);
 
 	/*
 	 * If not found, crate local representation of remote node and interface.
@@ -482,7 +482,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalSubscription  *sub;
 
-	sub = get_subscription_by_name(sub_name, true, !ifexists);
+	sub = get_subscription_by_name(sub_name, !ifexists);
 
 	if (sub != NULL)
 	{
@@ -491,7 +491,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		PGLogicalLocalNode *node;
 		RepOriginId			originid;
 
-		node = get_local_node(false);
+		node = get_local_node(true, false);
 
 		/* First drop the status. */
 		drop_subscription_sync_status(sub->id);
@@ -580,8 +580,11 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalLocalNode *node;
+
+	/* XXX: Only used for locking purposes. */
+	node = get_local_node(true, false);
 
 	sub->enabled = false;
 
@@ -614,8 +617,11 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
+	PGLogicalLocalNode *node;
+
+	/* XXX: Only used for locking purposes. */
+	node = get_local_node(true, false);
 
 	sub->enabled = true;
 
@@ -644,10 +650,12 @@ pglogical_alter_subscription_interface(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *if_name = NameStr(*PG_GETARG_NAME(1));
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGlogicalInterface	   *new_if;
-	PGLogicalWorker		   *apply;
+	PGLogicalLocalNode *node;
+
+	/* XXX: Only used for locking purposes. */
+	node = get_local_node(true, false);
 
 	new_if = get_node_interface_by_name(sub->origin->id, if_name, false);
 
@@ -656,11 +664,6 @@ pglogical_alter_subscription_interface(PG_FUNCTION_ARGS)
 
 	sub->origin_if = new_if;
 	alter_subscription(sub);
-
-	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	pglogical_worker_kill(apply);
-	LWLockRelease(PGLogicalCtx->lock);
 
 	PG_RETURN_BOOL(true);
 }
@@ -673,10 +676,8 @@ pglogical_alter_subscription_add_replication_set(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	ListCell			   *lc;
-	PGLogicalWorker		   *apply;
 
 	foreach (lc, sub->replication_sets)
 	{
@@ -689,12 +690,6 @@ pglogical_alter_subscription_add_replication_set(PG_FUNCTION_ARGS)
 	sub->replication_sets = lappend(sub->replication_sets, repset_name);
 	alter_subscription(sub);
 
-	/* Apply as to reconnect to be able to receive new repset. */
-	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	pglogical_worker_kill(apply);
-	LWLockRelease(PGLogicalCtx->lock);
-
 	PG_RETURN_BOOL(true);
 }
 
@@ -706,12 +701,10 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, true,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	ListCell			   *lc,
 						   *next,
 						   *prev;
-	PGLogicalWorker		   *apply;
 
 	prev = NULL;
 	for (lc = list_head(sub->replication_sets); lc; lc = next)
@@ -726,12 +719,6 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 			sub->replication_sets = list_delete_cell(sub->replication_sets,
 													 lc, prev);
 			alter_subscription(sub);
-
-			/* Apply as to reconnect to be able to receive new repset. */
-			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-			apply = pglogical_apply_find(MyDatabaseId, sub->id);
-			pglogical_worker_kill(apply);
-			LWLockRelease(PGLogicalCtx->lock);
 
 			PG_RETURN_BOOL(true);
 		}
@@ -750,8 +737,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					truncate = PG_GETARG_BOOL(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGconn				   *conn;
 	List				   *tables;
 	ListCell			   *lc;
@@ -791,9 +777,9 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
 	if (pglogical_worker_running(apply))
 		apply->worker.apply.sync_pending = true;
+	else
+		pglogical_subscription_changed(sub->id);
 	LWLockRelease(PGLogicalCtx->lock);
-
-	pglogical_connections_changed();
 
 	PG_RETURN_BOOL(true);
 }
@@ -806,8 +792,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	Oid						reloid = PG_GETARG_OID(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGLogicalSyncStatus	   *oldsync;
 	PGLogicalWorker		   *apply;
 	Relation				rel;
@@ -842,18 +827,18 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 		create_local_sync_status(&newsync);
 	}
 
+	heap_close(rel, NoLock);
+
+	truncate_table(nspname, relname);
+
 	/* Tell apply to re-read sync statuses. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	apply = pglogical_apply_find(MyDatabaseId, sub->id);
 	if (pglogical_worker_running(apply))
 		apply->worker.apply.sync_pending = true;
+	else
+		pglogical_subscription_changed(sub->id);
 	LWLockRelease(PGLogicalCtx->lock);
-
-	heap_close(rel, NoLock);
-
-	truncate_table(nspname, relname);
-
-	pglogical_connections_changed();
 
 	PG_RETURN_BOOL(true);
 }
@@ -890,8 +875,7 @@ pglogical_show_subscription_table(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	Oid						reloid = PG_GETARG_OID(1);
-	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false,
-														   false);
+	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	char				   *nspname;
 	char				   *relname;
 	PGLogicalSyncStatus	   *sync;
@@ -977,7 +961,7 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 				 errmsg("materialize mode required, but it is not " \
 						"allowed in this context")));
 
-	node = get_local_node(true);
+	node = get_local_node(false, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -991,8 +975,7 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 	else
 	{
 		PGLogicalSubscription  *sub;
-		sub = get_subscription_by_name(NameStr(*PG_GETARG_NAME(0)), false,
-									   false);
+		sub = get_subscription_by_name(NameStr(*PG_GETARG_NAME(0)), false);
 		subscriptions = list_make1(sub);
 	}
 
@@ -1075,7 +1058,7 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 	PGLogicalRepSet		repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1111,7 +1094,7 @@ pglogical_alter_replication_set(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("set_name cannot be NULL")));
 
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1146,7 +1129,7 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 	PGLogicalRepSet    *repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1177,7 +1160,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	char			   *relname;
 	StringInfoData		json;
 
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1232,7 +1215,7 @@ pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
 	StringInfoData		json;
 	ListCell		   *lc;
 
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1315,7 +1298,7 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 	PGLogicalRepSet    *repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true);
+	node = get_local_node(true, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1347,7 +1330,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	PGLogicalLocalNode *node;
 	StringInfoData		cmd;
 
-	node = get_local_node(true);
+	node = get_local_node(false, true);
 	if (!node)
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
@@ -1371,7 +1354,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	{
 		char   *setname = lfirst(lc);
 
-		(void) get_replication_set_by_name(node->node->id, setname, false);		
+		(void) get_replication_set_by_name(node->node->id, setname, false);
 	}
 
 	save_nestlevel = NewGUCNestLevel();
@@ -1449,7 +1432,7 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 						funcname)));
 
 	/* If this is not pglogical node, don't do anything. */
-	local_node = get_local_node(true);
+	local_node = get_local_node(false, true);
 	if (!local_node)
 		PG_RETURN_VOID();
 
@@ -1557,7 +1540,7 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 						funcname)));
 
 	/* No local node? */
-	node = get_local_node(true);
+	node = get_local_node(false, true);
 	if (!node)
 		PG_RETURN_VOID();
 
@@ -1647,7 +1630,7 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 		elog(ERROR, "return type must be a row type");
 	tupdesc = BlessTupleDesc(tupdesc);
 
-	node = get_local_node(false);
+	node = get_local_node(false, false);
 
 	memset(nulls, 0, sizeof(nulls));
 
