@@ -21,6 +21,7 @@
 
 #include "utils/memutils.h"
 #include "utils/resowner.h"
+#include "utils/timestamp.h"
 
 #include "pglogical_node.h"
 #include "pglogical_worker.h"
