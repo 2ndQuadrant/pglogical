@@ -184,13 +184,13 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 
 		Assert(status == BGWH_NOT_YET_STARTED || status == BGWH_STARTED);
 
-		rc = WaitLatch(MyLatch,
+		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
 
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		ResetLatch(MyLatch);
+		ResetLatch(&MyProc->procLatch);
 	}
 }
 
