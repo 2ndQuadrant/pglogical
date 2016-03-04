@@ -50,11 +50,12 @@ void
 pglogical_init_relmetacache(MemoryContext decoding_context)
 {
 	HASHCTL	ctl;
+	int		hash_flags;
 
 	Assert(RelMetaCache == NULL);
 
 	/* Make a new hash table for the cache */
-	int hash_flags = HASH_ELEM | HASH_CONTEXT;
+	hash_flags = HASH_ELEM | HASH_CONTEXT;
 
 	MemSet(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(Oid);
