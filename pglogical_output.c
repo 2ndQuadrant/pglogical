@@ -102,7 +102,7 @@ check_binary_compatibility(PGLogicalOutputData *data)
 	if (data->client_binary_bigendian_set
 		&& data->client_binary_bigendian != server_bigendian())
 	{
-		elog(DEBUG1, "Binary mode rejected: Server and client endian mis-match");
+		elog(DEBUG1, "Binary mode rejected: Server and client endian mismatch");
 		return false;
 	}
 
@@ -300,7 +300,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		}
 
 		/*
-		 * It's obviously not possible to send binary representatio of data
+		 * It's obviously not possible to send binary representation of data
 		 * unless we use the binary output.
 		 */
 		if (opt->output_type == OUTPUT_PLUGIN_BINARY_OUTPUT &&

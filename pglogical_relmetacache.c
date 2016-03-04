@@ -111,7 +111,7 @@ relmeta_cache_callback(Datum arg, Oid relid)
 	 * it's safe to directly HASH_REMOVE the entries as soon as they are
 	 * invalidated. Finding them and flagging them invalid then removing
 	 * them lazily might save some memory churn for tables that get
-	 * repeatedly invalidated and re-sent, but it dodesn't seem worth
+	 * repeatedly invalidated and re-sent, but it doesn't seem worth
 	 * doing.
 	 *
 	 * Getting invalidations for relations that aren't in the table is
@@ -122,7 +122,7 @@ relmeta_cache_callback(Datum arg, Oid relid)
  }
 
 /*
- * Look up an entry, creating it not found.
+ * Look up an entry, creating it if not found.
  *
  * Newly created entries are returned as is_cached=false. The API
  * hook can set is_cached to skip subsequent updates if it sent a
