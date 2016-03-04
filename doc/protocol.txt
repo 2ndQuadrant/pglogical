@@ -271,9 +271,9 @@ message.
 |Message type|signed char|Literal ‘**R**’ (0x52)
 |flags|uint8| * 0-6: Reserved, client _must_ ERROR if set and not recognised.
 |relidentifier|uint32|Arbitrary relation id, unique for this upstream. In practice this will probably be the upstream table’s oid, but the downstream can’t assume anything.
-|nspnamelength|uint8|Length of namespace name
+|nspnamelength|uint8|Length of namespace name (incl. terminating \0)
 |nspname|signed char[nspnamelength]|Relation namespace (null terminated)
-|relnamelength|uint8|Length of relation name
+|relnamelength|uint8|Length of relation name (incl. terminating \0)
 |relname|char[relname]|Relation name (null terminated)
 |attrs block|signed char|Literal: ‘**A**’ (0x41)
 |natts|uint16|number of attributes
@@ -291,6 +291,9 @@ last metadata block in the prior column.
 It has the same char header as all the others, and the flags field is the same
 size as the length field in other blocks, so it’s safe to read this as a column
 metadata block header.
+
+Currently, the only defined flag is 0x1 indicating that the column is part of
+the relation's identity key.
 
 |===
 |*Message*|*Type/Size*|*Notes*
