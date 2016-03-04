@@ -64,7 +64,7 @@ void
 pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 		struct PGLRelMetaCacheEntry *cache_entry)
 {
-	const char *nspname;
+	char	   *nspname;
 	uint8		nspnamelen;
 	const char *relname;
 	uint8		relnamelen;
@@ -112,6 +112,8 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 	 */
 	if (cache_entry != NULL)
 		cache_entry->is_cached = true;
+
+	pfree(nspname);
 }
 
 /*
@@ -165,6 +167,8 @@ pglogical_write_attrs(StringInfo out, Relation rel)
 		pq_sendint(out, len, 2);
 		pq_sendbytes(out, attname, len); /* data */
 	}
+
+	bms_free(idattrs);
 }
 
 /*

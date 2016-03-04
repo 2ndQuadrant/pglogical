@@ -550,7 +550,7 @@ send_startup_message(LogicalDecodingContext *ctx,
 	data->api->write_startup_message(ctx->out, msg);
 	OutputPluginWrite(ctx, last_message);
 
-	pfree(msg);
+	list_free_deep(msg);
 
 	startup_message_sent = true;
 }
