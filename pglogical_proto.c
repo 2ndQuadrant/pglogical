@@ -11,8 +11,9 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
 #include "pglogical_output.h"
+
+#include "pglogical_proto_internal.h"
 #include "pglogical_proto.h"
 #include "pglogical_proto_native.h"
 #include "pglogical_proto_json.h"

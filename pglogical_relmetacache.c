@@ -11,14 +11,14 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
 #include "pglogical_output.h"
+
+#include "utils/inval.h"
+#include "utils/rel.h"
+
+#include "pglogical_output_internal.h"
 #include "pglogical_relmetacache.h"
 
-#include "utils/catcache.h"
-#include "utils/inval.h"
-#include "utils/memutils.h"
-#include "utils/rel.h"
 
 static void relmeta_cache_callback(Datum arg, Oid relid);
 

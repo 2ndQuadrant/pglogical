@@ -11,45 +11,19 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
-#include "pglogical_output/compat.h"
-#include "pglogical_config.h"
 #include "pglogical_output.h"
-#include "pglogical_proto.h"
-#include "pglogical_hooks.h"
-#include "pglogical_relmetacache.h"
-
-#include "access/hash.h"
-#include "access/sysattr.h"
-#include "access/xact.h"
-
-#include "catalog/pg_class.h"
-#include "catalog/pg_proc.h"
-#include "catalog/pg_type.h"
 
 #include "mb/pg_wchar.h"
-
-#include "nodes/parsenodes.h"
-
-#include "parser/parse_func.h"
-
-#include "replication/output_plugin.h"
 #include "replication/logical.h"
 #ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
 #endif
 
-#include "utils/builtins.h"
-#include "utils/catcache.h"
-#include "utils/guc.h"
-#include "utils/int8.h"
-#include "utils/inval.h"
-#include "utils/lsyscache.h"
-#include "utils/memutils.h"
-#include "utils/rel.h"
-#include "utils/relcache.h"
-#include "utils/syscache.h"
-#include "utils/typcache.h"
+#include "pglogical_config.h"
+#include "pglogical_output_internal.h"
+#include "pglogical_proto.h"
+#include "pglogical_hooks.h"
+#include "pglogical_relmetacache.h"
 
 PG_MODULE_MAGIC;
 

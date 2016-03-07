@@ -3,9 +3,8 @@
 
 #include "access/xlogdefs.h"
 #include "nodes/pg_list.h"
-#include "utils/rel.h"
-#include "utils/palloc.h"
 #include "replication/reorderbuffer.h"
+#include "utils/relcache.h"
 
 #include "pglogical_output/compat.h"
 
@@ -18,56 +17,56 @@
  */
 
 
-struct PGLogicalStartupHookArgs
+typedef struct PGLogicalStartupHookArgs
 {
 	void	   *private_data;
 	List	   *in_params;
 	List	   *out_params;
-};
+} PGLogicalStartupHookArgs;
 
-typedef void (*pglogical_startup_hook_fn)(struct PGLogicalStartupHookArgs *args);
+typedef void (*pglogical_startup_hook_fn)(PGLogicalStartupHookArgs *args);
 
 
-struct PGLogicalTxnFilterArgs
+typedef struct PGLogicalTxnFilterArgs
 {
 	void 	   *private_data;
 	RepOriginId	origin_id;
-};
+} PGLogicalTxnFilterArgs;
 
-typedef bool (*pglogical_txn_filter_hook_fn)(struct PGLogicalTxnFilterArgs *args);
+typedef bool (*pglogical_txn_filter_hook_fn)(PGLogicalTxnFilterArgs *args);
 
 
-struct PGLogicalRowFilterArgs
+typedef struct PGLogicalRowFilterArgs
 {
 	void 	   *private_data;
 	Relation	changed_rel;
 	enum ReorderBufferChangeType	change_type;
 	/* detailed row change event from logical decoding */
-	ReorderBufferChange* change;
-};
+	ReorderBufferChange *change;
+} PGLogicalRowFilterArgs;
 
-typedef bool (*pglogical_row_filter_hook_fn)(struct PGLogicalRowFilterArgs *args);
+typedef bool (*pglogical_row_filter_hook_fn)(PGLogicalRowFilterArgs *args);
 
 
-struct PGLogicalShutdownHookArgs
+typedef struct PGLogicalShutdownHookArgs
 {
 	void	   *private_data;
-};
+} PGLogicalShutdownHookArgs;
 
-typedef void (*pglogical_shutdown_hook_fn)(struct PGLogicalShutdownHookArgs *args);
+typedef void (*pglogical_shutdown_hook_fn)(PGLogicalShutdownHookArgs *args);
 
 /*
  * This struct is passed to the pglogical_get_hooks_fn as the first argument,
  * typed 'internal', and is unwrapped with `DatumGetPointer`.
  */
-struct PGLogicalHooks
+typedef struct PGLogicalHooks
 {
 	pglogical_startup_hook_fn startup_hook;
 	pglogical_shutdown_hook_fn shutdown_hook;
 	pglogical_txn_filter_hook_fn txn_filter_hook;
 	pglogical_row_filter_hook_fn row_filter_hook;
 	void *hooks_private_data;
-};
+} PGLogicalHooks;
 
 
 #endif /* PGLOGICAL_OUTPUT_HOOKS_H */

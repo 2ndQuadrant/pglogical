@@ -11,37 +11,24 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
-#include "miscadmin.h"
-
 #include "pglogical_output.h"
-#include "pglogical_proto_json.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
-#include "access/xact.h"
-
-#include "catalog/catversion.h"
 #include "catalog/index.h"
-
 #include "catalog/namespace.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_type.h"
-
 #include "commands/dbcommands.h"
-
 #include "executor/spi.h"
-
 #include "libpq/pqformat.h"
-
 #include "mb/pg_wchar.h"
-
+#include "miscadmin.h"
 #ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
 #endif
-
 #include "utils/builtins.h"
 #include "utils/json.h"
 #include "utils/lsyscache.h"
@@ -51,6 +38,8 @@
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
 
+#include "pglogical_output_internal.h"
+#include "pglogical_proto_json.h"
 
 /*
  * Write BEGIN to the output stream.

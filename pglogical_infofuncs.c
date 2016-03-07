@@ -10,13 +10,12 @@
  *
  *-------------------------------------------------------------------------
  */
-
 #include "postgres.h"
-#include "fmgr.h"
+#include "pglogical_output.h"
 
+#include "fmgr.h"
 #include "utils/builtins.h"
 
-#include "pglogical_output.h"
 
 Datum pglogical_output_version(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(pglogical_output_version);

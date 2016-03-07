@@ -11,27 +11,16 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
-#include "pglogical_output/compat.h"
-#include "pglogical_config.h"
 #include "pglogical_output.h"
 
 #include "catalog/catversion.h"
-#include "catalog/namespace.h"
-
 #include "mb/pg_wchar.h"
-
 #include "nodes/makefuncs.h"
-
 #include "utils/builtins.h"
 #include "utils/int8.h"
-#include "utils/inval.h"
-#include "utils/lsyscache.h"
-#include "utils/memutils.h"
-#include "utils/rel.h"
-#include "utils/relcache.h"
-#include "utils/syscache.h"
-#include "utils/typcache.h"
+
+#include "pglogical_config.h"
+#include "pglogical_output_internal.h"
 
 typedef enum PGLogicalOutputParamType
 {

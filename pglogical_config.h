@@ -1,10 +1,6 @@
 #ifndef PG_LOGICAL_CONFIG_H
 #define PG_LOGICAL_CONFIG_H
 
-#ifndef PG_VERSION_NUM
-#error <postgres.h> must be included first
-#endif
-
 #include "nodes/pg_list.h"
 #include "pglogical_output.h"
 
@@ -50,6 +46,6 @@ server_bigendian(void)
 
 extern int process_parameters(List *options, PGLogicalOutputData *data);
 
-extern List * prepare_startup_message(PGLogicalOutputData *data);
+extern List *prepare_startup_message(PGLogicalOutputData *data);
 
 #endif

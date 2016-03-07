@@ -1,23 +1,20 @@
 #include "postgres.h"
+#include "pglogical_output.h"
 
 #include "access/xact.h"
-
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
-
+#include "miscadmin.h"
+#include "parser/parse_func.h"
 #ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
 #endif
-
-#include "parser/parse_func.h"
-
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 
-#include "miscadmin.h"
-
 #include "pglogical_hooks.h"
-#include "pglogical_output.h"
+#include "pglogical_output_internal.h"
+
 
 /*
  * Returns Oid of the hooks function specified in funcname.
