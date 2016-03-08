@@ -149,7 +149,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   Parameters:
   - `node_name` - name of an existing node
   - `interface_name` - name of a new interface to be added
-  - `dsn` - connetion string to the node used for the new interface
+  - `dsn` - connection string to the node used for the new interface
 
 - `pglogical.alter_node_drop_interface(node_name name, interface_name name)`
   Remove existing interface from a node.

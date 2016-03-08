@@ -828,7 +828,7 @@ pglogical_sync_main(Datum main_arg)
 
 	elog(LOG, "starting sync of table %s.%s for subscriber %s",
 		 copytable->schemaname, copytable->relname, MySubscription->name);
-	elog(DEBUG1, "conneting to provider %s, dsn %s",
+	elog(DEBUG1, "connecting to provider %s, dsn %s",
 		 MySubscription->origin_if->name, MySubscription->origin_if->dsn);
 
 	/* Do the initial sync first. */

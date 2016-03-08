@@ -1837,7 +1837,7 @@ pglogical_apply_main(Datum main_arg)
 	/* If the subscription isn't initialized yet, initialize it. */
 	pglogical_sync_subscription(MySubscription);
 
-	elog(DEBUG1, "conneting to provider %s, dsn %s",
+	elog(DEBUG1, "connecting to provider %s, dsn %s",
 		 MySubscription->origin->name, MySubscription->origin_if->dsn);
 
 	/*
