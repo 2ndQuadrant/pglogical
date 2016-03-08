@@ -666,7 +666,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		set_subscription_sync_status(sub->id, status);
 		CommitTransactionCommand();
 
-		elog(INFO, "finished synchronization of subsriber %s, ready to enter normal replication", sub->name);
+		elog(INFO, "finished synchronization of subscriber %s, ready to enter normal replication", sub->name);
 	}
 
 	MemoryContextDelete(myctx);

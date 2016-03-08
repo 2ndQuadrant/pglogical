@@ -349,7 +349,7 @@ BEGIN
 	END LOOP;
 END;
 $$;
-INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (4,4,'name4'); -- id2 will be 99 on subsriber
+INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (4,4,'name4'); -- id2 will be 99 on subscriber
 ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null default 0;
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (5,5,'name5'); -- id2 will be 0 on both
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
