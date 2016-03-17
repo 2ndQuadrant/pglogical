@@ -10,6 +10,7 @@ import time
 import sys
 import os
 from pglogical_protoreader import ProtocolReader
+from pglogical_protovalidator import ProtocolValidator
 
 from pglogical_proto import ReplicationMessage
 
@@ -282,4 +283,5 @@ class PGLogicalOutputTest(unittest.TestCase):
             raise ValueError("No logical decoding connection. Call connect_decoding()")
 
         msg_gen = self.interface.get_changes(kwargs)
-        return ProtocolReader(msg_gen, tester=self, parentlogger=self.logger)
+        return ProtocolReader(msg_gen, validator = ProtocolValidator(),
+                               tester=self, parentlogger=self.logger)
