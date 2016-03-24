@@ -29,7 +29,6 @@ PG_MODULE_MAGIC;
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
-/* These must be available to pg_dlsym() */
 static void pg_decode_startup(LogicalDecodingContext * ctx,
 							  OutputPluginOptions *opt, bool is_init);
 static void pg_decode_shutdown(LogicalDecodingContext * ctx);
