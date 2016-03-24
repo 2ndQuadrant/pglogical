@@ -157,7 +157,6 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 	{
 		Assert(hentry->relid = RelationGetRelid(rel));
 		hentry->is_cached = false;
-		hentry->api_private = NULL;
 	}
 
 	Assert(hentry != NULL);
@@ -170,11 +169,6 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 /*
  * Tear down the relation metadata cache at the end of a decoding
  * session.
- *
- * The api_private data need not be freed explicitly; it'll be purged
- * by destruction of the memory context. The main reason we do this
- * much is to make sure we nullify the global, making sure that
- * callbacks will see that there's nothing to do.
  */
 void
 pglogical_destroy_relmetacache(void)

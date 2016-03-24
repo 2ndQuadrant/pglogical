@@ -12,8 +12,6 @@ typedef struct PGLRelMetaCacheEntry
 	Oid relid;
 	/* Does the client have this relation cached? */
 	bool is_cached;
-	/* Field for API plugin use, must be alloc'd in decoding context */
-	void *api_private;
 } PGLRelMetaCacheEntry;
 
 extern void pglogical_init_relmetacache(MemoryContext decoding_context);
