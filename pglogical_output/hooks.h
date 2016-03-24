@@ -40,6 +40,7 @@ typedef struct PGLogicalRowFilterArgs
 {
 	void 	   *private_data;
 	Relation	changed_rel;
+	ReorderBufferTXN * txn;
 	enum ReorderBufferChangeType	change_type;
 	/* detailed row change event from logical decoding */
 	ReorderBufferChange *change;
