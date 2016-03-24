@@ -63,8 +63,7 @@ enum {
 	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
 	PARAM_PG_VERSION,
 	PARAM_HOOKS_SETUP_FUNCTION,
-	PARAM_NO_TXINFO,
-	PARAM_RELMETA_CACHE_SIZE
+	PARAM_NO_TXINFO
 } OutputPluginParamKey;
 
 typedef struct {
@@ -91,7 +90,6 @@ static OutputPluginParam param_lookup[] = {
 	{"pg_version", PARAM_PG_VERSION},
 	{"hooks.setup_function", PARAM_HOOKS_SETUP_FUNCTION},
 	{"no_txinfo", PARAM_NO_TXINFO},
-	{"relmeta_cache_size", PARAM_RELMETA_CACHE_SIZE},
 	{NULL, PARAM_UNRECOGNISED}
 };
 
@@ -226,11 +224,6 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 			case PARAM_NO_TXINFO:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
 				data->client_no_txinfo = DatumGetBool(val);
-				break;
-
-			case PARAM_RELMETA_CACHE_SIZE:
-				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_INT32);
-				data->client_relmeta_cache_size = DatumGetInt32(val);
 				break;
 
 			case PARAM_UNRECOGNISED:
@@ -497,11 +490,6 @@ prepare_startup_message(PGLogicalOutputData *data)
 			data->hooks.row_filter_hook != NULL);
 	l = add_startup_msg_b(l, "hooks.transaction_filter_enabled",
 			data->hooks.txn_filter_hook != NULL);
-
-	/* Cache control and other misc options */
-	l = add_startup_msg_i(l, "relmeta_cache_size",
-			data->relmeta_cache_size);
-
 
 	/*
 	 * Output any extra params supplied by a startup hook by appending

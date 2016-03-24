@@ -144,16 +144,6 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 	struct PGLRelMetaCacheEntry *hentry;
 	bool found;
 
-	if (data->relmeta_cache_size == 0)
-	{
-		/*
-		 * If cache is disabled must treat every search as a miss
-		 * and return no entry to populate.
-		 */
-		*entry = NULL;
-		return false;
-	}
-
 	/* Find cached function info, creating if not found */
 	hentry = (struct PGLRelMetaCacheEntry*) hash_search(RelMetaCache,
 										 (void *)(&RelationGetRelid(rel)),

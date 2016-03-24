@@ -315,42 +315,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			call_startup_hook(data, ctx->output_plugin_options);
 		}
 
-		if (data->client_relmeta_cache_size < -1)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("relmeta_cache_size must be -1, 0, or positive")));
-		}
-
-		/*
-		 * Relation metadata cache configuration.
-		 *
-		 * TODO: support fixed size cache
-		 *
-		 * Need a LRU for eviction, and need to implement a new message type for
-		 * cache purge notifications for clients. In the mean time force it to 0
-		 * (off). The client will be told via a startup param and must respect
-		 * that.
-		 */
-		if (data->client_relmeta_cache_size != 0
-				&& data->client_relmeta_cache_size != -1)
-		{
-			ereport(INFO,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("fixed size cache not supported, forced to off"),
-					 errdetail("only relmeta_cache_size=0 (off) or relmeta_cache_size=-1 (unlimited) supported")));
-
-			data->relmeta_cache_size = 0;
-		}
-		else
-		{
-			/* ack client request */
-			data->relmeta_cache_size = data->client_relmeta_cache_size;
-		}
-
-		/* if cache enabled, init it */
-		if (data->relmeta_cache_size != 0)
-			pglogical_init_relmetacache(ctx->context);
+		pglogical_init_relmetacache(ctx->context);
 	}
 }
 

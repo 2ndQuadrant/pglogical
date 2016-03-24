@@ -58,14 +58,14 @@ with logical replication.
 
 The upstream expects the client to cache this metadata and re-use it when data
 is sent for the relation again. Cache size controls, an LRU and purge
-notifications will be added.
+notifications will be added later; for now the client must cache everything
+indefinitely.
 
 ## Relation metadata cache size controls
 
 The relation metadata cache will have downstream size control added. The
 downstream will send a parameter indicating that it supports caching, and the
-maximum cache size desired. The option will have settings for "no cache",
-"cache unlimited" and "fixed size LRU [size specified]".
+maximum cache size desired.
 
 Since there is no downstream-to-upstream communication after the startup params
 there's no easy way for the downstream to tell the upstream when it purges

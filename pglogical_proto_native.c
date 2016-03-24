@@ -49,9 +49,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 	uint8		relnamelen;
 	uint8		flags = 0;
 
-	/* must not have cache entry if metacache off; must have entry if on */
-	Assert( (data->relmeta_cache_size == 0) == (cache_entry == NULL) );
-	/* if cache enabled must never be called with an already-cached rel */
+	/* must never be called with an already-cached rel */
 	Assert(cache_entry == NULL || !cache_entry->is_cached);
 
 	pq_sendbyte(out, 'R');		/* sending RELATION */
