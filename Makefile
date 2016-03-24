@@ -77,9 +77,9 @@ dist-common: clean
 	@if [ -n "`git ls-files --exclude-standard --others`" ]; then echo >&2 "WARNING: git working tree has unstaged files which were IGNORED!"; fi
 	@echo $(GITHASH) > .distgitrev
 	@git name-rev --tags --name-only `cat .distgitrev` > .distgittag
-	@git ls-tree -r -t --full-tree HEAD --name-only | grep -v '^test' |\
-	  tar cjf "${distdir}.tar.bz2" --transform="s|^|${distdir}/|" -T - \
-	    .distgitrev .distgittag
+	@(git ls-tree -r -t --full-tree HEAD --name-only ; \
+	  echo .distgitrev ; echo .distgittag) | grep -v '^test' |\
+	  tar cjf "${distdir}.tar.bz2" --transform="s|^|${distdir}/|" -T -
 	@echo >&2 "Prepared ${distdir}.tar.bz2 for rev=`cat .distgitrev`, tag=`cat .distgittag`"
 	@rm -f .distgitrev .distgittag
 	@md5sum "${distdir}.tar.bz2" > "${distdir}.tar.bz2.md5"
