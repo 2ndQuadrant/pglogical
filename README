@@ -307,6 +307,11 @@ accessible on future calls to hook functions. It need not be manually freed, as
 the memory context used for logical decoding will free it when it's freed.
 Don't put anything in it that needs manual cleanup.
 
+Hooks other than the hook setup function and the startup hook are called in a
+short-lived memory context. If they want to preserve anything they allocate
+after the hook returns they must switch to the memory context that was passed
+to the setup function and allocate it there.
+
 Each hook has its own C signature (defined below) and the pointers must be
 directly to the functions. Hooks that the client does not wish to set must be
 left null.
@@ -322,7 +327,10 @@ hook was successfully activated because no error is seen.
 Hook functions are called in the context of the backend doing logical decoding.
 Except for the startup hook, hooks see the catalog state as it was at the time
 the transaction or row change being examined was made. Access to to non-catalog
-tables is unsafe unless they have the `user_catalog_table` reloption set.
+tables is unsafe unless they have the `user_catalog_table` reloption set. Among
+other things this means that it's not safe to invoke arbitrary functions,
+user-defined procedures, etc, from hooks.
+
 
 ## Startup hook
 
@@ -353,6 +361,10 @@ Unlike the other hooks, this hook sees a snapshot of the database's current
 state, not a time-traveled catalog state. It is safe to access all tables from
 this hook.
 
+Also unlike other hooks, the startup hook is called in a memory context with
+the same lifetime of the decoding session. It's called in the same context
+as the one that's passed to the hook setup hook.
+
 ## Transaction filter hook
 
 The transaction filter hook can exclude entire transactions from being decoded
@@ -380,6 +392,8 @@ differ from that of the transaction as a whole.
 When successfully enabled, the output parameter
 `hooks.transaction_filter_enabled` is set to true in the startup reply message.
 
+Memory allocated in this hook is freed at the end of the call.
+
 ## Row filter hook
 
 The row filter hook is called for each row. It is passed information about the
@@ -402,6 +416,8 @@ transaction filter hook rather than filtering out individual rows.
 When successfully enabled, the output parameter
 `hooks.row_filter_enabled` is set to true in the startup reply message.
 
+Memory allocated in this hook is freed at the end of the call.
+
 ## Shutdown hook
 
 The shutdown hook is called when a decoding session ends. You can't rely on
@@ -413,11 +429,6 @@ You don't need a hook to free memory you allocated, unless you explicitly
 switched to a longer lived memory context like `TopMemoryContext`. Memory
 allocated in the hook context will be automatically freed when the decoding
 session shuts down.
-
-## Writing hooks in procedural languages
-
-You can write hooks in PL/PgSQL, etc, too, via the `pglogical_output_plhooks`
-adapter extension in `examples/hooks`. They won't perform very well though.
 
 # Limitations
 

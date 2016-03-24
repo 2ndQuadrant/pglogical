@@ -66,7 +66,16 @@ struct PGLogicalOutputData
 	/* hooks */
 	List	   *hooks_setup_funcname;
 	PGLogicalHooks hooks;
-	MemoryContext hooks_mctxt;
+	/*
+	 * The hooks_session_mctxt has the same lifetime as the decoding
+	 * session's memory context. It's mainly there so that it's easier
+	 * to keep track of memory used by hooks when debugging.
+	 *
+	 * Individual hook callbacks are called in a shorter lived context. If
+	 * they want to allocate memory that persists longer than the callback
+	 * they must switch to the hooks memory context.
+	 */
+	MemoryContext hooks_session_mctxt;
 
 	/* DefElem<String> list populated by startup hook */
 	List	   *extra_startup_params;

@@ -81,7 +81,7 @@ load_hooks(PGLogicalOutputData *data)
 	{
 		hooks_func = get_hooks_function_oid(data->hooks_setup_funcname);
 
-		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
+		old_ctxt = MemoryContextSwitchTo(data->hooks_session_mctxt);
 		(void) OidFunctionCall1(hooks_func, PointerGetDatum(&data->hooks));
 		MemoryContextSwitchTo(old_ctxt);
 
@@ -125,7 +125,7 @@ call_startup_hook(PGLogicalOutputData *data, List *plugin_params)
 			StartTransactionCommand();
 		}
 
-		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
+		old_ctxt = MemoryContextSwitchTo(data->hooks_session_mctxt);
 		(void) (*data->hooks.startup_hook)(&args);
 		MemoryContextSwitchTo(old_ctxt);
 
@@ -152,7 +152,7 @@ call_shutdown_hook(PGLogicalOutputData *data)
 
 		elog(DEBUG3, "calling pglogical shutdown hook");
 
-		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
+		old_ctxt = MemoryContextSwitchTo(data->hooks_session_mctxt);
 		(void) (*data->hooks.shutdown_hook)(&args);
 		MemoryContextSwitchTo(old_ctxt);
 
@@ -171,7 +171,6 @@ call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
 		Relation rel, ReorderBufferChange *change)
 {
 	struct  PGLogicalRowFilterArgs hook_args;
-	MemoryContext old_ctxt;
 	bool ret = true;
 
 	if (data->hooks.row_filter_hook != NULL)
@@ -183,9 +182,7 @@ call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
 
 		elog(DEBUG3, "calling pglogical row filter hook");
 
-		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
 		ret = (*data->hooks.row_filter_hook)(&hook_args);
-		MemoryContextSwitchTo(old_ctxt);
 
 		/* Filter hooks shouldn't change the private data ptr */
 		Assert(data->hooks.hooks_private_data == hook_args.private_data);
@@ -201,7 +198,6 @@ call_txn_filter_hook(PGLogicalOutputData *data, RepOriginId txn_origin)
 {
 	struct PGLogicalTxnFilterArgs hook_args;
 	bool ret = true;
-	MemoryContext old_ctxt;
 
 	if (data->hooks.txn_filter_hook != NULL)
 	{
@@ -210,9 +206,7 @@ call_txn_filter_hook(PGLogicalOutputData *data, RepOriginId txn_origin)
 
 		elog(DEBUG3, "calling pglogical txn filter hook");
 
-		old_ctxt = MemoryContextSwitchTo(data->hooks_mctxt);
 		ret = (*data->hooks.txn_filter_hook)(&hook_args);
-		MemoryContextSwitchTo(old_ctxt);
 
 		/* Filter hooks shouldn't change the private data ptr */
 		Assert(data->hooks.hooks_private_data == hook_args.private_data);

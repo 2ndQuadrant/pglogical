@@ -305,7 +305,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		if (data->hooks_setup_funcname != NIL)
 		{
 
-			data->hooks_mctxt = AllocSetContextCreate(ctx->context,
+			data->hooks_session_mctxt =
+				AllocSetContextCreate(ctx->context,
 					"pglogical_output hooks context",
 					ALLOCSET_SMALL_MINSIZE,
 					ALLOCSET_SMALL_INITSIZE,
@@ -538,7 +539,7 @@ static void pg_decode_shutdown(LogicalDecodingContext * ctx)
 	pglogical_destroy_relmetacache();
 
 	/*
-	 * no need to delete data->context or data->hooks_mctxt as they're children
-	 * of ctx->context which will expire on return.
+	 * no need to delete data->context or data->hooks_session_mctxt as they're
+	 * children of ctx->context which will expire on return.
 	 */
 }
