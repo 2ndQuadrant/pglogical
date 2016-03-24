@@ -99,6 +99,8 @@ pglogical_init_relmetacache(MemoryContext decoding_context)
 static void
 relmeta_cache_callback(Datum arg, Oid relid)
  {
+	struct PGLRelMetaCacheEntry *hentry;
+
 	/*
 	 * We can be called after decoding session teardown becaues the
 	 * relcache callback isn't cleared. In that case there's no action
@@ -108,18 +110,22 @@ relmeta_cache_callback(Datum arg, Oid relid)
 		return;
 
 	/*
-	 * Nobody keeps pointers to entries in this hash table around so
-	 * it's safe to directly HASH_REMOVE the entries as soon as they are
-	 * invalidated. Finding them and flagging them invalid then removing
-	 * them lazily might save some memory churn for tables that get
-	 * repeatedly invalidated and re-sent, but it doesn't seem worth
-	 * doing.
+	 * Nobody keeps pointers to entries in this hash table around outside
+	 * logical decoding callback calls - but invalidation events can come in
+	 * *during* a callback if we access the relcache in the callback. Because
+	 * of that we must mark the cache entry as invalid but not remove it from
+	 * the hash while it could still be referenced, then prune it at a later
+	 * safe point.
 	 *
 	 * Getting invalidations for relations that aren't in the table is
 	 * entirely normal, since there's no way to unregister for an
 	 * invalidation event. So we don't care if it's found or not.
 	 */
-	(void) hash_search(RelMetaCache, &relid, HASH_REMOVE, NULL);
+	hentry = (struct PGLRelMetaCacheEntry *)
+		hash_search(RelMetaCache, &relid, HASH_FIND, NULL);
+
+	if (hentry != NULL)
+		hentry->is_valid = false;
  }
 
 /*
@@ -177,5 +183,31 @@ pglogical_destroy_relmetacache(void)
 	{
 		hash_destroy(RelMetaCache);
 		RelMetaCache = NULL;
+	}
+}
+
+/*
+ * Prune !is_valid entries from the relation metadata cache
+ *
+ * This must only be called when there couldn't be any references to
+ * possibly-invalid entries.
+ */
+void
+pglogical_prune_relmetacache(void)
+{
+	HASH_SEQ_STATUS status;
+	struct PGLRelMetaCacheEntry *hentry;
+
+	hash_seq_init(&status, RelMetaCache);
+
+	while ((hentry = (struct PGLRelMetaCacheEntry*) hash_seq_search(&status)) != NULL)
+	{
+		if (!hentry->is_valid)
+		{
+			if (hash_search(RelMetaCache,
+							(void *) &hentry->relid,
+							HASH_REMOVE, NULL) == NULL)
+				elog(ERROR, "hash table corrupted");
+		}
 	}
 }

@@ -413,6 +413,13 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	OutputPluginPrepareWrite(ctx, true);
 	data->api->write_commit(ctx->out, data, txn, commit_lsn);
 	OutputPluginWrite(ctx, true);
+
+	/*
+	 * Now is a good time to get rid of invalidated relation
+	 * metadata entries since nothing will be referencing them
+	 * at the moment.
+	 */
+	pglogical_prune_relmetacache();
 }
 
 static void
