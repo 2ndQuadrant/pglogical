@@ -42,14 +42,6 @@ get_hooks_function_oid(List *funcname)
 						NameListToString(funcname))));
 	}
 
-	if (func_volatile(funcid) == PROVOLATILE_VOLATILE)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("function %s must not be VOLATILE",
-						NameListToString(funcname))));
-	}
-
 	if (pg_proc_aclcheck(funcid, GetUserId(), ACL_EXECUTE) != ACLCHECK_OK)
 	{
 		const char * username;
