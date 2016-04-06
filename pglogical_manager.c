@@ -12,6 +12,8 @@
  */
 #include "postgres.h"
 
+#include "miscadmin.h"
+
 #include "access/xact.h"
 
 #include "commands/extension.h"
@@ -27,8 +29,9 @@
 #include "pglogical_worker.h"
 #include "pglogical.h"
 
-#define NORMAL_SLEEP 180000L
-#define MINIMAL_SLEEP 5000L
+#define INITIAL_SLEEP 10000L
+#define MAX_SLEEP 180000L
+#define MIN_SLEEP 5000L
 
 void pglogical_manager_main(Datum main_arg);
 
@@ -107,7 +110,7 @@ manage_apply_workers(void)
 				TimestampTz	restart_time;
 
 				restart_time = TimestampTzPlusMilliseconds(apply->crashed_at,
-														   MINIMAL_SLEEP);
+														   MIN_SLEEP);
 
 				if (restart_time > GetCurrentTimestamp())
 				{
@@ -155,10 +158,6 @@ manage_apply_workers(void)
 	}
 	LWLockRelease(PGLogicalCtx->lock);
 
-	/* No subscribers, exit. */
-	if (list_length(subscriptions) == 0)
-		proc_exit(0);
-
 	return ret;
 }
 
@@ -170,6 +169,7 @@ pglogical_manager_main(Datum main_arg)
 {
 	int			slot = DatumGetInt32(main_arg);
 	Oid			extoid;
+	int			sleep_timer = INITIAL_SLEEP;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot);
@@ -199,18 +199,26 @@ pglogical_manager_main(Datum main_arg)
 		int		rc;
 		bool	processed_all;
 
+		/* Handle sequences and update our sleep timer as necessary. */
+		if (synchronize_sequences())
+			sleep_timer = Min(sleep_timer * 2, MAX_SLEEP);
+		else
+			sleep_timer = Max(sleep_timer / 2, MIN_SLEEP);
+
 		/* Launch the apply workers. */
 		processed_all = manage_apply_workers();
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   processed_all ? NORMAL_SLEEP : MINIMAL_SLEEP);
+					   processed_all ? sleep_timer : MIN_SLEEP);
 
         ResetLatch(&MyProc->procLatch);
 
         /* emergency bailout if postmaster has died */
         if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
+
+		CHECK_FOR_INTERRUPTS();
 	}
 
 	proc_exit(0);

@@ -23,13 +23,19 @@ SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_publicsch
 SELECT * FROM pglogical.replication_set_add_table('repset_test', 'test_nosync');
 SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_strangeschema');
 SELECT * FROM pglogical.replication_set_add_table('repset_test', '"strange.schema-IS".test_diff_repset');
+SELECT * FROM pglogical.replication_set_add_all_sequences('repset_test', '{public}');
+SELECT * FROM pglogical.replication_set_add_sequence('repset_test', pg_get_serial_sequence('"strange.schema-IS".test_strangeschema', 'id'));
+SELECT * FROM pglogical.replication_set_add_sequence('repset_test', pg_get_serial_sequence('"strange.schema-IS".test_diff_repset', 'id'));
+SELECT * FROM pglogical.replication_set_add_all_sequences('default', '{public}');
+SELECT * FROM pglogical.replication_set_add_sequence('default', pg_get_serial_sequence('"strange.schema-IS".test_strangeschema', 'id'));
+SELECT * FROM pglogical.replication_set_add_sequence('default', pg_get_serial_sequence('"strange.schema-IS".test_diff_repset', 'id'));
 
-INSERT INTO public.test_publicschema VALUES(1, 'a');
-INSERT INTO public.test_publicschema VALUES(2, 'b');
-INSERT INTO public.test_nosync VALUES(1, 'a');
-INSERT INTO public.test_nosync VALUES(2, 'b');
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(1);
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(2);
+INSERT INTO public.test_publicschema(data) VALUES('a');
+INSERT INTO public.test_publicschema(data) VALUES('b');
+INSERT INTO public.test_nosync(data) VALUES('a');
+INSERT INTO public.test_nosync(data) VALUES('b');
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAULT);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAuLT);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
@@ -63,6 +69,20 @@ INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(4);
+
+-- XXX We need to force sequence sync on the provider, no API for it yet, so we restart the manager which will call the sync for now
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name LIKE '%pglogical%manager%';
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_stat_activity WHERE application_name LIKE '%pglogical%manager%') > 1 THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
@@ -175,6 +195,10 @@ TRUNCATE "strange.schema-IS".test_diff_repset;
 SELECT * FROM "strange.schema-IS".test_diff_repset;
 
 SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'default');
+
+SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) as synced
+  FROM pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
+ WHERE C.relkind = 'S';
 
 \c :provider_dsn
 
