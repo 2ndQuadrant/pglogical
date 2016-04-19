@@ -47,10 +47,10 @@ typedef struct PGLogicalSyncStatus
 #define SYNC_STATUS_CATCHUP		'u'		/* Catching up. */
 #define SYNC_STATUS_READY		'r'		/* Done. */
 
-extern void pglogical_sync_worker_finish(PGconn *applyconn);
+extern void pglogical_sync_worker_finish(void);
 
 extern void pglogical_sync_subscription(PGLogicalSubscription *sub);
-extern void pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table);
+extern char pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table);
 
 extern void create_local_sync_status(PGLogicalSyncStatus *sync);
 extern void drop_subscription_sync_status(Oid subid);

@@ -100,14 +100,22 @@ manage_apply_workers(void)
 			continue;
 
 		/* Check if this is crashed worker and if we want to restart it now. */
-		if (apply && apply->crashed_at != 0)
+		if (apply)
 		{
-			TimestampTz	restart_time;
+			if (apply->crashed_at != 0)
+			{
+				TimestampTz	restart_time;
 
-			restart_time = TimestampTzPlusMilliseconds(apply->crashed_at,
-													   MINIMAL_SLEEP);
+				restart_time = TimestampTzPlusMilliseconds(apply->crashed_at,
+														   MINIMAL_SLEEP);
 
-			if (restart_time > GetCurrentTimestamp())
+				if (restart_time > GetCurrentTimestamp())
+				{
+					ret = false;
+					continue;
+				}
+			}
+			else
 			{
 				ret = false;
 				continue;

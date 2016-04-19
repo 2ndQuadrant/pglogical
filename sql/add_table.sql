@@ -13,7 +13,7 @@ CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
 CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key, data text DEFAULT '');
 $$);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 -- create some replication sets
 SELECT * FROM pglogical.create_replication_set('repset_test');
@@ -31,7 +31,7 @@ INSERT INTO public.test_nosync VALUES(2, 'b');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(1);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(2);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT * FROM public.test_publicschema;
@@ -63,7 +63,7 @@ INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(4);
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT * FROM public.test_publicschema;
@@ -75,7 +75,7 @@ DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_nosync')) THEN
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_nosync')) THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);
@@ -96,7 +96,7 @@ DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_publicschema')) THEN
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_publicschema')) THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);
@@ -110,11 +110,23 @@ SELECT * FROM public.test_publicschema;
 
 SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 
+BEGIN;
 SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'repset_test');
 SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'default');
+COMMIT;
+
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
 
 \c :provider_dsn
-
 SELECT * FROM pglogical.replication_set_remove_table('repset_test', '"strange.schema-IS".test_strangeschema');
 
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(1);
@@ -123,20 +135,9 @@ INSERT INTO "strange.schema-IS".test_diff_repset VALUES(2);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6);
 
-DO $$
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pg_stat_replication) THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
-
 SELECT * FROM "strange.schema-IS".test_diff_repset;
 SELECT * FROM "strange.schema-IS".test_strangeschema;
 
@@ -180,7 +181,7 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
 DO $$
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pg_stat_replication) THEN
+		IF EXISTS (SELECT 1 FROM pg_stat_replication) THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);

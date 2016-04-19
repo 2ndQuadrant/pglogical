@@ -672,7 +672,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 	MemoryContextDelete(myctx);
 }
 
-void
+char
 pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 {
 	XLogRecPtr	lsn;
@@ -696,7 +696,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 
 	/* Already synchronized, nothing to do here. */
 	if (sync->status == SYNC_STATUS_READY)
-		proc_exit(0);
+		return SYNC_STATUS_READY;
 
 	/* If previous sync attempt failed, we need to start from beginning. */
 	if (sync->status != SYNC_STATUS_INIT)
@@ -732,10 +732,12 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	PQfinish(origin_conn_repl);
 
 	pglogical_sync_worker_cleanup(sub);
+
+	return SYNC_STATUS_SYNCWAIT;
 }
 
 void
-pglogical_sync_worker_finish(PGconn *applyconn)
+pglogical_sync_worker_finish(void)
 {
 	PGLogicalWorker	   *apply;
 
@@ -749,9 +751,8 @@ pglogical_sync_worker_finish(PGconn *applyconn)
 	pglogical_sync_worker_cleanup(MySubscription);
 	CommitTransactionCommand();
 
-
 	/*
-	 * In case there is apply procezss running, it might be waiting
+	 * In case there is apply process running, it might be waiting
 	 * for the table status change so tell it to check.
 	 */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
@@ -760,6 +761,10 @@ pglogical_sync_worker_finish(PGconn *applyconn)
 	if (pglogical_worker_running(apply))
 		SetLatch(&apply->proc->procLatch);
 	LWLockRelease(PGLogicalCtx->lock);
+
+	elog(LOG, "finished sync of table %s.%s for subscriber %s",
+		 NameStr(MySyncWorker->nspname), NameStr(MySyncWorker->relname),
+		 MySubscription->name);
 }
 
 void
@@ -832,7 +837,11 @@ pglogical_sync_main(Datum main_arg)
 		 MySubscription->origin_if->name, MySubscription->origin_if->dsn);
 
 	/* Do the initial sync first. */
-	pglogical_sync_table(MySubscription, copytable);
+	if (pglogical_sync_table(MySubscription, copytable) == SYNC_STATUS_READY)
+	{
+		pglogical_sync_worker_finish();
+		proc_exit(0);
+	}
 
 	/* Wait for ack from the main apply thread. */
 	StartTransactionCommand();
@@ -854,7 +863,7 @@ pglogical_sync_main(Datum main_arg)
 	/* In case there is nothing to catchup, finish immediately. */
 	if (origin_startpos >= MyApplyWorker->replay_stop_lsn)
 	{
-		pglogical_sync_worker_finish(NULL);
+		pglogical_sync_worker_finish();
 		proc_exit(0);
 	}
 
@@ -868,9 +877,11 @@ pglogical_sync_main(Datum main_arg)
 	/* Leave it to standard apply code to do the replication. */
 	apply_work(streamConn);
 
+	PQfinish(streamConn);
+
 	/*
-	 * never exit gracefully (as that'd unregister the worker) unless
-	 * explicitly asked to do so.
+	 * We should only get here if we received sigTERM, which in case of
+	 * sync worker is not expected.
 	 */
 	proc_exit(1);
 }

@@ -214,9 +214,10 @@ handle_commit(StringInfo s)
 		 * If this is sync worker, finish it.
 		 */
 		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC)
-			pglogical_sync_worker_finish(applyconn);
+			pglogical_sync_worker_finish();
 
 		/* Stop gracefully */
+		PQfinish(applyconn);
 		proc_exit(0);
 	}
 
@@ -1866,9 +1867,8 @@ pglogical_apply_main(Datum main_arg)
 
 	apply_work(streamConn);
 
-	/*
-	 * never exit gracefully (as that'd unregister the worker) unless
-	 * explicitly asked to do so.
-	 */
-	proc_exit(1);
+	PQfinish(streamConn);
+
+	/* We should only get here if we received sigTERM */
+	proc_exit(0);
 }
