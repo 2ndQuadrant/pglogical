@@ -93,6 +93,9 @@ PG_FUNCTION_INFO_V1(pglogical_drop_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_add_table);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_add_all_tables);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_table);
+PG_FUNCTION_INFO_V1(pglogical_replication_set_add_sequence);
+PG_FUNCTION_INFO_V1(pglogical_replication_set_add_all_sequences);
+PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_sequence);
 
 /* DDL */
 PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
@@ -1145,20 +1148,19 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 }
 
 /*
- * Add replication set / relation mapping.
+ * Common function for adding replication set / relation mapping.
  */
-Datum
-pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
+static Datum
+pglogical_replication_set_add_relation(Name repset_name, Oid reloid,
+									   bool synchronize, char relkind)
 {
-	Name		repset_name = PG_GETARG_NAME(0);
-	Oid			reloid = PG_GETARG_OID(1);
-	bool		synchronize = PG_GETARG_BOOL(2);
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	PGLogicalLocalNode *node;
 	char			   *nspname;
 	char			   *relname;
 	StringInfoData		json;
+	char				cmdtype;
 
 	node = get_local_node(true, true);
 	if (!node)
@@ -1174,7 +1176,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	/* Make sure the relation exists. */
 	rel = heap_open(reloid, AccessShareLock);
 
-	replication_set_add_table(repset->id, reloid);
+	replication_set_add_relation(repset->id, reloid);
 
 	if (synchronize)
 	{
@@ -1185,13 +1187,28 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		initStringInfo(&json);
 		appendStringInfo(&json, "{\"schema_name\": ");
 		escape_json(&json, nspname);
-		appendStringInfo(&json, ",\"table_name\": ");
-		escape_json(&json, relname);
+		switch (relkind)
+		{
+			case RELKIND_RELATION:
+				appendStringInfo(&json, ",\"table_name\": ");
+				escape_json(&json, relname);
+				cmdtype = QUEUE_COMMAND_TYPE_TABLESYNC;
+				break;
+			case RELKIND_SEQUENCE:
+				appendStringInfo(&json, ",\"sequence_name\": ");
+				escape_json(&json, relname);
+                appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+								 sequence_get_last_value(reloid));
+				cmdtype = QUEUE_COMMAND_TYPE_SEQUENCE;
+				break;
+			default:
+				elog(ERROR, "unsupported relkind '%c'", relkind);
+		}
 		appendStringInfo(&json, "}");
 
 		/* Queue the truncate for replication. */
-		queue_message(list_make1(repset->name), GetUserId(),
-					  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
+		queue_message(list_make1(repset->name), GetUserId(), cmdtype,
+					  json.data);
 	}
 
 	/* Cleanup. */
@@ -1200,15 +1217,46 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(true);
 }
 
+
 /*
- * Add replication set / relation mapping based on schemas.
+ * Add replication set / table mapping.
  */
 Datum
-pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
+pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 {
 	Name		repset_name = PG_GETARG_NAME(0);
-	ArrayType  *nsp_names = PG_GETARG_ARRAYTYPE_P(1);
+	Oid			reloid = PG_GETARG_OID(1);
 	bool		synchronize = PG_GETARG_BOOL(2);
+
+	return pglogical_replication_set_add_relation(repset_name, reloid,
+												  synchronize,
+												  RELKIND_RELATION);
+}
+
+/*
+ * Add replication set / sequence mapping.
+ */
+Datum
+pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
+{
+	Name		repset_name = PG_GETARG_NAME(0);
+	Oid			reloid = PG_GETARG_OID(1);
+	bool		synchronize = PG_GETARG_BOOL(2);
+
+	return pglogical_replication_set_add_relation(repset_name, reloid,
+												  synchronize,
+												  RELKIND_SEQUENCE);
+}
+
+/*
+ * Common function for adding replication set / relation mapping based on
+ * schemas.
+ */
+static Datum
+pglogical_replication_set_add_all_relations(Name repset_name,
+											ArrayType *nsp_names,
+											bool synchronize, char relkind)
+{
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	PGLogicalLocalNode *node;
@@ -1250,18 +1298,19 @@ pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
 			Form_pg_class	reltup = (Form_pg_class) GETSTRUCT(tuple);
 
 			/*
-			 * Only add logged tables which are not system tables
+			 * Only add logged relations which are not system relations
 			 * (catalog, toast).
 			 */
-			if (reltup->relkind != RELKIND_RELATION ||
+			if (reltup->relkind != relkind ||
 				reltup->relpersistence != RELPERSISTENCE_PERMANENT ||
 				IsSystemClass(reloid, reltup))
 				continue;
 
-			if (!replication_set_has_table(repset->id, reloid))
-				replication_set_add_table(repset->id, reloid);
+			if (!replication_set_has_relation(repset->id, reloid))
+				replication_set_add_relation(repset->id, reloid);
 
-			if (synchronize)
+			// MODOS TODO
+			if (synchronize && relkind == RELKIND_RELATION)
 			{
 				/* It's easier to construct json manually than via Jsonb API... */
 				initStringInfo(&json);
@@ -1286,7 +1335,37 @@ pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
 }
 
 /*
- * Remove replication set / relation mapping.
+ * Add replication set / table mapping based on schemas.
+ */
+Datum
+pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
+{
+	Name		repset_name = PG_GETARG_NAME(0);
+	ArrayType  *nsp_names = PG_GETARG_ARRAYTYPE_P(1);
+	bool		synchronize = PG_GETARG_BOOL(2);
+
+	return pglogical_replication_set_add_all_relations(repset_name, nsp_names,
+													   synchronize,
+													   RELKIND_RELATION);
+}
+
+/*
+ * Add replication set / table mapping based on schemas.
+ */
+Datum
+pglogical_replication_set_add_all_sequences(PG_FUNCTION_ARGS)
+{
+	Name		repset_name = PG_GETARG_NAME(0);
+	ArrayType  *nsp_names = PG_GETARG_ARRAYTYPE_P(1);
+	bool		synchronize = PG_GETARG_BOOL(2);
+
+	return pglogical_replication_set_add_all_relations(repset_name, nsp_names,
+													   synchronize,
+													   RELKIND_SEQUENCE);
+}
+
+/*
+ * Remove replication set / table mapping.
  *
  * Unlike the pglogical_replication_set_add_table, this function does not care
  * if table is valid or not, as we are just removing the record from repset.
@@ -1309,9 +1388,19 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 	repset = get_replication_set_by_name(node->node->id,
 										 NameStr(*PG_GETARG_NAME(0)), false);
 
-	replication_set_remove_table(repset->id, reloid, false);
+	replication_set_remove_relation(repset->id, reloid, false);
 
 	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Remove replication set / sequence mapping.
+ */
+Datum
+pglogical_replication_set_remove_sequence(PG_FUNCTION_ARGS)
+{
+	/* Sequences can be handled same way as tables. */
+	return pglogical_replication_set_remove_table(fcinfo);
 }
 
 /*
@@ -1455,7 +1544,7 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	foreach (lc, repsets)
 	{
 		PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(lc);
-		repset_names = lappend(repset_names, repset->name);
+		repset_names = lappend(repset_names, pstrdup(repset->name));
 	}
 
 	/* Queue the truncate for replication. */
@@ -1586,7 +1675,7 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 								 schema_name, table_name, repset->name);
 
 				if (stmt->behavior == DROP_CASCADE)
-					replication_set_remove_table(repset->id, reloid, true);
+					replication_set_remove_relation(repset->id, reloid, true);
 			}
 		}
 

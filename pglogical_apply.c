@@ -22,6 +22,7 @@
 #include "catalog/namespace.h"
 
 #include "commands/dbcommands.h"
+#include "commands/sequence.h"
 #include "commands/tablecmds.h"
 #include "commands/trigger.h"
 
@@ -48,7 +49,9 @@
 #include "tcop/utility.h"
 
 #include "utils/builtins.h"
+#include "utils/int8.h"
 #include "utils/jsonb.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 
@@ -1110,6 +1113,95 @@ handle_table_sync(QueuedMessage *queued_message)
 }
 
 /*
+ * Handle SEQUENCE message comming via queue table.
+ */
+static void
+handle_sequence(QueuedMessage *queued_message)
+{
+	Jsonb		   *message = queued_message->message;
+	JsonbIterator  *it;
+	JsonbValue		v;
+	int				r;
+	int				level = 0;
+	char		   *key = NULL;
+	char		  **parse_res = NULL;
+	char		   *nspname = NULL;
+	char		   *relname = NULL;
+	char		   *last_value_raw = NULL;
+	int64			last_value;
+	Oid				nspoid;
+	Oid				reloid;
+
+	/* Parse and validate the json message. */
+	if (!JB_ROOT_IS_OBJECT(message))
+		elog(ERROR, "malformed message in queued message tuple: root is not object");
+
+	it = JsonbIteratorInit(&message->root);
+	while ((r = JsonbIteratorNext(&it, &v, false)) != WJB_DONE)
+	{
+		if (level == 0 && r != WJB_BEGIN_OBJECT)
+			elog(ERROR, "root element needs to be an object");
+		else if (level == 0 && r == WJB_BEGIN_OBJECT)
+		{
+			level++;
+		}
+		else if (level == 1 && r == WJB_KEY)
+		{
+			if (strncmp(v.val.string.val, "schema_name", v.val.string.len) == 0)
+				parse_res = &nspname;
+			else if (strncmp(v.val.string.val, "sequence_name", v.val.string.len) == 0)
+				parse_res = &relname;
+			else if (strncmp(v.val.string.val, "last_value", v.val.string.len) == 0)
+				parse_res = &last_value_raw;
+			else
+				elog(ERROR, "unexpected key: %s",
+					 pnstrdup(v.val.string.val, v.val.string.len));
+
+			key = v.val.string.val;
+		}
+		else if (level == 1 && r == WJB_VALUE)
+		{
+			if (!key)
+				elog(ERROR, "in wrong state when parsing key");
+
+			if (v.type != jbvString)
+				elog(ERROR, "unexpected type for key '%s': %u", key, v.type);
+
+			*parse_res = pnstrdup(v.val.string.val, v.val.string.len);
+		}
+		else if (level == 1 && r != WJB_END_OBJECT)
+		{
+			elog(ERROR, "unexpected content: %u at level %d", r, level);
+		}
+		else if (r == WJB_END_OBJECT)
+		{
+			level--;
+			parse_res = NULL;
+			key = NULL;
+		}
+		else
+			elog(ERROR, "unexpected content: %u at level %d", r, level);
+
+	}
+
+	/* Check if we got both schema and table names. */
+	if (!nspname)
+		elog(ERROR, "missing schema_name in sequence message");
+
+	if (!relname)
+		elog(ERROR, "missing table_name in sequence message");
+
+	if (!last_value_raw)
+		elog(ERROR, "missing last_value in sequence message");
+
+	nspoid = get_namespace_oid(nspname, false);
+	reloid = get_relname_relid(relname, nspoid);
+	scanint8(last_value_raw, false, &last_value);
+
+	DirectFunctionCall2(setval_oid, ObjectIdGetDatum(reloid),
+						Int64GetDatum(last_value));
+}
+/*
  * Handle SQL message comming via queue table.
  */
 static void
@@ -1168,6 +1260,9 @@ handle_queued_message(HeapTuple msgtup, bool tx_just_started)
 			break;
 		case QUEUE_COMMAND_TYPE_TABLESYNC:
 			handle_table_sync(queued_message);
+			break;
+		case QUEUE_COMMAND_TYPE_SEQUENCE:
+			handle_sequence(queued_message);
 			break;
 		default:
 			elog(ERROR, "unknown message type '%c'",

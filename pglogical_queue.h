@@ -18,6 +18,7 @@
 #define QUEUE_COMMAND_TYPE_SQL			'Q'
 #define QUEUE_COMMAND_TYPE_TRUNCATE		'T'
 #define QUEUE_COMMAND_TYPE_TABLESYNC	'A'
+#define QUEUE_COMMAND_TYPE_SEQUENCE		'S'
 
 typedef struct QueuedMessage
 {

@@ -5,6 +5,8 @@ pglogical_create_subscriber
 .vimrc
 *.o
 *.so
+*.gcda
+*.gcno
 *~
 pglogical.control
 pglogical-*.tar.bz2

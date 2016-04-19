@@ -81,7 +81,7 @@ SELECT * FROM pglogical.replication_set_add_table('repset_replicate_insupd', '"s
 
 -- should fail
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_unlogged');
-ERROR:  UNLOGGED and TEMP tables cannot be replicated
+ERROR:  UNLOGGED and TEMP relations cannot be replicated
 SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'test_nopkey');
 ERROR:  table test_nopkey cannot be added to replication set repset_replicate_all
 DETAIL:  table does not have PRIMARY KEY and given replication set is configured to replicate UPDATEs and/or DELETEs

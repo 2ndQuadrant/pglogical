@@ -91,20 +91,26 @@ CREATE TABLE pglogical.replication_set (
     UNIQUE (set_nodeid, set_name)
 ) WITH (user_catalog_table=true);
 
-CREATE TABLE pglogical.replication_set_table (
+CREATE TABLE pglogical.replication_set_relation (
     set_id integer NOT NULL,
     set_reloid regclass NOT NULL,
     PRIMARY KEY(set_id, set_reloid)
 ) WITH (user_catalog_table=true);
 
+CREATE TABLE pglogical.sequence_state (
+	seqoid oid NOT NULL PRIMARY KEY,
+	last_value bigint NOT NULL,
+	cache_size integer NOT NULL
+) WITH (user_catalog_table=true);
+
 CREATE VIEW pglogical.TABLES AS
-    WITH set_tables AS (
-        SELECT s.set_name, t.set_reloid
-          FROM pglogical.replication_set_table t,
+    WITH set_relations AS (
+        SELECT s.set_name, r.set_reloid
+          FROM pglogical.replication_set_relation r,
                pglogical.replication_set s,
                pglogical.local_node n
          WHERE s.set_nodeid = n.node_id
-           AND s.set_id = t.set_id
+           AND s.set_id = r.set_id
     ),
     user_tables AS (
         SELECT r.oid, n.nspname, r.relname, r.relreplident
@@ -120,14 +126,14 @@ CREATE VIEW pglogical.TABLES AS
     SELECT n.nspname, r.relname, s.set_name
       FROM pg_catalog.pg_namespace n,
            pg_catalog.pg_class r,
-           set_tables s
+           set_relations s
      WHERE r.relkind = 'r'
        AND n.oid = r.relnamespace
        AND r.oid = s.set_reloid
      UNION
     SELECT t.nspname, t.relname, NULL
       FROM user_tables t
-     WHERE t.oid NOT IN (SELECT set_reloid FROM set_tables);
+     WHERE t.oid NOT IN (SELECT set_reloid FROM set_relations);
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
     replicate_insert boolean = true, replicate_update boolean = true,
@@ -146,6 +152,13 @@ CREATE FUNCTION pglogical.replication_set_add_all_tables(set_name name, schema_n
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_all_tables';
 CREATE FUNCTION pglogical.replication_set_remove_table(set_name name, relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_table';
+
+CREATE FUNCTION pglogical.replication_set_add_sequence(set_name name, relation regclass, synchronize boolean DEFAULT false)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_sequence';
+CREATE FUNCTION pglogical.replication_set_add_all_sequences(set_name name, schema_names text[], synchronize boolean DEFAULT false)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_all_sequences';
+CREATE FUNCTION pglogical.replication_set_remove_sequence(set_name name, relation regclass)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_sequence';
 
 CREATE FUNCTION pglogical.alter_subscription_synchronize(subscription_name name, truncate boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_synchronize';

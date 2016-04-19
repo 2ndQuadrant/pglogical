@@ -71,10 +71,11 @@ extern void alter_replication_set(PGLogicalRepSet *repset);
 extern void drop_replication_set(Oid setid);
 extern void drop_node_replication_sets(Oid nodeid);
 
-extern void replication_set_add_table(Oid setid, Oid reloid);
-extern bool replication_set_has_table(Oid setid, Oid reloid);
-extern void replication_set_remove_table(Oid setid, Oid reloid,
-										 bool from_table_drop);
+extern void replication_set_add_relation(Oid setid, Oid reloid);
+extern bool replication_set_has_relation(Oid setid, Oid reloid);
+extern List *replication_set_get_relations(Oid setid);
+extern void replication_set_remove_relation(Oid setid, Oid reloid,
+											bool from_drop);
 
 extern PGLogicalChangeType to_pglogical_changetype(
 		enum ReorderBufferChangeType change);

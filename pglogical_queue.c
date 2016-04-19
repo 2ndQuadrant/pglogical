@@ -112,7 +112,7 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 
 	/* Cleanup. */
 	heap_freetuple(tup);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(rel, NoLock);
 }
 
 
