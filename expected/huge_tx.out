@@ -1,0 +1,116 @@
+-- test huge transactions
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+-- lots of small rows replication with DDL outside transaction
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.a_huge (
+		id integer primary key,
+                id1 integer,
+		data text default 'data',
+		data1 text default 'data1'
+	);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'a_huge');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+BEGIN;
+INSERT INTO public.a_huge VALUES (generate_series(1, 20000000), generate_series(1, 20000000));
+COMMIT;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT count(*) FROM a_huge;
+  count   
+----------
+ 20000000
+(1 row)
+
+\dtS+ a_huge;
+                     List of relations
+ Schema |  Name  | Type  |  Owner   |  Size  | Description 
+--------+--------+-------+----------+--------+-------------
+ public | a_huge | table | postgres | 996 MB | 
+(1 row)
+
+\c :provider_dsn
+-- lots of small rows replication with DDL within transaction
+BEGIN;
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.b_huge (
+		id integer primary key,
+                id1 integer,
+		data text default 'data',
+		data1 text default 'data1'
+	);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'b_huge');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO public.b_huge VALUES (generate_series(1,20000000), generate_series(1,20000000));
+COMMIT;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT count(*) FROM b_huge;
+  count   
+----------
+ 20000000
+(1 row)
+
+\dtS+ b_huge;
+                     List of relations
+ Schema |  Name  | Type  |  Owner   |  Size  | Description 
+--------+--------+-------+----------+--------+-------------
+ public | b_huge | table | postgres | 996 MB | 
+(1 row)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.a_huge CASCADE;
+	DROP TABLE public.b_huge CASCADE;
+$$);
+NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to 1 other object
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
