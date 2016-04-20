@@ -40,14 +40,11 @@ BEGIN
     END LOOP;
 END;$$;
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
------------+------------+-------------------+--------------------+-------------
- d         | 3848008564 | public            | test_nosync        | r
- d         | 3848008564 | public            | test_publicschema  | r
- d         | 3848008564 | strange.schema-IS | test_strangeschema | r
- f         | 3848008564 |                   |                    | r
- i         | 4051189029 |                   |                    | r
-(5 rows)
+ sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
+-----------+------------+--------------+--------------+-------------
+ f         | 3848008564 |              |              | r
+ i         | 4051189029 |              |              | r
+(2 rows)
 
 SELECT * FROM pglogical.show_subscription_status();
      subscription_name      |   status    | provider_node |         provider_dsn         |                 slot_name                  |                 replication_sets                  | forward_origins 

@@ -415,10 +415,10 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
+NOTICE:  drop cascades to 4 other objects
+NOTICE:  drop cascades to 4 other objects
 NOTICE:  drop cascades to 2 other objects
-NOTICE:  drop cascades to 2 other objects
-NOTICE:  drop cascades to 2 other objects
-NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to 6 other objects
  replicate_ddl_command 
 -----------------------
  t

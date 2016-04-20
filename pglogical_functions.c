@@ -1638,9 +1638,9 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 
 	SPI_connect();
 
-	res = SPI_execute("SELECT objid, schema_name, object_name "
+	res = SPI_execute("SELECT objid, schema_name, object_name, object_type "
 					  "FROM pg_event_trigger_dropped_objects() "
-					  "WHERE object_type = 'table'",
+					  "WHERE object_type IN ('table', 'sequence')",
 					  false, 0);
 	if (res != SPI_OK_SELECT)
 		elog(ERROR, "SPI query failed: %d", res);
@@ -1649,15 +1649,20 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 	{
 		Oid		reloid;
 		char   *schema_name;
-		char   *table_name;
+		char   *object_name;
+		char   *object_type;
 		bool	isnull;
 		List   *repsets;
 
 		reloid = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
 									 SPI_tuptable->tupdesc, 1, &isnull);
 		Assert(!isnull);
-		schema_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
-		table_name = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 3);
+		schema_name = SPI_getvalue(SPI_tuptable->vals[i],
+								   SPI_tuptable->tupdesc, 2);
+		object_name = SPI_getvalue(SPI_tuptable->vals[i],
+								   SPI_tuptable->tupdesc, 3);
+		object_type = SPI_getvalue(SPI_tuptable->vals[i],
+								   SPI_tuptable->tupdesc, 4);
 
 		repsets = get_relation_replication_sets(node->node->id, reloid);
 
@@ -1671,15 +1676,18 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 
 				if (numDependentObjects++)
 					appendStringInfoString(&logdetail, "\n");
-				appendStringInfo(&logdetail, "table %s.%s in replication set %s",
-								 schema_name, table_name, repset->name);
+				appendStringInfo(&logdetail, "%s %s in replication set %s",
+								 object_type,
+								 quote_qualified_identifier(schema_name,
+															object_name),
+								 repset->name);
 
 				if (stmt->behavior == DROP_CASCADE)
 					replication_set_remove_relation(repset->id, reloid, true);
 			}
 		}
 
-		drop_table_sync_status(schema_name, table_name);
+		drop_table_sync_status(schema_name, object_name);
 	}
 
 	SPI_finish();
