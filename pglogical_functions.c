@@ -1682,7 +1682,9 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 															object_name),
 								 repset->name);
 
-				if (stmt->behavior == DROP_CASCADE)
+				/* We always drop on replica. */
+				if (stmt->behavior == DROP_CASCADE ||
+					SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
 					replication_set_remove_relation(repset->id, reloid, true);
 			}
 		}
@@ -1694,7 +1696,8 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 
 	if (numDependentObjects)
 	{
-		if (stmt->behavior != DROP_CASCADE)
+		if (stmt->behavior != DROP_CASCADE &&
+			SessionReplicationRole != SESSION_REPLICATION_ROLE_REPLICA)
 			ereport(ERROR,
 					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
 					 errmsg("cannot drop desired object(s) because other objects depend on them"),
