@@ -61,6 +61,7 @@ BEGIN;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
+	synchronize_structure := true,
 	forward_origins := '{}');
 /*
  * Remove the function we added in preseed because otherwise the restore of

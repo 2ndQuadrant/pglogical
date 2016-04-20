@@ -82,3 +82,10 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_repl
 
 ALTER EVENT TRIGGER pglogical_truncate_trigger_add ENABLE ALWAYS;
 ALTER EVENT TRIGGER pglogical_dependency_check_trigger ENABLE ALWAYS;
+
+DROP FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
+    replication_sets text[], synchronize_structure boolean, synchronize_data boolean, forward_origins text[]);
+CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
+    replication_sets text[] = '{default,default_insert_only,ddl_sql}', synchronize_structure boolean = false,
+    synchronize_data boolean = true, forward_origins text[] = '{all}')
+RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';

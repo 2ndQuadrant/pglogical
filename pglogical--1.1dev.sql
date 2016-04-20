@@ -55,7 +55,7 @@ CREATE FUNCTION pglogical.alter_node_drop_interface(node_name name, interface_na
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_node_drop_interface';
 
 CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
-    replication_sets text[] = '{default,default_insert_only,ddl_sql}', synchronize_structure boolean = true,
+    replication_sets text[] = '{default,default_insert_only,ddl_sql}', synchronize_structure boolean = false,
     synchronize_data boolean = true, forward_origins text[] = '{all}')
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';
 CREATE FUNCTION pglogical.drop_subscription(subscription_name name, ifexists boolean DEFAULT false)
