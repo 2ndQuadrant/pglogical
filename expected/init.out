@@ -73,6 +73,22 @@ DROP FUNCTION IF EXISTS public.pglogical_regress_variables();
 COMMIT;
 DO $$
 BEGIN
+	FOR i IN 1..100 LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
+ subscription_name |   status    | provider_node |           replication_sets            | forward_origins 
+-------------------+-------------+---------------+---------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default,default_insert_only,ddl_sql} | 
+(1 row)
+
+DO $$
+BEGIN
     FOR i IN 1..300 LOOP
         IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
             EXIT;
@@ -84,12 +100,6 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
  sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
 -----------+------------+--------------+--------------+-------------
  f         | 3848008564 |              |              | r
-(1 row)
-
-SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
- subscription_name |   status    | provider_node |           replication_sets            | forward_origins 
--------------------+-------------+---------------+---------------------------------------+-----------------
- test_subscription | replicating | test_provider | {default,default_insert_only,ddl_sql} | 
 (1 row)
 
 -- Make sure we see the slot and active connection
