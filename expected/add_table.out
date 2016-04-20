@@ -345,6 +345,12 @@ INSERT INTO "strange.schema-IS".test_diff_repset VALUES(4);
 UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
 DELETE FROM "strange.schema-IS".test_diff_repset WHERE id < 3;
 TRUNCATE "strange.schema-IS".test_diff_repset;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
 \c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
@@ -362,6 +368,12 @@ SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert :=
 
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
 \c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
@@ -374,6 +386,12 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
 
 \c :provider_dsn
 TRUNCATE "strange.schema-IS".test_diff_repset;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
 \c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
  id | data 
