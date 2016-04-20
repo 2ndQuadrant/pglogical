@@ -590,6 +590,8 @@ create_replication_set(PGLogicalRepSet *repset)
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 /*
@@ -794,6 +796,8 @@ drop_replication_set(Oid setid)
 	CacheInvalidateRelcache(rel);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 void
@@ -833,6 +837,8 @@ drop_node_replication_sets(Oid nodeid)
 	CacheInvalidateRelcache(rel);
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 /*
@@ -914,6 +920,8 @@ replication_set_add_relation(Oid setid, Oid reloid)
 	CacheInvalidateRelcacheByRelid(reloid);
 	heap_freetuple(tup);
 	heap_close(rel, RowExclusiveLock);
+
+	CommandCounterIncrement();
 }
 
 
