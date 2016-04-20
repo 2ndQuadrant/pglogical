@@ -190,6 +190,7 @@ CREATE EVENT TRIGGER pglogical_truncate_trigger_add
 ON ddl_command_end
 WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS')
 EXECUTE PROCEDURE pglogical.truncate_trigger_add();
+ALTER EVENT TRIGGER pglogical_truncate_trigger_add ENABLE ALWAYS;
 
 CREATE OR REPLACE FUNCTION pglogical.dependency_check_trigger()
 RETURNS event_trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_dependency_check_trigger';
@@ -197,6 +198,7 @@ RETURNS event_trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_dependency_che
 CREATE EVENT TRIGGER pglogical_dependency_check_trigger
 ON sql_drop
 EXECUTE PROCEDURE pglogical.dependency_check_trigger();
+ALTER EVENT TRIGGER pglogical_dependency_check_trigger ENABLE ALWAYS;
 
 CREATE FUNCTION pglogical.pglogical_hooks_setup(internal)
 RETURNS void

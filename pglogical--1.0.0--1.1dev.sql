@@ -79,3 +79,6 @@ CREATE FUNCTION pglogical.replication_set_add_all_sequences(set_name name, schem
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_all_sequences';
 CREATE FUNCTION pglogical.replication_set_remove_sequence(set_name name, relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_sequence';
+
+ALTER EVENT TRIGGER pglogical_truncate_trigger_add ENABLE ALWAYS;
+ALTER EVENT TRIGGER pglogical_dependency_check_trigger ENABLE ALWAYS;
