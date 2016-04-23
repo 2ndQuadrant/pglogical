@@ -584,10 +584,9 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
-	PGLogicalLocalNode *node;
 
 	/* XXX: Only used for locking purposes. */
-	node = get_local_node(true, false);
+	(void) get_local_node(true, false);
 
 	sub->enabled = false;
 
@@ -621,10 +620,9 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	bool					immediate = PG_GETARG_BOOL(1);
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
-	PGLogicalLocalNode *node;
 
 	/* XXX: Only used for locking purposes. */
-	node = get_local_node(true, false);
+	(void) get_local_node(true, false);
 
 	sub->enabled = true;
 
@@ -655,10 +653,9 @@ pglogical_alter_subscription_interface(PG_FUNCTION_ARGS)
 	char				   *if_name = NameStr(*PG_GETARG_NAME(1));
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGlogicalInterface	   *new_if;
-	PGLogicalLocalNode *node;
 
 	/* XXX: Only used for locking purposes. */
-	node = get_local_node(true, false);
+	(void) get_local_node(true, false);
 
 	new_if = get_node_interface_by_name(sub->origin->id, if_name, false);
 
