@@ -16,6 +16,7 @@
 
 #include "access/xact.h"
 
+#include "commands/dbcommands.h"
 #include "commands/extension.h"
 
 #include "storage/ipc.h"
@@ -189,6 +190,9 @@ pglogical_manager_main(Datum main_arg)
 	if (!OidIsValid(extoid))
 		proc_exit(0);
 
+	elog(LOG, "starting pglogical database manager for database %s",
+		 get_database_name(MyDatabaseId));
+
 	CommitTransactionCommand();
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
@@ -221,5 +225,6 @@ pglogical_manager_main(Datum main_arg)
 		CHECK_FOR_INTERRUPTS();
 	}
 
-	proc_exit(0);
+	/* SIGTERM is not normal for pglogical manager. */
+	proc_exit(1);
 }

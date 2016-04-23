@@ -370,6 +370,12 @@ pglogical_supervisor_main(Datum main_arg)
 	PGLogicalCtx->supervisor = MyProc;
 	PGLogicalCtx->subscriptions_changed = true;
 
+	/* Make it easy to identify our processes. */
+	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
+					PGC_USERSET, PGC_S_SESSION);
+
+	elog(LOG, "starting pglogical supervisor");
+
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
 #if PG_VERSION_NUM >= 90500
 	BackgroundWorkerInitializeConnection(NULL, NULL);

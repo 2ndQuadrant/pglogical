@@ -182,6 +182,8 @@ create_node(PGLogicalNode *node)
 	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
+
+	pglogical_subscription_changed(InvalidOid);
 }
 
 /*
@@ -219,6 +221,8 @@ drop_node(Oid nodeid)
 	heap_close(rel, NoLock);
 
 	CommandCounterIncrement();
+
+	pglogical_subscription_changed(InvalidOid);
 }
 
 static PGLogicalNode *

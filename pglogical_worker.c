@@ -262,9 +262,9 @@ pglogical_worker_detach(bool crash)
 	{
 		MyPGLogicalWorker->crashed_at = GetCurrentTimestamp();
 
-		/* Signal the supervisor process. */
-		if (PGLogicalCtx->supervisor)
-			SetLatch(&PGLogicalCtx->supervisor->procLatch);
+		/* Manager crash, make sure supervisor notices. */
+		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_MANAGER)
+			PGLogicalCtx->subscriptions_changed = true;
 	}
 	else
 	{
