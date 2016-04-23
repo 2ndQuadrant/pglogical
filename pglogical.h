@@ -65,6 +65,7 @@ extern void pglogical_start_replication(PGconn *streamConn,
 extern void apply_work(PGconn *streamConn);
 
 extern bool synchronize_sequences(void);
+extern void synchronize_sequence(Oid seqoid);
 extern void pglogical_create_sequence_state_record(Oid seqoid);
 extern void pglogical_drop_sequence_state_record(Oid seqoid);
 extern int64 sequence_get_last_value(Oid seqoid);

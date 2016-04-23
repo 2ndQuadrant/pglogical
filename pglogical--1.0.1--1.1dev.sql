@@ -57,6 +57,9 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_repl
 CREATE FUNCTION pglogical.replication_set_remove_sequence(set_name name, relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_remove_sequence';
 
+CREATE FUNCTION pglogical.synchronize_sequence(relation regclass)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_synchronize_sequence';
+
 ALTER EVENT TRIGGER pglogical_truncate_trigger_add ENABLE ALWAYS;
 ALTER EVENT TRIGGER pglogical_dependency_check_trigger ENABLE ALWAYS;
 

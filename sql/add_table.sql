@@ -70,18 +70,9 @@ INSERT INTO public.test_publicschema VALUES(4, 'd');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(4);
 
--- XXX We need to force sequence sync on the provider, no API for it yet, so we restart the manager which will call the sync for now
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name LIKE '%pglogical%manager%';
-DO $$
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pg_stat_activity WHERE application_name LIKE '%pglogical%manager%') > 1 THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
+SELECT pglogical.synchronize_sequence(c.oid)
+  FROM pg_class c, pg_namespace n
+ WHERE c.relkind = 'S' AND c.relnamespace = n.oid AND n.nspname IN ('public', 'strange.schema-IS');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
@@ -204,7 +195,7 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
 
 SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) as synced
   FROM pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
- WHERE C.relkind = 'S';
+ WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS');
 
 \c :provider_dsn
 

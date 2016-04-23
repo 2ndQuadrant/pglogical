@@ -97,6 +97,9 @@ PG_FUNCTION_INFO_V1(pglogical_replication_set_add_sequence);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_add_all_sequences);
 PG_FUNCTION_INFO_V1(pglogical_replication_set_remove_sequence);
 
+/* Other manipulation function */
+PG_FUNCTION_INFO_V1(pglogical_synchronize_sequence);
+
 /* DDL */
 PG_FUNCTION_INFO_V1(pglogical_replicate_ddl_command);
 PG_FUNCTION_INFO_V1(pglogical_queue_truncate);
@@ -839,6 +842,22 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	else
 		pglogical_subscription_changed(sub->id);
 	LWLockRelease(PGLogicalCtx->lock);
+
+	PG_RETURN_BOOL(true);
+}
+
+/*
+ * Synchronize one sequence.
+ */
+Datum
+pglogical_synchronize_sequence(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+
+	/* Check that this is actually a node. */
+	(void) get_local_node(true, false);
+
+	synchronize_sequence(reloid);
 
 	PG_RETURN_BOOL(true);
 }
