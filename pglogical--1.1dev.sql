@@ -99,8 +99,8 @@ CREATE TABLE pglogical.replication_set_relation (
 
 CREATE TABLE pglogical.sequence_state (
 	seqoid oid NOT NULL PRIMARY KEY,
-	last_value bigint NOT NULL,
-	cache_size integer NOT NULL
+	cache_size integer NOT NULL,
+	last_value bigint NOT NULL
 ) WITH (user_catalog_table=true);
 
 CREATE VIEW pglogical.TABLES AS
