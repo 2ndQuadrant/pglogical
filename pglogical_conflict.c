@@ -419,9 +419,11 @@ try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
 			break;
 		case PGLOGICAL_RESOLVE_APPLY_REMOTE:
 			apply = true;
+			*resolution = PGLogicalResolution_ApplyRemote;
 			break;
 		case PGLOGICAL_RESOLVE_KEEP_LOCAL:
 			apply = false;
+			*resolution = PGLogicalResolution_KeepLocal;
 			break;
 		case PGLOGICAL_RESOLVE_LAST_UPDATE_WINS:
 			get_tuple_origin(localtuple, &xmin, &local_origin, &local_ts);

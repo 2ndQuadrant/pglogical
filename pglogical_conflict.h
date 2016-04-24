@@ -25,7 +25,7 @@ typedef enum PGLogicalConflictResolution
 {
 	PGLogicalResolution_ApplyRemote,
 	PGLogicalResolution_KeepLocal,
-	PGLogicalResolution_Skip,
+	PGLogicalResolution_Skip
 } PGLogicalConflictResolution;
 
 typedef enum
