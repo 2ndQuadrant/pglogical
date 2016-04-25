@@ -26,7 +26,7 @@
 #include "pglogical_compat.h"
 #endif
 
-#define PGLOGICAL_VERSION "1.1dev"
+#define PGLOGICAL_VERSION "1.1.0"
 #define PGLOGICAL_VERSION_NUM 10100
 
 #define PGLOGICAL_MIN_PROTO_VERSION_NUM 1
