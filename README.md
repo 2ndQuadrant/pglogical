@@ -403,10 +403,10 @@ by extensions will go to `default` replication set.
 ### Additional functions
 
 - `pglogical.synchronize_sequence(relation regclass)`
-  Push sequence state to all subscribers. Unlike the subscriotion and table
+  Push sequence state to all subscribers. Unlike the subscription and table
   synchronization function, this function should be run on provider. It forces
   update of the tracked sequence state which will be consumed by all
-  subcribers (replication set filtering still applies) once they replicate the
+  subscribers (replication set filtering still applies) once they replicate the
   transaction in which this function has been executed.
 
   Parameters:
@@ -527,11 +527,11 @@ not replicated to the replica.
 
 ### Sequences
 
-Sequence state of sequences added to replication sets is replicated
-periodically and not real-time. Dynamic buffer is used for the value being
-replicated so that the subscribers actually receive future state of the
-sequence. This minimizes the chance of subscriber's notion of sequence's
-last_value falling behind but does not completely eliminate the posibility.
+The state of sequences added to replication sets is replicated periodically
+and not in real-time. Dynamic buffer is used for the value being replicated so
+that the subscribers actually receive future state of the sequence. This
+minimizes the chance of subscriber's notion of sequence's last_value falling
+behind but does not completely eliminate the posibility.
 
 It might be desirable to call `synchronize_sequence` to ensure all subscribers
 have up to date information about given sequence after "big events" in the
@@ -575,7 +575,8 @@ If the data being decoded is being applied to another PostgreSQL database then
 its table definitions must be kept in sync via some means external to the logical
 decoding plugin its self, such as:
 
-* Event triggers using DDL deparse to capture DDL changes as they happen and write them to a table to be replicated and applied on the other end; or
+* Event triggers using DDL deparse to capture DDL changes as they happen and
+  write them to a table to be replicated and applied on the other end; or
 * doing DDL management via tools that synchronise DDL on all nodes
 
 ## How does pglogical differ from BDR?
@@ -596,7 +597,8 @@ It omits some features found in BDR:
   pglogical provides queue functions to help with this.
 
 * Global DDL locking. There's no DDL replication so no global locking is
-  required....only applies to tables but that introduces problems with mutual multi-master replication.
+  required....only applies to tables but that introduces problems with mutual
+  multi-master replication.
   See next point.
 
 * Global flush-to-consistent-state. Part of BDR's DDL locking is a step
