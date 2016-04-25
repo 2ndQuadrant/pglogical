@@ -172,7 +172,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `replication_sets` - array of replication sets to subscribe to, these must
     already exist, default is "{default,default_insert_only}"
   - `synchronize_structure` - specifies if to synchronize structure from
-    provider to the subscriber, default true
+    provider to the subscriber, default false
   - `synchronize_data` - specifies if to synchronize data from provider to
     the subscriber, default true
   - `forward_origins` - array of origin names to forward, currently only
@@ -310,16 +310,16 @@ The following functions are provided for managing the replication sets:
   Parameters:
   - `set_name` - name of the existing replication set
 
-- `pglogical.replication_set_add_table(set_name name, table_name regclass, synchronize boolean)`
+- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean)`
   Adds a table to replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
-  - `table_name` - name or OID of the table to be added to the set
-  - `synchronize` - if true, the table data is synchronized on all subscribers
-    which are subscribed to given replication set, default false
+  - `relation` - name or OID of the table to be added to the set
+  - `synchronize_data` - if true, the table data is synchronized on all
+    subscribers which are subscribed to given replication set, default false
 
-- `pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize boolean)`
+- `pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize_data boolean)`
   Adds all tables in given schemas. Only existing tables are added, table that
   will be created in future will not be added automatically. For how to ensure
   that tables created in future are added to correct replication set, see
@@ -329,15 +329,40 @@ The following functions are provided for managing the replication sets:
   - `set_name` - name of the existing replication set
   - `schema_names` - array of names name of existing schemas from which tables
     should be added
-  - `synchronize` - if true, the table data is synchronized on all subscribers
-    which are subscribed to given replication set, default false
+  - `synchronize_data` - if true, the table data is synchronized on all
+    subscribers which are subscribed to given replication set, default false
 
-- `pglogical.replication_set_remove_table(set_name name, table_name regclass)`
+- `pglogical.replication_set_remove_table(set_name name, relation regclass)`
   Remove a table from replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
-  - `table_name` - name or OID of the table to be removed from the set
+  - `relation` - name or OID of the table to be removed from the set
+
+- `pglogical.replication_set_add_sequence(set_name name, relation regclass, synchronize_data boolean)`
+  Adds a table to replication set.
+
+  Parameters:
+  - `set_name` - name of the existing replication set
+  - `relation` - name or OID of the sequence to be added to the set
+  - `synchronize_data` - if true, the the sequence value will be synchronized immediately, default false
+
+- `pglogical.replication_set_add_all_sequences(set_name name, schema_names text[], synchronize_data boolean)`
+  Adds all sequences in given schemas. Only existing sequences are added, any sequences that
+  will be created in future will not be added automatically.
+
+  Parameters:
+  - `set_name` - name of the existing replication set
+  - `schema_names` - array of names name of existing schemas from which tables
+    should be added
+  - `synchronize_data` - if true, the the sequence value will be synchronized immediately, default false
+
+- `pglogical.replication_set_remove_sequence(set_name name, relation regclass)`
+  Remove a table from replication set.
+
+  Parameters:
+  - `set_name` - name of the existing replication set
+  - `relation` - name or OID of the sequence to be removed from the set
 
 You can view the information about which table is in which set by querying the
 `pglogical.tables` view.
@@ -374,6 +399,18 @@ Example:
 The above example will put all new tables created in schema `config` into
 replication set `configuration` and all other new tables which are not created
 by extensions will go to `default` replication set.
+
+### Additional functions
+
+- `pglogical.synchronize_sequence(relation regclass)`
+  Push sequence state to all subscribers. Unlike the subscriotion and table
+  synchronization function, this function should be run on provider. It forces
+  update of the tracked sequence state which will be consumed by all
+  subcribers (replication set filtering still applies) once they replicate the
+  transaction in which this function has been executed.
+
+  Parameters:
+  - `relation` - name of existing sequence, optionally qualified
 
 ## Conflicts
 
@@ -490,16 +527,26 @@ not replicated to the replica.
 
 ### Sequences
 
-Sequence state is local to the provider or subscriber node(s). Advancing a
-sequence on the provider has no effect on the subscriber or vice versa.
+Sequence state of sequences added to replication sets is replicated
+periodically and not real-time. Dynamic buffer is used for the value being
+replicated so that the subscribers actually receive future state of the
+sequence. This minimizes the chance of subscriber's notion of sequence's
+last_value falling behind but does not completely eliminate the posibility.
 
-Support for replicating sequences is important for failover support and will
-be added in a future version.
+It might be desirable to call `synchronize_sequence` to ensure all subscribers
+have up to date information about given sequence after "big events" in the
+database such as data loading or during the online upgrade.
 
-Users may work around this limitation by creating sequences with a step
-interval equal to or greater than the number of nodes, then setting a different
-offset on each node. Use the `INCREMENT BY` option for `CREATE SEQUENCE` or
-`ALTER SEQUENCE`, and use `setval(...)` to set the start point.
+It's generaly recommended to use `bigserial` and `bigint` types for sequences
+on multi-node systems as smaller sequences might reach end of the sequence
+space fast.
+
+Users who want to have independent sequences on provider and subscriber can
+avoid adding sequences to replication sets and create sequences with step
+interval equal to or greater than the number of nodes. And then setting a
+different offset on each node. Use the `INCREMENT BY` option for
+`CREATE SEQUENCE` or `ALTER SEQUENCE`, and use `setval(...)` to set the start
+point.
 
 ### Triggers
 
