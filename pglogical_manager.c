@@ -183,6 +183,8 @@ pglogical_manager_main(Datum main_arg)
 	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid,
 											  InvalidOid);
 
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
+
 	StartTransactionCommand();
 
 	/* If the extension is not installed in this DB, exit. */
@@ -193,9 +195,9 @@ pglogical_manager_main(Datum main_arg)
 	elog(LOG, "starting pglogical database manager for database %s",
 		 get_database_name(MyDatabaseId));
 
-	CommitTransactionCommand();
+	pglogical_manage_extension();
 
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
+	CommitTransactionCommand();
 
 	/* Main wait loop. */
 	while (!got_SIGTERM)

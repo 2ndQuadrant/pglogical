@@ -62,6 +62,8 @@ extern void pglogical_start_replication(PGconn *streamConn,
 										const char *replication_sets,
 										const char *replicate_only_table);
 
+extern void pglogical_manage_extension(void);
+
 extern void apply_work(PGconn *streamConn);
 
 extern bool synchronize_sequences(void);

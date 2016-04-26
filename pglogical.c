@@ -19,9 +19,13 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 
+#include "catalog/pg_extension.h"
+#include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_type.h"
+
+#include "commands/extension.h"
 
 #include "mb/pg_wchar.h"
 
@@ -29,7 +33,9 @@
 #include "storage/proc.h"
 
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
+#include "utils/rel.h"
 
 #include "pglogical_node.h"
 #include "pglogical_conflict.h"
@@ -193,6 +199,65 @@ pglogical_connect_replica(const char *connstring, const char *connname)
 	}
 
 	return conn;
+}
+
+/*
+ * Make sure the extension is up to date.
+ *
+ * Called by db manager.
+ */
+void
+pglogical_manage_extension(void)
+{
+	Relation	extrel;
+	SysScanDesc scandesc;
+	HeapTuple	tuple;
+	ScanKeyData key[1];
+
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	/* make sure we're operating without other pglogical workers interfering */
+	extrel = heap_open(ExtensionRelationId, ShareUpdateExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_pg_extension_extname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(EXTENSION_NAME));
+
+	scandesc = systable_beginscan(extrel, ExtensionNameIndexId, true,
+								  NULL, 1, key);
+
+	tuple = systable_getnext(scandesc);
+
+	/* No extension, nothing to update. */
+	if (HeapTupleIsValid(tuple))
+	{
+		Datum		datum;
+		bool		isnull;
+		char	   *extversion;
+
+		/* Determine extension version. */
+		datum = heap_getattr(tuple, Anum_pg_extension_extversion,
+							 RelationGetDescr(extrel), &isnull);
+		if (isnull)
+			elog(ERROR, "extversion is null");
+		extversion = text_to_cstring(DatumGetTextPP(datum));
+
+		/* Only run the alter if the versions don't match. */
+		if (strcmp(extversion, PGLOGICAL_VERSION) != 0)
+		{
+			AlterExtensionStmt alter_stmt;
+
+			alter_stmt.options = NIL;
+			alter_stmt.extname = EXTENSION_NAME;
+			ExecAlterExtensionStmt(&alter_stmt);
+		}
+	}
+
+	systable_endscan(scandesc);
+	heap_close(extrel, NoLock);
+
+	PopActiveSnapshot();
 }
 
 void
