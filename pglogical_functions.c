@@ -1276,7 +1276,6 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	PGLogicalLocalNode *node;
-	StringInfoData		json;
 	ListCell		   *lc;
 
 	node = get_local_node(true, true);
@@ -1325,20 +1324,41 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 			if (!replication_set_has_relation(repset->id, reloid))
 				replication_set_add_relation(repset->id, reloid);
 
-			// MODOS TODO
-			if (synchronize && relkind == RELKIND_RELATION)
+			/* XXX refactoring */
+			if (synchronize)
 			{
+				char			   *relname;
+				StringInfoData		json;
+				char				cmdtype;
+
+				relname = RelationGetRelationName(rel);
+
 				/* It's easier to construct json manually than via Jsonb API... */
 				initStringInfo(&json);
 				appendStringInfo(&json, "{\"schema_name\": ");
 				escape_json(&json, nspname);
-				appendStringInfo(&json, ",\"table_name\": ");
-				escape_json(&json, NameStr(reltup->relname));
+				switch (relkind)
+				{
+					case RELKIND_RELATION:
+						appendStringInfo(&json, ",\"table_name\": ");
+						escape_json(&json, relname);
+						cmdtype = QUEUE_COMMAND_TYPE_TABLESYNC;
+						break;
+					case RELKIND_SEQUENCE:
+						appendStringInfo(&json, ",\"sequence_name\": ");
+						escape_json(&json, relname);
+						appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+										 sequence_get_last_value(reloid));
+						cmdtype = QUEUE_COMMAND_TYPE_SEQUENCE;
+						break;
+					default:
+						elog(ERROR, "unsupported relkind '%c'", relkind);
+				}
 				appendStringInfo(&json, "}");
 
 				/* Queue the truncate for replication. */
-				queue_message(list_make1(repset->name), GetUserId(),
-							  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
+				queue_message(list_make1(repset->name), GetUserId(), cmdtype,
+							  json.data);
 			}
 		}
 
