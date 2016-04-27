@@ -92,7 +92,7 @@ CREATE TABLE pglogical.replication_set (
 ) WITH (user_catalog_table=true);
 
 CREATE TABLE pglogical.replication_set_relation (
-    set_id integer NOT NULL,
+    set_id oid NOT NULL,
     set_reloid regclass NOT NULL,
     PRIMARY KEY(set_id, set_reloid)
 ) WITH (user_catalog_table=true);

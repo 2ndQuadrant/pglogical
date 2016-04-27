@@ -10,7 +10,9 @@ DROP FUNCTION pglogical.replicate_ddl_command(command text);
 CREATE OR REPLACE FUNCTION pglogical.replicate_ddl_command(command text, replication_sets text[] DEFAULT '{ddl_sql}')
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replicate_ddl_command';
 
+DROP VIEW pglogical.TABLES;
 ALTER TABLE pglogical.replication_set_table RENAME TO replication_set_relation;
+ALTER TABLE pglogical.replication_set_relation ALTER COLUMN set_id TYPE oid;
 
 CREATE TABLE pglogical.sequence_state (
 	seqoid oid NOT NULL PRIMARY KEY,
