@@ -18,8 +18,8 @@
 
 
 /* XXYYZZ format version number and human readable version */
-#define PGLOGICAL_OUTPUT_VERSION_NUM 10000
-#define PGLOGICAL_OUTPUT_VERSION "1.0.0"
+#define PGLOGICAL_OUTPUT_VERSION_NUM 10100
+#define PGLOGICAL_OUTPUT_VERSION "1.1.0"
 
 /*
  * Protocol capabilities

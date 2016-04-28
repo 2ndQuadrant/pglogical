@@ -9,7 +9,7 @@ OBJS = pglogical_output.o pglogical_hooks.o pglogical_config.o \
 REGRESS = prep params_native basic_native hooks_native basic_json hooks_json encoding_json extension cleanup
 
 EXTENSION = pglogical_output
-DATA = pglogical_output--1.0.0.sql
+DATA = pglogical_output--1.1.0.sql pglogical_output--1.0.0--1.1.0.sql pglogical_output--1.0.1--1.1.0.sql
 EXTRA_CLEAN += pglogical_output.control
 
 
