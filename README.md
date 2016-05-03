@@ -170,7 +170,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the subscription, must be unique
   - `provider_dsn` - connection string to a provider
   - `replication_sets` - array of replication sets to subscribe to, these must
-    already exist, default is "{default,default_insert_only}"
+    already exist, default is "{default,default_insert_only,ddl_sql}"
   - `synchronize_structure` - specifies if to synchronize structure from
     provider to the subscriber, default false
   - `synchronize_data` - specifies if to synchronize data from provider to
@@ -276,11 +276,13 @@ replication sets as well. The resulting set of tables and actions replicated
 is the union of the sets the table is in. The tables are not replicated until
 they are added into a replication set.
 
-There are two preexisting replication sets named "default" and
-"default_insert_only". The "default" replication set is defined to replicate
-all changes to tables in in. The "default_insert_only" only replicates INSERTs
-and is meant for tables that don't have primary key (see
+There are three preexisting replication sets named "default",
+"default_insert_only" and "ddl_sql". The "default" replication set is defined
+to replicate all changes to tables in it. The "default_insert_only" only
+replicates INSERTs and is meant for tables that don't have primary key (see
 [Limitations](#primary-key-or-replica-identity-required) section for details).
+The "ddl_sql" replication set is defined to replicate schema changes specified by
+`pglogical.replicate_ddl_command`
 
 The following functions are provided for managing the replication sets:
 
