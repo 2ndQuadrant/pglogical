@@ -270,7 +270,7 @@ main(int argc, char **argv)
 		die(_("Subscriber connection must be specified.\n"));
 
 	if (!replication_sets || !strlen(replication_sets))
-		replication_sets = "default";
+		replication_sets = "default,default_insert_only,ddl_sql";
 
 	logfd = open("pglogical_create_subscriber_postgres.log", O_CREAT | O_RDWR,
 				 S_IRUSR | S_IWUSR);
