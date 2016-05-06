@@ -188,7 +188,7 @@ main(int argc, char **argv)
 	}
 
 	/* Option parsing and validation */
-	while ((c = getopt_long(argc, argv, "D:n:p:sv", long_options, &optindex)) != -1)
+	while ((c = getopt_long(argc, argv, "D:n:sv", long_options, &optindex)) != -1)
 	{
 		switch (c)
 		{
@@ -366,7 +366,7 @@ main(int argc, char **argv)
 	PQfinish(subscriber_conn);
 	subscriber_conn = NULL;
 
-	/* Stop Postgres so we can reset system id and start it with BDR loaded. */
+	/* Stop Postgres so we can reset system id and start it with pglogical loaded. */
 	pg_ctl_ret = run_pg_ctl("stop");
 	if (pg_ctl_ret != 0)
 		die(_("Postgres stop after restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
@@ -445,7 +445,6 @@ usage(void)
 	printf(_("                              pg_basebackup -X stream command\n"));
 	printf(_("  -n, --subscriber-name=NAME  name of the newly created subscrber\n"));
 	printf(_("  --subscriber-dsn=CONNSTR    connection string to the newly created subscriber\n"));
-	printf(_("  -p, --provider-name=NAME    name of the provider to subscribe to\n"));
 	printf(_("  --provider-dsn=CONNSTR      connection string to the provider\n"));
 	printf(_("  --replication-sets=SETS     comma separated list of replication set names\n"));
 	printf(_("  --drop-slot-if-exists       drop replication slot of conflicting name\n"));
