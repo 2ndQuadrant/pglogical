@@ -171,3 +171,12 @@ git-dist: dist-common
 
 
 .PHONY: regresscheck
+
+# runs TAP tests
+
+# PGXS doesn't support TAP tests yet.
+# Copy perl modules in postgresql_srcdir/src/test/perl
+# to postgresql_installdir/lib/pgxs/src/test/perl
+
+check_prove:
+	$(prove_check)
