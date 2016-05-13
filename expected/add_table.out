@@ -266,7 +266,7 @@ SELECT * FROM public.test_publicschema;
 SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
  nspname |      relname      |   status    
 ---------+-------------------+-------------
- public  | test_publicschema | syncronized
+ public  | test_publicschema | synchronized
 (1 row)
 
 BEGIN;

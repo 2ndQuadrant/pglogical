@@ -880,7 +880,7 @@ sync_status_to_string(char status)
 		case SYNC_STATUS_CATCHUP:
 			return "catchup";
 		case SYNC_STATUS_READY:
-			return "syncronized";
+      return "synchronized";
 		default:
 			return "unknown";
 	}
