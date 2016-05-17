@@ -53,6 +53,33 @@ Tables must have the same `PRIMARY KEY`s. It is not recommended to add additiona
 
 Some additional requirements are covered in "Limitations and Restrictions", below.
 
+## Installation
+
+### Packages
+
+There are RPM and deb packages at
+[2ndQuadrant.com](http://2ndquadrant.com/en/resources/pglogical/pglogical-installation-instructions/).
+
+### From source code
+
+Source code installs are the same as for any other PostgreSQL extension built
+using PGXS.
+
+Make sure the directory containing `pg_config` from the PostgreSQL release is
+listed in your `PATH` environment variable. You might have to install a `-dev`
+or `-devel` package for your PostgreSQL release from your package manager if
+you don't have `pg_config`.
+
+Then run `make USE_PGXS=1` to compile, and `make USE_PGXS=1 install` to
+install. You might need to use `sudo` for the install step.
+
+e.g. for a typical Fedora or RHEL 7 install, assuming you're using the
+[yum.postgresql.org](http://yum.postgresql.org) packages for PostgreSQL:
+
+    sudo dnf install postgresql95-devel
+    PATH=/usr/pgsql-9.5/bin:$PATH make USE_PGXS=1 clean all
+    sudo PATH=/usr/pgsql-9.5/bin:$PATH make USE_PGXS=1 install
+
 ## Usage
 
 This section describes basic usage of the pglogical replication extension.
