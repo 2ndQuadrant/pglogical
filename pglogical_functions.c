@@ -226,7 +226,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 					strncmp(NameStr(slot->data.name), "pgl_", 4) != 0)
 				{
 					SpinLockRelease(&slot->mutex);
-					LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+					LWLockRelease(ReplicationSlotControlLock);
 					continue;
 				}
 
@@ -237,7 +237,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 #endif
 				{
 					SpinLockRelease(&slot->mutex);
-					LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+					LWLockRelease(ReplicationSlotControlLock);
 					ereport(ERROR,
 							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 							 errmsg("cannot drop node \"%s\" because replication slot \"%s\" on the node is still active",
@@ -245,7 +245,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 							 errhint("drop the subscriptions first")));
 				}
 				SpinLockRelease(&slot->mutex);
-				LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
+				LWLockRelease(ReplicationSlotControlLock);
 
 				ReplicationSlotDrop(NameStr(slot->data.name));
 			}
