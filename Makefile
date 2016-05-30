@@ -16,13 +16,9 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical_sequences.o
 
 # 9.4 needs SCRIPTS set to do anything, even if SCRIPTS_built is set
-SCRIPTS=pglogical_create_subscriber
+SCRIPTS = pglogical_create_subscriber
 
 SCRIPTS_built = pglogical_create_subscriber
-
-
-PG_CPPFLAGS = -I$(libpq_srcdir)
-SHLIB_LINK = $(libpq)
 
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  toasted replication_set add_table matview bidirectional primary_key \
@@ -35,18 +31,14 @@ EXTRA_CLEAN += pglogical.control compat94/pglogical_compat.o \
 # so it must be escaped. The $ placeholders in awk must be doubled too.
 pglogical_version=$(shell awk '/\#define PGLOGICAL_VERSION[ \t]+\".*\"/ { print substr($$3,2,length($$3)-2) }' $(realpath $(srcdir)/pglogical.h) )
 
-ifdef USE_PGXS
-
-
 # For regression checks
 # http://www.postgresql.org/message-id/CAB7nPqTsR5o3g-fBi6jbsVdhfPiLFWQ_0cGU5=94Rv_8W3qvFA@mail.gmail.com
 # this makes "make check" give a useful error
 abs_top_builddir = .
 NO_TEMP_INSTALL = yes
 
-PG_CONFIG = pg_config
-
-#PG_CPPFLAGS += -Ipglogical_output
+PG_CPPFLAGS += -I$(libpq_srcdir)
+SHLIB_LINK += $(libpq)
 
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
@@ -66,14 +58,14 @@ PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
 OBJS += $(srcdir)/compat95/pglogical_compat.o
 endif
 
-PGXS := $(shell $(PG_CONFIG) --pgxs)
+PG_CONFIG ?= pg_config
+PGXS = $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
-	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(LIBS) -o $@$(X)
 
 ifeq ($(PGVER),94)
 regresscheck: ;
+check: ;
 
 $(srcdir)/pglogical_dump/pg_dump.c:
 	$(warning pglogical_dump empty, trying to fetch as submodule)
@@ -105,9 +97,12 @@ regresscheck:
 	    --create-role=logical \
 	    $(REGRESS)
 
-check: install regresscheck ;
+check: install regresscheck
 
 endif
+
+pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(LIBS) -o $@$(X)
 
 
 # Even if we don't build pglogical_dump we should still clean it
@@ -116,25 +111,6 @@ pglogical-dump-clean:
 	if [ -e pglogical_dump/Makefile ]; then $(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump clean; fi
 
 clean: pglogical-dump-clean
-
-.PHONY: pglogical-dump-clean
-
-else
-
-# In-tree builds only
-subdir = contrib/pglogical
-top_builddir = ../..
-include $(top_builddir)/src/Makefile.global
-include $(top_srcdir)/contrib/contrib-global.mk
-
-# Disabled because these tests require "wal_level=logical", which
-# typical installcheck users do not have (e.g. buildfarm clients).
-@installcheck: ;
-
-EXTRA_INSTALL += $(top_srcdir)/contrib/pglogical_output
-EXTRA_REGRESS_OPTS += $(top_srcdir)/contrib/regress-postgresql.conf
-
-endif
 
 pglogical.control: pglogical.control.in pglogical.h
 	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
@@ -170,8 +146,6 @@ git-dist: wanttag=0
 git-dist: dist-common
 
 
-.PHONY: regresscheck
-
 # runs TAP tests
 
 # PGXS doesn't support TAP tests yet.
@@ -180,3 +154,5 @@ git-dist: dist-common
 
 check_prove:
 	$(prove_check)
+
+.PHONY: all pglogical-dump-clean check regresscheck
