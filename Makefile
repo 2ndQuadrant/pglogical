@@ -13,8 +13,6 @@ DATA = pglogical_output--1.1.0.sql pglogical_output--1.0.0--1.1.0.sql pglogical_
 EXTRA_CLEAN += pglogical_output.control
 
 
-ifdef USE_PGXS
-
 # For regression checks
 # http://www.postgresql.org/message-id/CAB7nPqTsR5o3g-fBi6jbsVdhfPiLFWQ_0cGU5=94Rv_8W3qvFA@mail.gmail.com
 # this makes "make check" give a useful error
@@ -34,23 +32,6 @@ plhooks:
 
 installcheck: plhooks
 
-else
-
-subdir = contrib/pglogical_output
-top_builddir = ../..
-include $(top_builddir)/src/Makefile.global
-include $(top_srcdir)/contrib/contrib-global.mk
-
-# 'make installcheck' disabled when building in-tree because these tests
-# require "wal_level=logical", which typical installcheck users do not have
-# (e.g. buildfarm clients).
-installcheck:
-	;
-
-EXTRA_INSTALL += $(subdir)/examples/hooks
-EXTRA_REGRESS_OPTS += --temp-config=./regression.conf
-
-endif
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
