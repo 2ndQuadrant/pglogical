@@ -37,6 +37,8 @@ pglogical_version=$(shell awk '/\#define PGLOGICAL_VERSION[ \t]+\".*\"/ { print 
 abs_top_builddir = .
 NO_TEMP_INSTALL = yes
 
+PG_CONFIG ?= pg_config
+
 PG_CPPFLAGS += -I$(libpq_srcdir)
 SHLIB_LINK += $(libpq)
 
@@ -58,7 +60,6 @@ PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
 OBJS += $(srcdir)/compat95/pglogical_compat.o
 endif
 
-PG_CONFIG ?= pg_config
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
