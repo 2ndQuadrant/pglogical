@@ -119,7 +119,9 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
 
 SELECT * FROM public.test_publicschema;
 
+\x
 SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+\x
 
 BEGIN;
 SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'repset_test');

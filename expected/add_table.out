@@ -263,12 +263,14 @@ SELECT * FROM public.test_publicschema;
   4 | d
 (4 rows)
 
+\x
 SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
- nspname |      relname      |   status    
----------+-------------------+-------------
- public  | test_publicschema | synchronized
-(1 row)
+-[ RECORD 1 ]--------------
+nspname | public
+relname | test_publicschema
+status  | synchronized
 
+\x
 BEGIN;
 SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'repset_test');
  alter_subscription_add_replication_set 
