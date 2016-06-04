@@ -44,6 +44,7 @@ SHLIB_LINK += $(libpq)
 
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
+requires=""
 ifeq ($(PGVER),94)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat94))
 OBJS += $(srcdir)/compat94/pglogical_compat.o
@@ -54,6 +55,7 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
+requires="requires=pglogical_origin"
 endif
 ifeq ($(PGVER),95)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
@@ -115,6 +117,7 @@ clean: pglogical-dump-clean
 
 pglogical.control: pglogical.control.in pglogical.h
 	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
+	sed 's/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
 
 all: pglogical.control
 
