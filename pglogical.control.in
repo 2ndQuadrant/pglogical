@@ -3,4 +3,5 @@ comment = 'PostgreSQL Logical Replication'
 default_version = '__PGLOGICAL_VERSION__'
 module_pathname = '$libdir/pglogical'
 relocatable = false
+__REQUIRES__
 schema = pglogical
