@@ -103,8 +103,7 @@ you can add this additional option to postgresql.conf:
     track_commit_timestamp = on # needed for last/first update wins conflict resolution
                                 # property available in PostgreSQL 9.5+
 
-`pg_hba.conf` has to allow replication connections from localhost, by a user
-with replication privilege.
+`pg_hba.conf` has to allow replication connections from localhost.
 
 Next the `pglogical` extension has to be installed on all nodes:
 
@@ -470,8 +469,8 @@ When `track_commit_timestamp` is disabled, the only allowed value is
 
 ### Superuser is required
 
-Currently pglogical replication requires superuser. It may be later extended to
-user with replication privileges.
+Currently pglogical replication and administration requires superuser
+privileges. It may be later extended to more granular privileges.
 
 ### `UNLOGGED` and `TEMPORARY` not replicated
 
