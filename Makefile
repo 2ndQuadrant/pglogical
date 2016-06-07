@@ -44,7 +44,7 @@ SHLIB_LINK += $(libpq)
 
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
-requires=""
+requires=
 ifeq ($(PGVER),94)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat94))
 OBJS += $(srcdir)/compat94/pglogical_compat.o
@@ -116,8 +116,7 @@ pglogical-dump-clean:
 clean: pglogical-dump-clean
 
 pglogical.control: pglogical.control.in pglogical.h
-	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
-	sed 's/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
+	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
 
 all: pglogical.control
 
