@@ -93,7 +93,7 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 
 		/* Cache trigger info. */
 		entry->hasTriggers = false;
-		if (entry->rel->rd_rel->relhastriggers)
+		if (entry->rel->trigdesc != NULL)
 		{
 			TriggerDesc	   *trigdesc = entry->rel->trigdesc;
 			int				i;
