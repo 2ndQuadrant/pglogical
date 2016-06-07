@@ -13,7 +13,7 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical.o pglogical_repset.o pglogical_rpc.o \
 	   pglogical_functions.o pglogical_queue.o pglogical_fe.o \
 	   pglogical_worker.o pglogical_hooks.o pglogical_sync.o \
-	   pglogical_sequences.o pglogical_create_subscriber.o
+	   pglogical_sequences.o
 
 # 9.4 needs SCRIPTS set to do anything, even if SCRIPTS_built is set
 SCRIPTS = pglogical_create_subscriber
@@ -25,7 +25,7 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  interfaces foreign_key functions copy triggers parallel drop
 
 EXTRA_CLEAN += pglogical.control compat94/pglogical_compat.o \
-			   compat95/pglogical_compat.o
+			   compat95/pglogical_compat.o pglogical_create_subscriber.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
