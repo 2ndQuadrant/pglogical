@@ -8,7 +8,7 @@ SELECT pglogical.replicate_ddl_command($$
 	CREATE TABLE public.toasted (
 		id serial primary key,
 		other text,
-		data text
+		data text NOT NULL
 	);
 $$);
 
