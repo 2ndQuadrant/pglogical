@@ -23,6 +23,7 @@
 
 #include "utils/guc.h"
 #include "utils/memutils.h"
+#include "utils/timestamp.h"
 
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
