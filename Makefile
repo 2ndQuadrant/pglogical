@@ -55,7 +55,7 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
-requires="requires=pglogical_origin"
+requires = requires=pglogical_origin
 endif
 ifeq ($(PGVER),95)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
