@@ -871,6 +871,12 @@ pglogical_sync_main(Datum main_arg)
 	streamConn = pglogical_connect_replica(MySubscription->origin_if->dsn,
 										   MySubscription->name);
 
+	/*
+	 * IDENTIFY_SYSTEM sets up some internal state on walsender so call it even
+	 * if we don't (yet) want to use any of the results.
+     */
+	pglogical_identify_system(streamConn, NULL, NULL, NULL, NULL);
+
 	pglogical_start_replication(streamConn, MySubscription->slot_name,
 								origin_startpos, "all", NULL, tablename);
 

@@ -16,6 +16,7 @@
 #include "storage/s_lock.h"
 #include "postmaster/bgworker.h"
 #include "utils/array.h"
+#include "access/xlogdefs.h"
 
 #include "libpq-fe.h"
 
@@ -55,6 +56,9 @@ extern void pglogical_execute_sql_command(char *cmdstr, char *role,
 extern PGconn *pglogical_connect(const char *connstring, const char *connname);
 extern PGconn *pglogical_connect_replica(const char *connstring,
 										 const char *connname);
+extern void pglogical_identify_system(PGconn *streamConn, uint64* sysid,
+									  TimeLineID *timeline, XLogRecPtr *xlogpos,
+									  Name *dbname);
 extern void pglogical_start_replication(PGconn *streamConn,
 										const char *slot_name,
 										XLogRecPtr start_pos,
