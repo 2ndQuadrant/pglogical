@@ -1968,6 +1968,13 @@ pglogical_apply_main(Datum main_arg)
 
 	repsets = stringlist_to_identifierstr(MySubscription->replication_sets);
 	origins = stringlist_to_identifierstr(MySubscription->forward_origins);
+
+	/*
+	 * IDENTIFY_SYSTEM sets up some internal state on walsender so call it even
+	 * if we don't (yet) want to use any of the results.
+     */
+	pglogical_identify_system(streamConn, NULL, NULL, NULL, NULL);
+
 	pglogical_start_replication(streamConn, MySubscription->slot_name,
 								origin_startpos, origins, repsets, NULL);
 	pfree(repsets);

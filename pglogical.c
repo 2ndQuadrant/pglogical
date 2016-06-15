@@ -261,6 +261,67 @@ pglogical_manage_extension(void)
 	PopActiveSnapshot();
 }
 
+/*
+ * Call IDENTIFY_SYSTEM on the connection and report its results.
+ */
+void
+pglogical_identify_system(PGconn *streamConn, uint64* sysid,
+							TimeLineID *timeline, XLogRecPtr *xlogpos,
+							Name *dbname)
+{
+	PGresult	   *res;
+
+	res = PQexec(streamConn, "IDENTIFY_SYSTEM");
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		elog(ERROR, "could not send replication command \"%s\": %s",
+			 "IDENTIFY_SYSTEM", PQerrorMessage(streamConn));
+	}
+	if (PQntuples(res) != 1 || PQnfields(res) < 4)
+	{
+		elog(ERROR, "could not identify system: got %d rows and %d fields, expected %d rows and at least %d fields\n",
+			 PQntuples(res), PQnfields(res), 1, 4);
+	}
+
+	if (PQnfields(res) >= 4)
+	{
+		elog(DEBUG2, "ignoring extra fields in IDENTIFY_SYSTEM response; expected 4, got %d",
+			 PQnfields(res));
+	}
+
+	if (sysid != NULL)
+	{
+		const char *remote_sysid = PQgetvalue(res, 0, 0);
+		if (sscanf(remote_sysid, UINT64_FORMAT, sysid) != 1)
+			elog(ERROR, "could not parse remote sysid %s", remote_sysid);
+	}
+
+	if (timeline != NULL)
+	{
+		const char *remote_tlid = PQgetvalue(res, 0, 1);
+		if (sscanf(remote_tlid, "%u", timeline) != 1)
+			elog(ERROR, "could not parse remote tlid %s", remote_tlid);
+	}
+
+	if (xlogpos != NULL)
+	{
+		const char *remote_xlogpos = PQgetvalue(res, 0, 2);
+		uint32 xlogpos_low, xlogpos_high;
+		if (sscanf(remote_xlogpos, "%X/%X", &xlogpos_high, &xlogpos_low) != 2)
+			elog(ERROR, "could not parse remote xlogpos %s", remote_xlogpos);
+		*xlogpos = (((XLogRecPtr)xlogpos_high)<<32) + xlogpos_low;
+	}
+
+	if (dbname != NULL)
+	{
+		char *remote_dbname = PQgetvalue(res, 0, 3);
+		strncpy(NameStr(**dbname), remote_dbname, NAMEDATALEN);
+		NameStr(**dbname)[NAMEDATALEN-1] = '\0';
+	}
+
+	PQclear(res);
+}
+
 void
 pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 							XLogRecPtr start_pos, const char *forward_origins,
