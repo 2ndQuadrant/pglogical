@@ -172,6 +172,12 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 
 		CHECK_FOR_INTERRUPTS();
 
+		if (got_SIGTERM)
+		{
+			elog(DEBUG1, "pglogical supervisor exiting on SIGTERM");
+			proc_exit(0);
+		}
+
 		status = GetBackgroundWorkerPid(handle, &pid);
 		if (status == BGWH_STARTED && pglogical_worker_running(worker))
 		{
