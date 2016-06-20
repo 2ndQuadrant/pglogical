@@ -173,7 +173,7 @@ pglogical_manager_main(Datum main_arg)
 	int			sleep_timer = INITIAL_SLEEP;
 
 	/* Setup shmem. */
-	pglogical_worker_attach(slot);
+	pglogical_worker_attach(slot, PGLOGICAL_WORKER_MANAGER);
 
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);

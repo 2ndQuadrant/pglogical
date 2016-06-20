@@ -1903,7 +1903,7 @@ pglogical_apply_main(Datum main_arg)
 	char		   *origins;
 
 	/* Setup shmem. */
-	pglogical_worker_attach(slot);
+	pglogical_worker_attach(slot, PGLOGICAL_WORKER_APPLY);
 	MyApplyWorker = &MyPGLogicalWorker->worker.apply;
 
 	/* Establish signal handlers. */

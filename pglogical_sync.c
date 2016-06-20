@@ -780,7 +780,7 @@ pglogical_sync_main(Datum main_arg)
 	char		   *tablename;
 
 	/* Setup shmem. */
-	pglogical_worker_attach(slot);
+	pglogical_worker_attach(slot, PGLOGICAL_WORKER_SYNC);
 	MySyncWorker = &MyPGLogicalWorker->worker.sync;
 	MyApplyWorker = &MySyncWorker->apply;
 
