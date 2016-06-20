@@ -87,7 +87,7 @@ extern void pglogical_subscription_changed(Oid subid);
 extern void pglogical_worker_shmem_init(void);
 
 extern int pglogical_worker_register(PGLogicalWorker *worker);
-extern void pglogical_worker_attach(int slot);
+extern void pglogical_worker_attach(int slot, PGLogicalWorkerType type);
 
 extern PGLogicalWorker *pglogical_manager_find(Oid dboid);
 extern PGLogicalWorker *pglogical_apply_find(Oid dboid, Oid subscriberid);

@@ -27,7 +27,6 @@
 
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
-#include "pglogical.h"
 
 
 volatile sig_atomic_t	got_SIGTERM = false;
@@ -215,10 +214,11 @@ pglogical_worker_on_exit(int code, Datum arg)
 /*
  * Attach the current master process to the PGLogicalCtx.
  *
- * Called during by master worker startup.
+ * Called during worker startup to inform the master the worker
+ * is ready and give it access to the worker's PGPROC.
  */
 void
-pglogical_worker_attach(int slot)
+pglogical_worker_attach(int slot, PGLogicalWorkerType type PG_USED_FOR_ASSERTS_ONLY)
 {
 	Assert(slot < PGLogicalCtx->total_workers);
 
@@ -231,6 +231,8 @@ pglogical_worker_attach(int slot)
 	before_shmem_exit(pglogical_worker_on_exit, (Datum) 0);
 
 	MyPGLogicalWorker = &PGLogicalCtx->workers[slot];
+	Assert(MyPGLogicalWorker->proc == NULL);
+	Assert(MyPGLogicalWorker->worker_type == type);
 	MyPGLogicalWorker->proc = MyProc;
 
 	LWLockRelease(PGLogicalCtx->lock);
