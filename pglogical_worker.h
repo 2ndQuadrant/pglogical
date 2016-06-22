@@ -40,6 +40,9 @@ typedef struct PGLogicalSyncWorker
 typedef struct PGLogicalWorker {
 	PGLogicalWorkerType	worker_type;
 
+	/* Generation counter incremented at each registration */
+	uint16 generation;
+
 	/* Pointer to proc array. NULL if not running. */
 	PGPROC *proc;
 
@@ -100,5 +103,7 @@ extern List *pglogical_sync_find_all(Oid dboid, Oid subscriberid);
 extern PGLogicalWorker *pglogical_get_worker(int slot);
 extern bool pglogical_worker_running(PGLogicalWorker *w);
 extern void pglogical_worker_kill(PGLogicalWorker *worker);
+
+extern const char * pglogical_worker_type_name(PGLogicalWorkerType type);
 
 #endif /* PGLOGICAL_WORKER_H */
