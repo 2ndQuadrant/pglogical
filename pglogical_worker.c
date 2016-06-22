@@ -336,6 +336,12 @@ pglogical_worker_detach(bool crash)
 	Assert(MyPGLogicalWorker->generation == MyPGLogicalWorkerGeneration);
 	MyPGLogicalWorker->proc = NULL;
 
+	elog(LOG, "%s worker [%d] at slot %ld generation %hu %s",
+		 pglogical_worker_type_name(MyPGLogicalWorker->worker_type),
+		 MyProcPid, MyPGLogicalWorker - &PGLogicalCtx->workers[0],
+		 MyPGLogicalWorkerGeneration,
+		 crash ? "crashed" : "detaching cleanly");
+
 	/*
 	 * If we crashed we need to report it.
 	 *
@@ -361,12 +367,6 @@ pglogical_worker_detach(bool crash)
 		MyPGLogicalWorker->worker_type = PGLOGICAL_WORKER_NONE;
 		MyPGLogicalWorker->dboid = InvalidOid;
 	}
-
-	elog(LOG, "%s worker [%d] at slot %ld generation %hu %s",
-		 pglogical_worker_type_name(MyPGLogicalWorker->worker_type),
-		 MyProcPid, MyPGLogicalWorker - &PGLogicalCtx->workers[0],
-		 MyPGLogicalWorkerGeneration,
-		 crash ? "crashed" : "detached cleanly");
 
 	MyPGLogicalWorker = NULL;
 
