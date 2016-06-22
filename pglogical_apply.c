@@ -1904,6 +1904,7 @@ pglogical_apply_main(Datum main_arg)
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot, PGLOGICAL_WORKER_APPLY);
+	Assert(MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_APPLY);
 	MyApplyWorker = &MyPGLogicalWorker->worker.apply;
 
 	/* Establish signal handlers. */

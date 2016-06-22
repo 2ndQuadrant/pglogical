@@ -517,6 +517,11 @@ pglogical_supervisor_main(Datum main_arg)
 
 		if (PGLogicalCtx->subscriptions_changed)
 		{
+			/*
+			 * No need to lock here, since we'll take account of all sub
+			 * changes up to this point, even if new ones were added between
+			 * the test above and flag clear. We're just being woken up.
+			 */
 			PGLogicalCtx->subscriptions_changed = false;
 			StartTransactionCommand();
 			start_manager_workers();

@@ -33,6 +33,7 @@ volatile sig_atomic_t	got_SIGTERM = false;
 
 PGLogicalContext	   *PGLogicalCtx = NULL;
 PGLogicalWorker		   *MyPGLogicalWorker = NULL;
+static uint16			MyPGLogicalWorkerGeneration;
 
 static bool xacthook_signal_workers = false;
 
@@ -72,8 +73,8 @@ find_empty_worker_slot(void)
 
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
-		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_NONE ||
-			PGLogicalCtx->workers[i].crashed_at != 0)
+		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_NONE
+		    || PGLogicalCtx->workers[i].crashed_at != 0)
 			return i;
 	}
 
@@ -89,8 +90,12 @@ int
 pglogical_worker_register(PGLogicalWorker *worker)
 {
 	BackgroundWorker	bgw;
+	PGLogicalWorker		*worker_shm;
 	BackgroundWorkerHandle *bgw_handle;
 	int					slot;
+	int					next_generation;
+
+	Assert(worker->worker_type != PGLOGICAL_WORKER_NONE);
 
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
@@ -101,8 +106,21 @@ pglogical_worker_register(PGLogicalWorker *worker)
 		elog(ERROR, "could not register pglogical worker: all background worker slots are already used");
 	}
 
-	memcpy(&PGLogicalCtx->workers[slot], worker, sizeof(PGLogicalWorker));
-	PGLogicalCtx->workers[slot].crashed_at = 0;
+	worker_shm = &PGLogicalCtx->workers[slot];
+
+	/*
+	 * Maintain a generation counter for worker registrations; see
+	 * wait_for_worker_startup(...). The counter wraps around.
+	 */
+	if (worker_shm->generation == UINT16_MAX)
+		next_generation = 0;
+	else
+		next_generation = worker_shm->generation + 1;
+
+	memcpy(worker_shm, worker, sizeof(PGLogicalWorker));
+	worker_shm->generation = next_generation;
+	worker_shm->crashed_at = 0;
+	worker_shm->proc = NULL;
 
 	LWLockRelease(PGLogicalCtx->lock);
 
@@ -143,13 +161,13 @@ pglogical_worker_register(PGLogicalWorker *worker)
 
 	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
 	{
-		PGLogicalCtx->workers[slot].crashed_at = GetCurrentTimestamp();
+		worker_shm->crashed_at = GetCurrentTimestamp();
 		ereport(ERROR,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("worker registration failed, you might want to increase max_worker_processes setting")));
 	}
 
-	wait_for_worker_startup(&PGLogicalCtx->workers[slot], bgw_handle);
+	wait_for_worker_startup(worker_shm, bgw_handle);
 
 	return slot;
 }
@@ -164,10 +182,14 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 {
 	BgwHandleStatus status;
 	int			rc;
+	uint16		generation = worker->generation;
+
+	Assert(worker->worker_type != PGLOGICAL_WORKER_NONE);
+	Assert(handle != NULL);
 
 	for (;;)
 	{
-		pid_t		pid;
+		pid_t		pid = 0;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -178,13 +200,61 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 		}
 
 		status = GetBackgroundWorkerPid(handle, &pid);
+
 		if (status == BGWH_STARTED && pglogical_worker_running(worker))
 		{
+			elog(DEBUG2, "%s worker at slot %ld started with pid %d and attached to shmem",
+				 pglogical_worker_type_name(worker->worker_type), (worker - &PGLogicalCtx->workers[0]), pid);
 			break;
 		}
 		if (status == BGWH_STOPPED)
 		{
-			worker->crashed_at = GetCurrentTimestamp();
+			/*
+			 * The worker may have:
+			 * - failed to launch after registration
+			 * - launched then crashed/exited before attaching
+			 * - launched, attached, done its work, detached cleanly and exited
+			 *   before we got rescheduled
+			 * - launched, attached, crashed and self-reported its crash, then
+			 *   exited before we got rescheduled
+			 *
+			 * If it detached cleanly it will've set its worker type to
+			 * PGLOGICAL_WORKER_NONE, which it can't have been at entry, so we
+			 * know it must've started, attached and cleared it.
+			 *
+			 * However, someone else might've grabbed the slot and re-used it
+			 * and not exited yet, so if the worker type is not NONE we can't
+			 * tell if it's our worker that's crashed or another worker that
+			 * might still be running. We use a generation counter incremented
+			 * on registration to tell the difference. If the generation
+			 * counter has increased we know the our worker must've exited
+			 * cleanly (setting the worker type back to NONE) or self-reported
+			 * a crash (setting crashed_at), then the slot re-used by another
+			 * manager.
+			 */
+			if (worker->worker_type != PGLOGICAL_WORKER_NONE
+				&& worker->generation == generation
+				&& worker->crashed_at == 0)
+			{
+				/*
+				 * The worker we launched (same generation) crashed before
+				 * attaching to shmem so it didn't set crashed_at. Mark it
+				 * crashed so the slot can be re-used.
+				 */
+				elog(DEBUG2, "%s worker at slot %ld exited prematurely",
+					 pglogical_worker_type_name(worker->worker_type), (worker - &PGLogicalCtx->workers[0]));
+				worker->crashed_at = GetCurrentTimestamp();
+			}
+			else
+			{
+				/*
+				 * Worker exited normally or self-reported a crash and may have already been
+				 * replaced. Either way, we don't care, we're only looking for crashes before
+				 * shmem attach.
+				 */
+				elog(DEBUG2, "%s worker at slot %ld exited before we noticed it started",
+					 pglogical_worker_type_name(worker->worker_type), (worker - &PGLogicalCtx->workers[0]));
+			}
 			break;
 		}
 
@@ -218,8 +288,9 @@ pglogical_worker_on_exit(int code, Datum arg)
  * is ready and give it access to the worker's PGPROC.
  */
 void
-pglogical_worker_attach(int slot, PGLogicalWorkerType type PG_USED_FOR_ASSERTS_ONLY)
+pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 {
+	Assert(slot >= 0);
 	Assert(slot < PGLogicalCtx->total_workers);
 
 #if PG_VERSION_NUM < 90600
@@ -234,6 +305,11 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type PG_USED_FOR_ASSERTS_O
 	Assert(MyPGLogicalWorker->proc == NULL);
 	Assert(MyPGLogicalWorker->worker_type == type);
 	MyPGLogicalWorker->proc = MyProc;
+	MyPGLogicalWorkerGeneration = MyPGLogicalWorker->generation;
+
+	elog(DEBUG2, "%s worker [%d] attaching to slot %d generation %hu",
+		 pglogical_worker_type_name(type), MyProcPid, slot,
+		 MyPGLogicalWorkerGeneration);
 
 	LWLockRelease(PGLogicalCtx->lock);
 
@@ -257,6 +333,7 @@ pglogical_worker_detach(bool crash)
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
 	Assert(MyPGLogicalWorker->proc = MyProc);
+	Assert(MyPGLogicalWorker->generation == MyPGLogicalWorkerGeneration);
 	MyPGLogicalWorker->proc = NULL;
 
 	/*
@@ -266,6 +343,9 @@ pglogical_worker_detach(bool crash)
 	 * to shmem and the serious crashes that we can't catch here cause
 	 * postmaster to restart whole server killing all our workers and cleaning
 	 * shmem so we start from clean state in that scenario.
+	 *
+	 * It's vital NOT to clear or change the generation field here; see
+	 * wait_for_worker_startup(...).
 	 */
 	if (crash)
 	{
@@ -281,6 +361,12 @@ pglogical_worker_detach(bool crash)
 		MyPGLogicalWorker->worker_type = PGLOGICAL_WORKER_NONE;
 		MyPGLogicalWorker->dboid = InvalidOid;
 	}
+
+	elog(LOG, "%s worker [%d] at slot %ld generation %hu %s",
+		 pglogical_worker_type_name(MyPGLogicalWorker->worker_type),
+		 MyProcPid, MyPGLogicalWorker - &PGLogicalCtx->workers[0],
+		 MyPGLogicalWorkerGeneration,
+		 crash ? "crashed" : "detached cleanly");
 
 	MyPGLogicalWorker = NULL;
 
@@ -419,7 +505,12 @@ pglogical_worker_kill(PGLogicalWorker *worker)
 {
 	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
 	if (pglogical_worker_running(worker))
+	{
+		elog(DEBUG2, "killing pglogical %s worker [%d] at slot %ld",
+			 pglogical_worker_type_name(worker->worker_type),
+			 worker->proc->pid, (worker - &PGLogicalCtx->workers[0]));
 		kill(worker->proc->pid, SIGTERM);
+	}
 }
 
 static void
@@ -549,4 +640,17 @@ pglogical_worker_shmem_init(void)
 
 	prev_shmem_startup_hook = shmem_startup_hook;
 	shmem_startup_hook = pglogical_worker_shmem_startup;
+}
+
+const char *
+pglogical_worker_type_name(PGLogicalWorkerType type)
+{
+	switch (type)
+	{
+		case PGLOGICAL_WORKER_NONE: return "none";
+		case PGLOGICAL_WORKER_MANAGER: return "manager";
+		case PGLOGICAL_WORKER_APPLY: return "apply";
+		case PGLOGICAL_WORKER_SYNC: return "sync";
+		default: Assert(false); return NULL;
+	}
 }
