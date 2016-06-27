@@ -295,6 +295,16 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `replication_set` - name of replication set to remove
 
+
+There is also a `postgresql.conf` parameter,
+`pglogical.extra_connection_options`, that may be set to assign connection
+options that apply to all connections made by pglogical. This can be a useful
+place to set up custom keepalive options, etc.
+
+pglogical defaults to enabling TCP keepalives to ensure that it notices
+when the upstream server disappears unexpectedly. To disable them add
+`keepalives = 0` to `pglogical.extra_connection_options`.
+
 ### Replication sets
 
 Replication sets provide a mechanism to control which tables in the database
