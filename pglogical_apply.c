@@ -187,6 +187,10 @@ handle_commit(StringInfo s)
 	if (remote_origin_id != InvalidRepOriginId &&
 		remote_origin_id != replorigin_session_origin)
 	{
+		elog(DEBUG3, "advancing origin oid %u for forwarded row to %X/%X",
+			remote_origin_id,
+			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
+
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
 	}
@@ -1959,6 +1963,8 @@ pglogical_apply_main(Datum main_arg)
 	QueueRelid = get_queue_table_oid();
 
 	originid = replorigin_by_name(MySubscription->slot_name, false);
+	elog(DEBUG2, "setting up replication origin %s (oid %u)",
+		MySubscription->slot_name, originid);
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
