@@ -559,7 +559,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 				StartTransactionCommand();
 
 				originid = ensure_replication_origin(sub->slot_name);
-				elog(DEBUG3, "advancing origin %s (oid %u) for forwarded row to %X/%X during subscription sync",
+				elog(DEBUG3, "advancing origin with oid %u for forwarded row to %X/%X during subscription sync",
 					originid,
 					(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 				replorigin_advance(originid, lsn, XactLastCommitEnd, true,
