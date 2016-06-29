@@ -142,7 +142,7 @@ handle_begin(StringInfo s)
 
 	replorigin_session_origin_timestamp = commit_time;
 	replorigin_session_origin_lsn = commit_lsn;
-	remote_origin_id = InvalidRepNodeId;
+	remote_origin_id = InvalidRepOriginId;
 
 	in_remote_transaction = true;
 
