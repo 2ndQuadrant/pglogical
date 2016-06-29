@@ -908,9 +908,6 @@ handle_startup(StringInfo s)
 		/* It's OK to have a zero length value */
 		v = pq_getmsgstring(s);
 
-		/* log parameters for tracing */
-		elog(DEBUG2, "pglogical session start param %s=%s", k, v);
-
 		handle_startup_param(k, v);
 	} while (!getmsgisend(s));
 }
@@ -932,7 +929,7 @@ parse_bool_param(const char *key, const char *value)
 static void
 handle_startup_param(const char *key, const char *value)
 {
-	elog(DEBUG2, "Got pglogical startup msg param  %s=%s", key, value);
+	elog(DEBUG2, "apply got pglogical startup msg param  %s=%s", key, value);
 
 	if (strcmp(key, "pg_version") == 0)
 		elog(DEBUG1, "upstream Pg version is %s", value);
