@@ -433,6 +433,7 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
 	appendStringInfo(&command, ", pglogical_version '%s'", PGLOGICAL_VERSION);
 	appendStringInfo(&command, ", pglogical_version_num '%d'", PGLOGICAL_VERSION_NUM);
+	appendStringInfo(&command, ", pglogical_apply_pid '%d'", MyProcPid);
 
 	appendStringInfoChar(&command, ')');
 
