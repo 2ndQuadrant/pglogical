@@ -155,35 +155,51 @@ handle_begin(StringInfo s)
 static void
 handle_commit(StringInfo s)
 {
-	XLogRecPtr		commit_lsn;
-	XLogRecPtr		end_lsn;
-	TimestampTz		commit_time;
+	XLogRecPtr		commit_lsn; XLogRecPtr		end_lsn; TimestampTz
+commit_time;
 
 	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
 
-	Assert(commit_lsn == replorigin_session_origin_lsn);
-	Assert(commit_time == replorigin_session_origin_timestamp);
+	Assert(commit_lsn == replorigin_session_origin_lsn); Assert(commit_time ==
+replorigin_session_origin_timestamp);
 
-	if (IsTransactionState())
-	{
-		PGLFlushPosition *flushpos;
+	if (IsTransactionState()) { PGLFlushPosition *flushpos;
 
-		CommitTransactionCommand();
-		MemoryContextSwitchTo(TopMemoryContext);
+		CommitTransactionCommand(); MemoryContextSwitchTo(TopMemoryContext);
 
 		/* Track commit lsn  */
 		flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
-		flushpos->local_end = XactLastCommitEnd;
-		flushpos->remote_end = end_lsn;
+flushpos->local_end = XactLastCommitEnd; flushpos->remote_end = end_lsn;
 
 		dlist_push_tail(&lsn_mapping, &flushpos->node);
-		MemoryContextSwitchTo(MessageContext);
-	}
+MemoryContextSwitchTo(MessageContext); }
 
 	/*
-	 * If the row isn't from the immediate upstream; advance the slot of the
-	 * node it originally came from so we start replay of that node's
-	 * change data at the right place.
+	 * If the xact isn't from the immediate upstream, advance the slot of the
+	 * node it originally came from so we start replay of that node's change
+	 * data at the right place.
+	 *
+	 * This is only necessary when we're streaming data from one peer (A) that
+	 * in turn receives from other peers (B, C), and we plan to later switch to
+	 * replaying directly from B and/or C, no longer receiving forwarded xacts
+	 * from A. When we do the switchover we need to know the right place at
+	 * which to start replay from B and C. We don't actually do that yet, but
+	 * we'll want to be able to do cascaded initialisation in future, so it's
+	 * worth keeping track.
+	 *
+	 * A failure can occur here (see #79) if there's a cascading
+	 * replication configuration like:
+	 *
+	 * X--> Y -> Z
+	 * |         ^
+	 * |         |
+	 * \---------/
+	 *
+	 * where the direct and indirect connections from X to Z use different
+	 * replication sets so as not to conflict, and where Y and Z are on the
+	 * same PostgreSQL instance. In this case our attempt to advance the
+	 * replication identifier here will ERROR because it's already in use
+	 * for the direct connection from X to Z. So don't do that.
 	 */
 	if (remote_origin_id != InvalidRepOriginId &&
 		remote_origin_id != replorigin_session_origin)
