@@ -305,7 +305,7 @@ pglogical_identify_system(PGconn *streamConn, uint64* sysid,
 			 PQntuples(res), PQnfields(res), 1, 4);
 	}
 
-	if (PQnfields(res) >= 4)
+	if (PQnfields(res) > 4)
 	{
 		elog(DEBUG2, "ignoring extra fields in IDENTIFY_SYSTEM response; expected 4, got %d",
 			 PQnfields(res));
