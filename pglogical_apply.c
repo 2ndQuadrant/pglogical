@@ -155,24 +155,30 @@ handle_begin(StringInfo s)
 static void
 handle_commit(StringInfo s)
 {
-	XLogRecPtr		commit_lsn; XLogRecPtr		end_lsn; TimestampTz
-commit_time;
+	XLogRecPtr		commit_lsn;
+	XLogRecPtr		end_lsn;
+	TimestampTz		commit_time;
 
 	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
 
-	Assert(commit_lsn == replorigin_session_origin_lsn); Assert(commit_time ==
-replorigin_session_origin_timestamp);
+	Assert(commit_lsn == replorigin_session_origin_lsn);
+	Assert(commit_time == replorigin_session_origin_timestamp);
 
-	if (IsTransactionState()) { PGLFlushPosition *flushpos;
+	if (IsTransactionState())
+	{
+		PGLFlushPosition *flushpos;
 
-		CommitTransactionCommand(); MemoryContextSwitchTo(TopMemoryContext);
+		CommitTransactionCommand();
+		MemoryContextSwitchTo(TopMemoryContext);
 
 		/* Track commit lsn  */
 		flushpos = (PGLFlushPosition *) palloc(sizeof(PGLFlushPosition));
-flushpos->local_end = XactLastCommitEnd; flushpos->remote_end = end_lsn;
+		flushpos->local_end = XactLastCommitEnd;
+		flushpos->remote_end = end_lsn;
 
 		dlist_push_tail(&lsn_mapping, &flushpos->node);
-MemoryContextSwitchTo(MessageContext); }
+		MemoryContextSwitchTo(MessageContext);
+	}
 
 	/*
 	 * If the xact isn't from the immediate upstream, advance the slot of the
