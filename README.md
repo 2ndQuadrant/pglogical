@@ -445,6 +445,16 @@ by extensions will go to `default` replication set.
 
 ### Additional functions
 
+- `pglogical.replicate_ddl_command(command text, replication_sets text[])`
+  Execute locally and then send the specified command to the replication queue
+  for execution on subscribers which are subscribed to one of the specified
+  `replication_sets`.
+
+  Parameters:
+  - `command` - DDL query to execute
+  - `replication_sets` - array of replication sets which this command should be
+    associated with, default "{ddl_sql}"
+
 - `pglogical.synchronize_sequence(relation regclass)`
   Push sequence state to all subscribers. Unlike the subscription and table
   synchronization function, this function should be run on provider. It forces
