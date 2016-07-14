@@ -3,7 +3,7 @@
  * pglogical_create_subscriber.c
  *		Initialize a new pglogical subscriber from a physical base backup
  *
- * Copyright (C) 2012-2015, PostgreSQL Global Development Group
+ * Copyright (C) 2012-2016, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		pglogical_create_subscriber.c
@@ -84,6 +84,7 @@ __attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
 static int run_pg_ctl(const char *arg);
 static void run_basebackup(const char *provider_connstr, const char *data_dir);
 static void wait_postmaster_connection(const char *connstr);
+static void wait_primary_connection(const char *connstr);
 static void wait_postmaster_shutdown(void);
 
 static char *validate_replication_set_input(char *replication_sets);
@@ -366,7 +367,7 @@ main(int argc, char **argv)
 	if (pg_ctl_ret != 0)
 		die(_("Postgres startup for restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
 
-	wait_postmaster_connection(subscriber_connstr);
+	wait_primary_connection(subscriber_connstr);
 
 	/*
 	 * Clean any per-node data that were copied by pg_basebackup.
@@ -418,7 +419,7 @@ main(int argc, char **argv)
 	 */
 	print_msg(VERBOSITY_NORMAL, _("Creating subscriber %s ...\n"),
 			  subscriber_name);
-	print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s"), replication_sets);
+	print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s\n"), replication_sets);
 
 	pglogical_subscribe(subscriber_conn, subscriber_name, subscriber_connstr,
 						provider_connstr, replication_sets);
@@ -1289,6 +1290,40 @@ wait_postmaster_connection(const char *connstr)
 		print_msg(VERBOSITY_VERBOSE, ".");
 	}
 
+	print_msg(VERBOSITY_VERBOSE, "\n");
+}
+
+
+/*
+ * Wait for PostgreSQL to leave recovery/standby mode
+ */
+static void
+wait_primary_connection(const char *connstr)
+{
+	bool		ispri = false;
+	PGconn		*conn;
+	PGresult	*res;
+
+	wait_postmaster_connection(connstr);
+
+	print_msg(VERBOSITY_VERBOSE, "Waiting for PostgreSQL to become primary...");
+
+	conn = connectdb(connstr);
+	while(!ispri)
+	{
+		res = PQexec(conn, "SELECT pg_is_in_recovery()");
+		if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) == 1 && *PQgetvalue(res, 0, 0) == 'f')
+			ispri = true;
+		else
+		{
+			pg_usleep(1000000);		/* 1 sec */
+			print_msg(VERBOSITY_VERBOSE, ".");
+		}
+
+		PQclear(res);
+	}
+
+	PQfinish(conn);
 	print_msg(VERBOSITY_VERBOSE, "\n");
 }
 
