@@ -1301,16 +1301,23 @@ static void
 wait_primary_connection(const char *connstr)
 {
 	bool		ispri = false;
-	PGconn		*conn;
+	PGconn		*conn = NULL;
 	PGresult	*res;
 
 	wait_postmaster_connection(connstr);
 
 	print_msg(VERBOSITY_VERBOSE, "Waiting for PostgreSQL to become primary...");
 
-	conn = connectdb(connstr);
-	while(!ispri)
+	while (!ispri)
 	{
+		if (!conn || PQstatus(conn) != CONNECTION_OK)
+		{
+			if (conn)
+				PQfinish(conn);
+			wait_postmaster_connection(connstr);
+			conn = connectdb(connstr);
+		}
+
 		res = PQexec(conn, "SELECT pg_is_in_recovery()");
 		if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) == 1 && *PQgetvalue(res, 0, 0) == 'f')
 			ispri = true;
