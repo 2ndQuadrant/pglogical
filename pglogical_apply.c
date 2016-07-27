@@ -329,6 +329,9 @@ create_estate_for_relation(PGLogicalRelation *rel)
 			palloc0(n * sizeof(FmgrInfo));
 		resultRelInfo->ri_TrigWhenExprs = (List **)
 			palloc0(n * sizeof(List *));
+
+		/* Triggers might need a slot */
+		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
 	}
 	else
 	{
