@@ -559,6 +559,9 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 				StartTransactionCommand();
 
 				originid = ensure_replication_origin(sub->slot_name);
+				elog(DEBUG3, "advancing origin with oid %u for forwarded row to %X/%X during subscription sync",
+					originid,
+					(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 				replorigin_advance(originid, lsn, XactLastCommitEnd, true,
 								   true);
 
@@ -716,6 +719,9 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	{
 		StartTransactionCommand();
 		originid = ensure_replication_origin(sub->slot_name);
+		elog(DEBUG2, "advancing origin %s (oid %u) for forwarded row to %X/%X after sync error",
+			MySubscription->slot_name, originid,
+			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 		replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
 
 		set_table_sync_status(sub->id, table->schemaname, table->relname,
@@ -855,6 +861,8 @@ pglogical_sync_main(Datum main_arg)
 	/* Setup the origin and get the starting position for the replication. */
 	StartTransactionCommand();
 	originid = replorigin_by_name(MySubscription->slot_name, false);
+	elog(DEBUG2, "setting origin %s (oid %u) for subscription sync",
+		MySubscription->slot_name, originid);
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);

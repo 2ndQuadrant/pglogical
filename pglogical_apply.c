@@ -142,6 +142,7 @@ handle_begin(StringInfo s)
 
 	replorigin_session_origin_timestamp = commit_time;
 	replorigin_session_origin_lsn = commit_lsn;
+	remote_origin_id = InvalidRepOriginId;
 
 	in_remote_transaction = true;
 
@@ -180,13 +181,39 @@ handle_commit(StringInfo s)
 	}
 
 	/*
-	 * If the row isn't from the immediate upstream; advance the slot of the
-	 * node it originally came from so we start replay of that node's
-	 * change data at the right place.
+	 * If the xact isn't from the immediate upstream, advance the slot of the
+	 * node it originally came from so we start replay of that node's change
+	 * data at the right place.
+	 *
+	 * This is only necessary when we're streaming data from one peer (A) that
+	 * in turn receives from other peers (B, C), and we plan to later switch to
+	 * replaying directly from B and/or C, no longer receiving forwarded xacts
+	 * from A. When we do the switchover we need to know the right place at
+	 * which to start replay from B and C. We don't actually do that yet, but
+	 * we'll want to be able to do cascaded initialisation in future, so it's
+	 * worth keeping track.
+	 *
+	 * A failure can occur here (see #79) if there's a cascading
+	 * replication configuration like:
+	 *
+	 * X--> Y -> Z
+	 * |         ^
+	 * |         |
+	 * \---------/
+	 *
+	 * where the direct and indirect connections from X to Z use different
+	 * replication sets so as not to conflict, and where Y and Z are on the
+	 * same PostgreSQL instance. In this case our attempt to advance the
+	 * replication identifier here will ERROR because it's already in use
+	 * for the direct connection from X to Z. So don't do that.
 	 */
 	if (remote_origin_id != InvalidRepOriginId &&
 		remote_origin_id != replorigin_session_origin)
 	{
+		elog(DEBUG3, "advancing origin oid %u for forwarded row to %X/%X",
+			remote_origin_id,
+			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
+
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
 	}
@@ -302,6 +329,9 @@ create_estate_for_relation(PGLogicalRelation *rel)
 			palloc0(n * sizeof(FmgrInfo));
 		resultRelInfo->ri_TrigWhenExprs = (List **)
 			palloc0(n * sizeof(List *));
+
+		/* Triggers might need a slot */
+		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
 	}
 	else
 	{
@@ -904,9 +934,6 @@ handle_startup(StringInfo s)
 		/* It's OK to have a zero length value */
 		v = pq_getmsgstring(s);
 
-		/* log parameters for tracing */
-		elog(DEBUG2, "pglogical session start param %s=%s", k, v);
-
 		handle_startup_param(k, v);
 	} while (!getmsgisend(s));
 }
@@ -928,7 +955,7 @@ parse_bool_param(const char *key, const char *value)
 static void
 handle_startup_param(const char *key, const char *value)
 {
-	elog(DEBUG2, "Got pglogical startup msg param  %s=%s", key, value);
+	elog(DEBUG2, "apply got pglogical startup msg param  %s=%s", key, value);
 
 	if (strcmp(key, "pg_version") == 0)
 		elog(DEBUG1, "upstream Pg version is %s", value);
@@ -1959,6 +1986,8 @@ pglogical_apply_main(Datum main_arg)
 	QueueRelid = get_queue_table_oid();
 
 	originid = replorigin_by_name(MySubscription->slot_name, false);
+	elog(DEBUG2, "setting up replication origin %s (oid %u)",
+		MySubscription->slot_name, originid);
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);

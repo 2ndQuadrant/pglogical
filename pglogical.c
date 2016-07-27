@@ -59,6 +59,9 @@ char   *pglogical_temp_directory;
 
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
+char *pglogical_extra_connection_options;
+
+static PGconn * pglogical_connect_base(const char *connstr, const char *appname, bool replication);
 
 
 /*
@@ -134,37 +137,79 @@ get_pglogical_table_oid(const char *table)
 	return reloid;
 }
 
+#define CONN_PARAM_ARRAY_SIZE 9
+
+static PGconn *
+pglogical_connect_base(const char *connstr, const char *appname, bool replication)
+{
+	int				i=0;
+	PGconn		   *conn;
+	const char	   *keys[CONN_PARAM_ARRAY_SIZE];
+	const char	   *vals[CONN_PARAM_ARRAY_SIZE];
+	StringInfoData s;
+
+	initStringInfo(&s);
+	appendStringInfoString(&s, pglogical_extra_connection_options);
+	appendStringInfoChar(&s, ' ');
+	appendStringInfoString(&s, connstr);
+
+	keys[i] = "dbname";
+	vals[i] = connstr;
+	i++;
+	keys[i] = "application_name";
+	vals[i] = appname,
+	i++;
+	keys[i] = "connect_timeout";
+	vals[i] = "30";
+	i++;
+	keys[i] = "keepalives";
+	vals[i] = "1";
+	i++;
+	keys[i] = "keepalives_idle";
+	vals[i] = "20";
+	i++;
+	keys[i] = "keepalives_interval";
+	vals[i] = "20";
+	i++;
+	keys[i] = "keepalives_count";
+	vals[i] = "5";
+	i++;
+	keys[i] = "replication";
+	vals[i] = replication ? "database" : NULL;
+	i++;
+	keys[i] = NULL;
+	vals[i] = NULL;
+
+	Assert(i <= CONN_PARAM_ARRAY_SIZE);
+
+	/*
+	 * We use the expand_dbname parameter to process the connection string
+	 * (or URI), and pass some extra options.
+	 */
+	conn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		ereport(ERROR,
+				(errmsg("could not connect to the postgresql server%s: %s",
+						replication ? " in replication mode" : "",
+						PQerrorMessage(conn)),
+				 errdetail("dsn was: %s", s.data)));
+	}
+
+	resetStringInfo(&s);
+
+	return conn;
+}	
+	
+
+
 /*
  * Make standard postgres connection, ERROR on failure.
  */
 PGconn *
 pglogical_connect(const char *connstring, const char *connname)
 {
-	PGconn		   *conn;
-	const char	   *keys[3];
-	const char	   *vals[3];
-
-	/*
-	 * We use the expand_dbname parameter to process the connection string
-	 * (or URI), and pass some extra options.
-	 */
-	keys[0] = "dbname";
-	vals[0] = connstring;
-	keys[1] = "application_name";
-	vals[1] = connname;
-	keys[2] = NULL;
-	vals[2] = NULL;
-
-	conn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
-	if (PQstatus(conn) != CONNECTION_OK)
-	{
-		ereport(ERROR,
-				(errmsg("could not connect to the postgresql server: %s",
-						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", connstring)));
-	}
-
-	return conn;
+	return pglogical_connect_base(connstring, connname, false);
 }
 
 /*
@@ -173,33 +218,7 @@ pglogical_connect(const char *connstring, const char *connname)
 PGconn *
 pglogical_connect_replica(const char *connstring, const char *connname)
 {
-	PGconn		   *conn;
-	const char	   *keys[4];
-	const char	   *vals[4];
-
-	/*
-	 * We use the expand_dbname parameter to process the connection string
-	 * (or URI), and pass some extra options.
-	 */
-	keys[0] = "dbname";
-	vals[0] = connstring;
-	keys[1] = "replication";
-	vals[1] = "database";
-	keys[2] = "application_name";
-	vals[2] = connname;
-	keys[3] = NULL;
-	vals[3] = NULL;
-
-	conn = PQconnectdbParams(keys, vals, /* expand_dbname = */ true);
-	if (PQstatus(conn) != CONNECTION_OK)
-	{
-		ereport(ERROR,
-				(errmsg("could not connect to the postgresql server in replication mode: %s",
-						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", connstring)));
-	}
-
-	return conn;
+	return pglogical_connect_base(connstring, connname, true);
 }
 
 /*
@@ -214,6 +233,9 @@ pglogical_manage_extension(void)
 	SysScanDesc scandesc;
 	HeapTuple	tuple;
 	ScanKeyData key[1];
+
+	if (RecoveryInProgress())
+		return;
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
@@ -411,6 +433,7 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	appendStringInfo(&command, ", pg_version '%u'", PG_VERSION_NUM);
 	appendStringInfo(&command, ", pglogical_version '%s'", PGLOGICAL_VERSION);
 	appendStringInfo(&command, ", pglogical_version_num '%d'", PGLOGICAL_VERSION_NUM);
+	appendStringInfo(&command, ", pglogical_apply_pid '%d'", MyProcPid);
 
 	appendStringInfoChar(&command, ')');
 
@@ -584,6 +607,16 @@ _PG_init(void)
 							   "/tmp", PGC_SIGHUP,
 							   0,
 							   NULL, NULL, NULL);
+
+	DefineCustomStringVariable("pglogical.extra_connection_options",
+							   "connection options to add to all peer node connections",
+							   NULL,
+							   &pglogical_extra_connection_options,
+							   "",
+							   PGC_SIGHUP,
+							   0,
+							   NULL, NULL, NULL);
+
 	if (IsBinaryUpgrade)
 		return;
 

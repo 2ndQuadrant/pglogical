@@ -43,6 +43,7 @@
 
 extern bool pglogical_synchronous_commit;
 extern char *pglogical_temp_directory;
+extern char *pglogical_extra_connection_options;
 
 extern char *shorten_hash(const char *str, int maxlen);
 

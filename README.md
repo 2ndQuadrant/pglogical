@@ -295,6 +295,16 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `subscription_name` - name of the existing subscription
   - `replication_set` - name of replication set to remove
 
+
+There is also a `postgresql.conf` parameter,
+`pglogical.extra_connection_options`, that may be set to assign connection
+options that apply to all connections made by pglogical. This can be a useful
+place to set up custom keepalive options, etc.
+
+pglogical defaults to enabling TCP keepalives to ensure that it notices
+when the upstream server disappears unexpectedly. To disable them add
+`keepalives = 0` to `pglogical.extra_connection_options`.
+
 ### Replication sets
 
 Replication sets provide a mechanism to control which tables in the database
@@ -434,6 +444,16 @@ replication set `configuration` and all other new tables which are not created
 by extensions will go to `default` replication set.
 
 ### Additional functions
+
+- `pglogical.replicate_ddl_command(command text, replication_sets text[])`
+  Execute locally and then send the specified command to the replication queue
+  for execution on subscribers which are subscribed to one of the specified
+  `replication_sets`.
+
+  Parameters:
+  - `command` - DDL query to execute
+  - `replication_sets` - array of replication sets which this command should be
+    associated with, default "{ddl_sql}"
 
 - `pglogical.synchronize_sequence(relation regclass)`
   Push sequence state to all subscribers. Unlike the subscription and table
