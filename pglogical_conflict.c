@@ -195,28 +195,6 @@ retry:
 }
 
 /*
- * Open REPLICA IDENTITY index.
- */
-static Relation
-replindex_open(Relation rel, LOCKMODE lockmode)
-{
-	Oid			idxoid;
-
-	if (rel->rd_indexvalid == 0)
-		RelationGetIndexList(rel);
-
-	idxoid = rel->rd_replidindex;
-	if (!OidIsValid(idxoid))
-	{
-		elog(ERROR, "could not find primary key for table with oid %u",
-			 RelationGetRelid(rel));
-	}
-
-	/* Now open the primary key index */
-	return index_open(idxoid, lockmode);
-}
-
-/*
  * Find tuple using REPLICA IDENTITY index.
  */
 bool
@@ -224,11 +202,21 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
 							 TupleTableSlot *oldslot)
 {
 	ResultRelInfo  *relinfo = estate->es_result_relation_info;
-	Relation		idxrel = replindex_open(relinfo->ri_RelationDesc,
-											RowExclusiveLock);
+	Oid				idxoid;
+	Relation		idxrel;
 	ScanKeyData		index_key[INDEX_MAX_KEYS];
 	bool			found;
 
+	/* Open REPLICA IDENTITY index.*/
+	idxoid = RelationGetReplicaIndex(relinfo->ri_RelationDesc);
+	if (!OidIsValid(idxoid))
+	{
+		elog(ERROR, "could not find primary key for table with oid %u",
+			 RelationGetRelid(relinfo->ri_RelationDesc));
+	}
+	idxrel = index_open(idxoid, RowExclusiveLock);
+
+	/* Buold scan key for just opened index*/
 	build_index_scan_key(index_key, relinfo->ri_RelationDesc, idxrel, tuple);
 
 	/* Try to find the row. */
