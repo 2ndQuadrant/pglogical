@@ -230,7 +230,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 					continue;
 				}
 
-#if PG_VERSION_NUM < 90500
+#if PG_VERSION_NUM < 90500 && !defined(REPLICATIONSLOT_HAS_ACTIVE_PID)
 				if (slot->active)
 #else
 				if (slot->active_pid != 0)
