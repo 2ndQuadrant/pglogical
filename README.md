@@ -109,7 +109,7 @@ Next the `pglogical` extension has to be installed on all nodes:
 
     CREATE EXTENSION pglogical;
 
-If using PostgreSQL 9.4 as a subscriber, then the `pglogical_origin` extension
+If using PostgreSQL 9.4, then the `pglogical_origin` extension
 also has to be installed on that node:
 
     CREATE EXTENSION pglogical_origin;
