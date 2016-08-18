@@ -360,16 +360,16 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	localnode = get_local_node(true, false);
 
 	/* Now, fetch info about remote node. */
-	conn = pglogical_connect(provider_dsn, "create_subscription");
+	conn = pglogical_connect(provider_dsn, sub_name, "create");
 	pglogical_remote_node_info(conn, &origin.id, &origin.name, NULL, NULL, NULL);
 	PQfinish(conn);
 
 	/* Check that we can connect remotely also in replication mode. */
-	conn = pglogical_connect_replica(provider_dsn, "create_subscription");
+	conn = pglogical_connect_replica(provider_dsn, sub_name, "create");
 	PQfinish(conn);
 
 	/* Check that local connection works. */
-	conn = pglogical_connect(localnode->node_if->dsn, "create_subscription");
+	conn = pglogical_connect(localnode->node_if->dsn, sub_name, "create");
 	PQfinish(conn);
 
 	/*
@@ -560,7 +560,8 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		 */
 		PG_TRY();
 		{
-			PGconn *origin_conn = pglogical_connect(sub->origin_if->dsn, "cleanup");
+			PGconn *origin_conn = pglogical_connect(sub->origin_if->dsn,
+													sub->name, "cleanup");
 			pglogical_drop_remote_slot(origin_conn, sub->slot_name);
 			PQfinish(origin_conn);
 		}
@@ -747,7 +748,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	PGLogicalWorker		   *apply;
 
 	/* Read table list from provider. */
-	conn = pglogical_connect(sub->origin_if->dsn, "synchronize_subscription");
+	conn = pglogical_connect(sub->origin_if->dsn, sub_name, "sync");
 	tables = pg_logical_get_remote_repset_tables(conn, sub->replication_sets);
 	PQfinish(conn);
 

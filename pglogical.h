@@ -54,9 +54,11 @@ extern Oid get_pglogical_table_oid(const char *table);
 extern void pglogical_execute_sql_command(char *cmdstr, char *role,
 										  bool isTopLevel);
 
-extern PGconn *pglogical_connect(const char *connstring, const char *connname);
+extern PGconn *pglogical_connect(const char *connstring, const char *connname,
+								 const char *suffix);
 extern PGconn *pglogical_connect_replica(const char *connstring,
-										 const char *connname);
+										 const char *connname,
+										 const char *suffix);
 extern void pglogical_identify_system(PGconn *streamConn, uint64* sysid,
 									  TimeLineID *timeline, XLogRecPtr *xlogpos,
 									  Name *dbname);

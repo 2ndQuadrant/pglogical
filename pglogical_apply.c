@@ -228,7 +228,8 @@ handle_commit(StringInfo s)
 			&& MyApplyWorker->replay_stop_lsn <= end_lsn)
 	{
 		ereport(LOG,
-				(errmsg("pglogical apply finished processing; replayed to %X/%X of required %X/%X",
+				(errmsg("pglogical %s finished processing; replayed to %X/%X of required %X/%X",
+				 MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC ? "sync" : "apply",
 				 (uint32)(end_lsn>>32), (uint32)end_lsn,
 				 (uint32)(MyApplyWorker->replay_stop_lsn >>32),
 				 (uint32)MyApplyWorker->replay_stop_lsn)));
@@ -240,13 +241,20 @@ handle_commit(StringInfo s)
 		XLogFlush(GetXLogWriteRecPtr());
 
 		/*
+		 * Disconnect.
+		 *
+		 * This needs to happen before the pglogical_sync_worker_finish()
+		 * call otherwise slot drop will fail.
+		 */
+		PQfinish(applyconn);
+
+		/*
 		 * If this is sync worker, finish it.
 		 */
 		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC)
 			pglogical_sync_worker_finish();
 
 		/* Stop gracefully */
-		PQfinish(applyconn);
 		proc_exit(0);
 	}
 
@@ -1994,7 +2002,7 @@ pglogical_apply_main(Datum main_arg)
 
 	/* Start the replication. */
 	streamConn = pglogical_connect_replica(MySubscription->origin_if->dsn,
-										   MySubscription->name);
+										   MySubscription->name, NULL);
 
 	repsets = stringlist_to_identifierstr(MySubscription->replication_sets);
 	origins = stringlist_to_identifierstr(MySubscription->forward_origins);
