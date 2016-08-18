@@ -572,7 +572,7 @@ handle_insert(StringInfo s)
 		if (apply)
 		{
 			if (applytuple != remotetuple)
-				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, true);
+				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
 
 			if (aestate->resultRelInfo->ri_TrigDesc &&
 				aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
@@ -779,7 +779,7 @@ handle_update(StringInfo s)
 									  applytuple, resolution);
 
 			if (applytuple != remotetuple)
-				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, true);
+				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
 		}
 		else
 		{
