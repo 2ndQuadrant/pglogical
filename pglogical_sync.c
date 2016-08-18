@@ -460,10 +460,14 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 }
 
 static void
-pglogical_sync_worker_cleanup_cb(int code, Datum arg)
+pglogical_sync_worker_cleanup_error_cb(int code, Datum arg)
 {
-	PGLogicalSubscription  *sub = (PGLogicalSubscription *) DatumGetPointer(arg);
-	pglogical_sync_worker_cleanup(sub);
+	/* Only cleanup on error. */
+	if (code != 0)
+	{
+		PGLogicalSubscription  *sub = (PGLogicalSubscription *) DatumGetPointer(arg);
+		pglogical_sync_worker_cleanup(sub);
+	}
 }
 
 static void
@@ -542,7 +546,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 													sub->slot_name,
 													use_failover_slot, &lsn);
 
-		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));
 		{
 			StringInfoData	tmpfile;
@@ -650,7 +654,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 			pglogical_sync_tmpfile_cleanup_cb(0,
 											  CStringGetDatum(tmpfile.data));
 		}
-		PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+		PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 									PointerGetDatum(sub));
 
 		PQfinish(origin_conn_repl);
@@ -714,7 +718,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 												sub->slot_name, false, &lsn);
 
 	/* Make sure we cleanup the slot if something goes wrong. */
-	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 							PointerGetDatum(sub));
 	{
 		StartTransactionCommand();
@@ -732,12 +736,10 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 		copy_tables_data(sub->origin_if->dsn,sub->target_if->dsn, snapshot,
 						 list_make1(table));
 	}
-	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_cb,
+	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));
 
 	PQfinish(origin_conn_repl);
-
-	pglogical_sync_worker_cleanup(sub);
 
 	return SYNC_STATUS_SYNCWAIT;
 }

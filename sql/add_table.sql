@@ -63,6 +63,7 @@ END;
 $$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT count(1) FROM pg_replication_slots;
 
 \c :provider_dsn
 INSERT INTO public.test_publicschema VALUES(3, 'c');
