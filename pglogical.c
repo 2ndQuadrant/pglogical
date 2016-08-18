@@ -61,7 +61,10 @@ void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
 char *pglogical_extra_connection_options;
 
-static PGconn * pglogical_connect_base(const char *connstr, const char *appname, bool replication);
+static PGconn * pglogical_connect_base(const char *connstr,
+									   const char *appname,
+									   const char *suffix,
+									   bool replication);
 
 
 /*
@@ -140,7 +143,8 @@ get_pglogical_table_oid(const char *table)
 #define CONN_PARAM_ARRAY_SIZE 9
 
 static PGconn *
-pglogical_connect_base(const char *connstr, const char *appname, bool replication)
+pglogical_connect_base(const char *connstr, const char *appname,
+					   const char *suffix, bool replication)
 {
 	int				i=0;
 	PGconn		   *conn;
@@ -157,7 +161,17 @@ pglogical_connect_base(const char *connstr, const char *appname, bool replicatio
 	vals[i] = connstr;
 	i++;
 	keys[i] = "application_name";
-	vals[i] = appname,
+	if (suffix)
+	{
+		char	s[NAMEDATALEN];
+		snprintf(s, NAMEDATALEN,
+			 "%s_%s",
+			 shorten_hash(appname, NAMEDATALEN - strlen(suffix) - 2),
+			 suffix);
+		vals[i] = s;
+	}
+	else
+		vals[i] = appname;
 	i++;
 	keys[i] = "connect_timeout";
 	vals[i] = "30";
@@ -199,26 +213,27 @@ pglogical_connect_base(const char *connstr, const char *appname, bool replicatio
 	resetStringInfo(&s);
 
 	return conn;
-}	
-	
+}
 
 
 /*
  * Make standard postgres connection, ERROR on failure.
  */
 PGconn *
-pglogical_connect(const char *connstring, const char *connname)
+pglogical_connect(const char *connstring, const char *connname,
+				  const char *suffix)
 {
-	return pglogical_connect_base(connstring, connname, false);
+	return pglogical_connect_base(connstring, connname, suffix, false);
 }
 
 /*
  * Make replication connection, ERROR on failure.
  */
 PGconn *
-pglogical_connect_replica(const char *connstring, const char *connname)
+pglogical_connect_replica(const char *connstring, const char *connname,
+						  const char *suffix)
 {
-	return pglogical_connect_base(connstring, connname, true);
+	return pglogical_connect_base(connstring, connname, suffix, true);
 }
 
 /*

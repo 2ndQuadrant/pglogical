@@ -361,19 +361,20 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
  * Creates new connection to origin and target.
  */
 static void
-copy_tables_data(const char *origin_dsn, const char *target_dsn,
-				 const char *origin_snapshot, List *tables)
+copy_tables_data(char *sub_name, const char *origin_dsn,
+				 const char *target_dsn, const char *origin_snapshot,
+				 List *tables)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
 	ListCell   *lc;
 
 	/* Connect to origin node. */
-	origin_conn = pglogical_connect(origin_dsn, EXTENSION_NAME "_copy");
+	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
 	start_copy_origin_tx(origin_conn, origin_snapshot);
 
 	/* Connect to target node. */
-	target_conn = pglogical_connect(target_dsn, EXTENSION_NAME "_copy");
+	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
 	start_copy_target_tx(target_conn);
 
 	/* Copy every table. */
@@ -402,8 +403,10 @@ copy_tables_data(const char *origin_dsn, const char *target_dsn,
  * the transaction is bound to a snapshot.
  */
 static List *
-copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
-						   const char *origin_snapshot, List *replication_sets)
+copy_replication_sets_data(char *sub_name, const char *origin_dsn,
+						   const char *target_dsn,
+						   const char *origin_snapshot,
+						   List *replication_sets)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
@@ -411,7 +414,7 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 	ListCell   *lc;
 
 	/* Connect to origin node. */
-	origin_conn = pglogical_connect(origin_dsn, EXTENSION_NAME "_copy");
+	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
 	start_copy_origin_tx(origin_conn, origin_snapshot);
 
 	/* Get tables to copy from origin node. */
@@ -419,7 +422,7 @@ copy_replication_sets_data(const char *origin_dsn, const char *target_dsn,
 												 replication_sets);
 
 	/* Connect to target node. */
-	target_conn = pglogical_connect(target_dsn, EXTENSION_NAME "_copy");
+	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
 	start_copy_target_tx(target_conn);
 
 	/* Copy every table. */
@@ -446,7 +449,27 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 	PGconn			   *origin_conn;
 
 	/* Drop the slot on the remote side. */
-	origin_conn = pglogical_connect(sub->origin_if->dsn, "cleanup");
+	origin_conn = pglogical_connect(sub->origin_if->dsn, sub->name,
+									"cleanup");
+	/* Wait for slot to be free. */
+	while (!got_SIGTERM)
+	{
+		int	rc;
+
+		if (!pglogical_remote_slot_active(origin_conn, sub->slot_name))
+			break;
+
+		rc = WaitLatch(&MyProc->procLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   1000L);
+
+        ResetLatch(&MyProc->procLatch);
+
+		/* emergency bailout if postmaster has died */
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+	}
+
 	pglogical_drop_remote_slot(origin_conn, sub->slot_name);
 	PQfinish(origin_conn);
 
@@ -532,7 +555,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		elog(INFO, "initializing subscriber %s", sub->name);
 
 		origin_conn = pglogical_connect(sub->origin_if->dsn,
-										EXTENSION_NAME "_snapshot");
+										sub->name, "snap");
 		use_failover_slot = pglogical_remote_function_exists(origin_conn,
 															 "pg_catalog",
 										  "pg_create_logical_replication_slot",
@@ -540,7 +563,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		PQfinish(origin_conn);
 
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
-													 EXTENSION_NAME "_snapshot");
+													 sub->name, "snap");
 
 		snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
 													sub->slot_name,
@@ -600,7 +623,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					set_subscription_sync_status(sub->id, status);
 					CommitTransactionCommand();
 
-					tables = copy_replication_sets_data(sub->origin_if->dsn,
+					tables = copy_replication_sets_data(sub->name,
+														sub->origin_if->dsn,
 														sub->target_if->dsn,
 														snapshot,
 														sub->replication_sets);
@@ -712,7 +736,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	CommitTransactionCommand();
 
 	origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
-												 EXTENSION_NAME "_copy");
+												 sub->name, "copy");
 
 	snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
 												sub->slot_name, false, &lsn);
@@ -733,8 +757,8 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 		CommitTransactionCommand();
 
 		/* Copy data. */
-		copy_tables_data(sub->origin_if->dsn,sub->target_if->dsn, snapshot,
-						 list_make1(table));
+		copy_tables_data(sub->name, sub->origin_if->dsn,sub->target_if->dsn,
+						 snapshot, list_make1(table));
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));
@@ -879,7 +903,7 @@ pglogical_sync_main(Datum main_arg)
 
 	/* Start the replication. */
 	streamConn = pglogical_connect_replica(MySubscription->origin_if->dsn,
-										   MySubscription->name);
+										   MySubscription->name, "catchup");
 
 	/*
 	 * IDENTIFY_SYSTEM sets up some internal state on walsender so call it even
