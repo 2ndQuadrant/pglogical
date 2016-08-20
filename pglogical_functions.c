@@ -1332,7 +1332,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 				StringInfoData		json;
 				char				cmdtype;
 
-				relname = RelationGetRelationName(rel);
+				relname = get_rel_name(reloid);
 
 				/* It's easier to construct json manually than via Jsonb API... */
 				initStringInfo(&json);
