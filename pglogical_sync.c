@@ -485,12 +485,8 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 static void
 pglogical_sync_worker_cleanup_error_cb(int code, Datum arg)
 {
-	/* Only cleanup on error. */
-	if (code != 0)
-	{
-		PGLogicalSubscription  *sub = (PGLogicalSubscription *) DatumGetPointer(arg);
-		pglogical_sync_worker_cleanup(sub);
-	}
+	PGLogicalSubscription  *sub = (PGLogicalSubscription *) DatumGetPointer(arg);
+	pglogical_sync_worker_cleanup(sub);
 }
 
 static void
