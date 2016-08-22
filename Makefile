@@ -39,7 +39,7 @@ NO_TEMP_INSTALL = yes
 
 PG_CONFIG ?= pg_config
 
-PG_CPPFLAGS += -I$(libpq_srcdir)
+PG_CPPFLAGS += -I$(libpq_srcdir) -Ipglogical_output/
 SHLIB_LINK += $(libpq)
 
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
@@ -157,5 +157,28 @@ git-dist: dist-common
 
 check_prove:
 	$(prove_check)
+
+# First stage of pglogical_output merging: automatically build
+# pglogical_output before pglogical, until it's flattened in.
+pglogical_output_all:
+	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output all
+
+pglogical_output_clean:
+	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output clean
+
+pglogical_output_check:
+	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output check
+
+pglogical_output_regresscheck:
+	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output regresscheck
+
+pglogical.so: pglogical_output/
+
+all: pglogical_output_all
+clean: pglogical_output_clean
+check: pglogical_output_check
+regresscheck: pglogical_output_regresscheck
+
+.PHONY: pglogical_output_all pglogical_output_clean pglogical_output_check pglogical_output_check
 
 .PHONY: all pglogical-dump-clean check regresscheck

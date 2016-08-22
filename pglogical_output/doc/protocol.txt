@@ -1,0 +1,547 @@
+= Pg_logical protocol
+
+pglogical_output defines a libpq subprocotol for streaming tuples, metadata,
+etc, from the decoding plugin to receivers.
+
+This protocol is an inner layer in a stack:
+
+ * tcp or unix sockets
+ ** libpq protocol
+ *** libpq replication subprotocol (COPY BOTH etc)
+ **** pg_logical output plugin => consumer protocol
+
+so clients can simply use libpq's existing replication protocol support,
+directly or via their libpq-wrapper driver.
+
+This is a binary protocol intended for compact representation.
+
+`pglogical_output` also supports a json-based text protocol with json
+representations of the same changesets, supporting all the same hooks etc,
+intended mainly for tracing/debugging/diagnostics. That protocol is not
+discussed here.
+
+== ToC
+
+== Protocol flow
+
+The protocol flow is primarily from upstream walsender/decoding plugin to the
+downstream receiver.
+
+The only information the flows downstream-to-upstream is:
+
+ * The initial parameter list sent to `START_REPLICATION`; and
+ * replay progress messages
+
+We can accept an arbitrary list of params to `START_REPLICATION`. After
+that we have no general purpose channel for information to flow upstream. That
+means we can't do a multi-step negotiation/handshake for determining the
+replication options to use, binary protocol, etc.
+
+The main form of negotiation is the client getting a "take it or leave it" set
+of settings from the server in an initial startup message sent before any
+replication data (see below) and, if it doesn't like them, reconnecting with
+different startup options.
+
+Except for the negotiation via initial parameter list and then startup message
+the protocol flow is the same as any other walsender-based logical replication
+plugin. The data stream is sent in COPY BOTH mode as a series of CopyData
+messages encapsulating replication data, and ends when the client disconnects.
+There's no facility for ending the COPY BOTH mode and returning to the
+walsender command parser to issue new commands. This is a limiation of the
+walsender interface, not pglogical_output.
+
+== Protocol messages
+
+The individual protocol messages are discussed in the following sub-sections.
+Protocol flow and logic comes in the next major section.
+
+Absolutely all top-level protocol messages begin with a message type byte.
+While represented in code as a character, this is a signed byte with no
+associated encoding.
+
+Since the PostgreSQL libpq COPY protocol supplies a message length there’s no
+need for top-level protocol messages to embed a length in their header.
+
+=== BEGIN message
+
+A stream of rows starts with a `BEGIN` message. Rows may only be sent after a
+`BEGIN` and before a `COMMIT`.
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|Message type|signed char|Literal ‘**B**’ (0x42)
+|flags|uint8| * 0-3: Reserved, client _must_ ERROR if set and not recognised.
+|lsn|uint64|“final_lsn” in decoding context - currently it means lsn of commit
+|commit time|uint64|“commit_time” in decoding context
+|remote XID|uint32|“xid” in decoding context
+|===
+
+=== Forwarded transaction origin message
+
+The message after the `BEGIN` may be a _forwarded transaction origin_ message
+indicating what upstream node the transaction came from.
+
+Sent if the immediately prior message was a `BEGIN` message, the upstream
+transaction was forwarded from another node, and replication origin forwarding
+is enabled, i.e. `forward_changeset_origins` is `t` in the startup reply
+message.
+
+A "node" could be another host, another DB on the same host, or pretty much
+anything. Whatever origin name is found gets forwarded.  The origin identifier
+is of arbitrary and application-defined format.  Applications _should_ prefix
+their origin identifier with a fixed application name part, like `bdr_`,
+`myapp_`, etc. It is application-defined what an application does with
+forwarded transactions from other applications.
+
+An origin message with a zero-length origin name indicates that the origin
+could not be identified but was (probably) not the local node. It is
+client-defined what action is taken in this case.
+
+It is a protocol error to send/receive a forwarded transaction origin message
+at any time other than immediately after a `BEGIN` message.
+
+The origin identifier is typically closely related to replication slot names
+and replication origins’ names in an application system.
+
+For more detail see _Changeset Forwarding_ in the README.
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|Message type|signed char|Literal ‘**O**’ (0x4f)
+|flags|uint8| * 0-3: Reserved, application _must_ ERROR if set and not recognised
+|origin_lsn|uint64|Log sequence number (LSN, XLogRecPtr) of the transaction’s commit record on its origin node (as opposed to the forwarding node’s commit LSN, which is ‘lsn’ in the BEGIN message)
+|origin_identifier_length|uint8|Length in bytes of origin_identifier
+|origin_identifier|signed char[origin_identifier_length]|An origin identifier of arbitrary, upstream-application-defined structure. _Should_ be text in the same encoding as the upstream database. NULL-terminated. _Should_ be 7-bit ASCII.
+|===
+
+=== COMMIT message
+A stream of rows ends with a `COMMIT` message.
+
+There is no `ROLLBACK` message because aborted transactions are not sent by the
+upstream.
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|Message type|signed char|Literal ‘**C**’ (0x43)
+|Flags|uint8| * 0-3: Reserved, client _must_ ERROR if set and not recognised
+|Commit LSN|uint64|commit_lsn in decoding commit decode callback. This is the same value as in the BEGIN message, and marks the end of the transaction.
+|End LSN|uint64|end_lsn in decoding transaction context
+|Commit time|uint64|commit_time in decoding transaction context
+|===
+
+=== INSERT, UPDATE or DELETE message
+
+After a `BEGIN` or metadata message, the downstream should expect to receive
+zero or more row change messages, composed of an insert/update/delete message
+with zero or more tuple fields, each of which has one or more tuple field
+values.
+
+The row’s relidentifier _must_ match that of the most recently preceding
+metadata message. All consecutive row messages must currently have the same
+relidentifier. (_Later extensions to add metadata caching will relax these
+requirements for clients that advertise caching support; see the documentation
+on metadata messages for more detail_).
+
+It is an error to decode rows using metadata received after the row was
+received, or using metadata that is not the most recently received metadata
+revision that still predates the row. I.e. in the sequence M1, R1, R2, M2, R3,
+M4: R1 and R2 must be decoded using M1, and R3  must be decoded using M2. It is
+an error to use M4 to decode any of the rows, to use M1 to decode R3, or to use
+M2 to decode R1 and R2.
+
+Row messages _may not_ arrive except during a transaction as delimited by `BEGIN`
+and `COMMIT` messages. It is an error to receive a row message outside a
+transaction.
+
+Any unrecognised tuple type or tuple part type is an error on the downstream
+that must result in a client disconnect and error message. Downstreams are
+expected to negotiate compatibility, and upstreams must not add new tuple types
+or tuple field types without negotiation.
+
+The downstream reads rows until the next non-row message is received. There is
+no other end marker or any indication of how many rows to expect in a sequence.
+
+==== Row message header
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|Message type|signed char|Literal ‘**I**’nsert (0x49), ‘**U**’pdate’ (0x55) or ‘**D**’elete (0x44)
+|flags|uint8|Row flags (reserved)
+|relidentifier|uint32|relidentifier that matches the table metadata message sent for this row.
+(_Not present in BDR, which sends nspname and relname instead_)
+|[tuple parts]|[composite]|
+|===
+
+One or more tuple-parts fields follow.
+
+==== Tuple fields
+
+|===
+|Tuple type|signed char|Identifies the kind of tuple being sent.
+
+|tupleformat|signed char|‘**T**’ (0x54)
+|natts|uint16|Number of fields sent in this tuple part.
+(_Present in BDR, but meaning significantly different here)_
+|[tuple field values]|[composite]|
+|===
+
+===== Tuple tupleformat compatibility
+
+Unrecognised _tupleformat_ kinds are a protocol error for the downstream.
+
+==== Tuple field value fields
+
+These message parts describe individual fields within a tuple.
+
+There are two kinds of tuple value fields, abbreviated and full. Which is being
+read is determined based on the first field, _kind_.
+
+Abbreviated tuple value fields are nothing but the message kind:
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|kind|signed char| * ‘**n**’ull (0x6e) field
+|===
+
+Full tuple value fields have a length and datum:
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|kind|signed char| * ‘**i**’nternal binary (0x62) field
+|length|int4|Only defined for kind = i\|b\|t
+|data|[length]|Data in a format defined by the table metadata and column _kind_.
+|===
+
+===== Tuple field values kind compatibility
+
+Unrecognised field _kind_ values are a protocol error for the downstream. The
+downstream may not continue processing the protocol stream after this
+point**.**
+
+The upstream may not send ‘**i**’nternal or ‘**b**’inary format values to the
+downstream without the downstream negotiating acceptance of such values. The
+downstream will also generally negotiate to receive type information to use to
+decode the values. See the section on startup parameters and the startup
+message for details.
+
+=== Table/row metadata messages
+
+Before sending changed rows for a relation, a metadata message for the relation
+must be sent so the downstream knows the namespace, table name, column names,
+optional column types, etc. A relidentifier field, an arbitrary numeric value
+unique for that relation on that upstream connection, maps the metadata to
+following rows.
+
+A client should not assume that relation metadata will be followed immediately
+(or at all) by rows, since future changes may lead to metadata messages being
+delivered at other times. Metadata messages may arrive during or between
+transactions.
+
+The upstream may not assume that the downstream retains more metadata than the
+one most recent table metadata message. This applies across all tables, so a
+client is permitted to discard metadata for table x when getting metadata for
+table y. The upstream must send a new metadata message before sending rows for
+a different table, even if that metadata was already sent in the same session
+or even same transaction. _This requirement will later be weakened by the
+addition of client metadata caching, which will be advertised to the upstream
+with an output plugin parameter._
+
+Columns in metadata messages are numbered from 0 to natts-1, reading
+consecutively from start to finish. The column numbers do not have to be a
+complete description of the columns in the upstream relation, so long as all
+columns that will later have row values sent are described. The upstream may
+choose to omit columns it doesn’t expect to send changes for in any given
+series of rows. Column numbers are not necessarily stable across different sets
+of metadata for the same table, even if the table hasn’t changed structurally.
+
+A metadata message may not be used to decode rows received before that metadata
+message.
+
+==== Table metadata header
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|Message type|signed char|Literal ‘**R**’ (0x52)
+|flags|uint8| * 0-6: Reserved, client _must_ ERROR if set and not recognised.
+|relidentifier|uint32|Arbitrary relation id, unique for this upstream. In practice this will probably be the upstream table’s oid, but the downstream can’t assume anything.
+|nspnamelength|uint8|Length of namespace name (incl. terminating \0)
+|nspname|signed char[nspnamelength]|Relation namespace (null terminated)
+|relnamelength|uint8|Length of relation name (incl. terminating \0)
+|relname|char[relname]|Relation name (null terminated)
+|attrs block|signed char|Literal: ‘**A**’ (0x41)
+|natts|uint16|number of attributes
+|[fields]|[composite]|Sequence of ‘natts’ column metadata blocks, each of which begins with a column delimiter followed by zero or more column metadata blocks, each with the same column metadata block header.
+
+This chunked format is used so that new metadata messages can be added without breaking existing clients.
+|===
+
+==== Column delimiter
+
+Each column’s metadata begins with a column metadata header. This comes
+immediately after the natts field in the table metadata header or after the
+last metadata block in the prior column.
+
+It has the same char header as all the others, and the flags field is the same
+size as the length field in other blocks, so it’s safe to read this as a column
+metadata block header.
+
+Currently, the only defined flag is 0x1 indicating that the column is part of
+the relation's identity key.
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|blocktype|signed char|‘**C**’ (0x43) - column
+|flags|uint8|Column info flags
+|===
+
+==== Column metadata block header
+
+All column metadata blocks share the same header, which is the same length as a
+column delimiter:
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|blocktype|signed char|Identifies the kind of metadata block that follows.
+|blockbodylength|uint16|Length of block in bytes, excluding blocktype char and length field.
+|===
+
+==== Column name block
+
+This block just carries the name of the column, nothing more. It begins with a
+column metadata block, and the rest of the message is the column name.
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|[column metadata block header]|[composite]|blocktype = ‘**N**’ (0x4e)
+|colname|char[blockbodylength]|Column name.
+|===
+
+
+==== Column type block
+
+T.B.D.
+
+Not defined in first protocol revision.
+
+Likely to send a type identifier (probably the upstream oid) as a reference to
+a “type info” protocol message to be delivered before. Then we can cache the
+type descriptions and avoid repeating long schemas and names, just using the
+oids.
+
+Needs to have room to handle:
+
+ * built-in core types
+ * extension types (ext version may vary)
+ * enum types (CREATE TYPE … AS ENUM)
+ * range types (CREATE TYPE … AS RANGE)
+ * composite types (CREATE TYPE … AS (...))
+ * custom types (CREATE TYPE ( input = x_in, output = x_out ))
+
+… some of which can be nested
+
+== Startup message
+
+After processing output plugin arguments, the upstream output plugin must send
+a startup message as its first message on the wire. It is a trivial header
+followed by alternating key and value strings represented as null-terminated
+unsigned char strings.
+
+This message specifies the capabilities the output plugin enabled and describes
+the upstream server and plugin. This may change how the client decodes the data
+stream, and/or permit the client to disconnect and report an error to the user
+if the result isn’t acceptable.
+
+If replication is rejected because the client is incompatible or the server is
+unable to satisfy required options, the startup message may be followed by a
+libpq protocol FATAL message that terminates the session. See “Startup errors”
+below.
+
+The parameter names and values are sent as alternating key/value pairs as
+null-terminated strings, e.g.
+
++“key1\0parameter1\0key2\0value2\0”+
+
+|===
+|*Message*|*Type/Size*|*Notes*
+
+|Message type|signed char|‘**S**’ (0x53) - startup
+|Startup message version|uint8|Value is always “1”.
+|(parameters)|null-terminated key/value pairs|See table below for parameter definitions.
+|===
+
+=== Startup message parameters 
+
+Since all parameter values are sent as strings, the value types given below specify what the value must be reasonably interpretable as.
+
+|===
+|*Key name*|*Value type*|*Description*
+
+|max_proto_version|integer|Newest version of the protocol supported by output plugin.
+|min_proto_version|integer|Oldest protocol version supported by server.
+|proto_format|text|Protocol format requested. native (documented here) or json. Default is native.
+|coltypes|boolean|Column types will be sent in table metadata.
+|pg_version_num|integer|PostgreSQL server_version_num of server, if it’s PostgreSQL. e.g. 090400
+|pg_version|string|PostgreSQL server_version of server, if it’s PostgreSQL.
+|pg_catversion|uint32|Version of the PostgreSQL system catalogs on the upstream server, if it’s PostgreSQL.
+|binary|_set of parameters, specified separately_|See “_the __‘binary’__ parameters_” below, and “_Parameters relating to exchange of binary values_”
+|database_encoding|string|The native text encoding of the database the plugin is running in
+|encoding|string|Field values for textual data will be in this encoding in native protocol text, binary or internal representation. For the native protocol this is currently always the same as `database_encoding`. For text-mode json protocol this is always the same as `client_encoding`.
+|forward_changeset_origins|bool|Tells the client that the server will send changeset origin information. See “_Changeset forwarding_” for details.
+|no_txinfo|bool|Requests that variable transaction info such as XIDs, LSNs, and timestamps be omitted from output. Mainly for tests. Currently ignored for protos other than json.
+|===
+
+
+The ‘binary’ parameter set:
+== 
+|===
+|*Key name*|*Value type*|*Description*
+
+|binary.internal_basetypes|boolean|If true, PostgreSQL internal binary representations for row field data may be used for some or all row fields, if here the type is appropriate and the binary compatibility parameters of upstream and downstream match. See binary.want_internal_basetypes in the output plugin parameters for details.
+
+May only be true if _binary.want_internal_basetypes_ was set to true by the client in the parameters and the client’s accepted binary format matches that of the server.
+|binary.binary_basetypes|boolean|If true, external binary format (send/recv format) may be used for some or all row field data where the field type is a built-in base type whose send/recv format is compatible with binary.binary_pg_version .
+
+May only be set if _binary.want_binary_basetypes_ was set to true by the client in the parameters and the client’s accepted send/recv format matches that of the server.
+|binary.binary_pg_version|uint16|The PostgreSQL major version that send/recv format values will be compatible with. This is not necessarily the actual upstream PostgreSQL version.
+|binary.sizeof_int|uint8|sizeof(int) on the upstream.
+|binary.sizeof_long|uint8|sizeof(long) on the upstream.
+|binary.sizeof_datum|uint8|Same as sizeof_int, but for the PostgreSQL Datum typedef.
+|binary.maxalign|uint8|Upstream PostgreSQL server’s MAXIMUM_ALIGNOF value - platform dependent, determined at build time.
+|binary.bigendian|bool|True iff the upstream is big-endian.
+|binary.float4_byval|bool|Upstream PostgreSQL’s float4_byval compile option.
+|binary.float8_byval|bool|Upstream PostgreSQL’s float8_byval compile option.
+|binary.integer_datetimes|bool|Whether TIME, TIMESTAMP and TIMESTAMP WITH TIME ZONE will be sent using integer or floating point representation.
+
+Usually this is the value of the upstream PostgreSQL’s integer_datetimes compile option.
+|===
+== Startup errors
+
+If the server rejects the client’s connection - due to non-overlapping protocol
+support, unrecognised parameter formats, unsupported required parameters like
+hooks, etc - then it will follow the startup reply message with a
++++<u>+++normal libpq protocol error message+++</u>+++. (Current versions send
+this before the startup message).
+
+== Arguments client supplies to output plugin
+
+The one opportunity for the downstream client to send information (other than replay feedback) to the upstream is at connect-time, as an array of arguments to the output plugin supplied to START LOGICAL REPLICATION.
+
+There is no back-and-forth, no handshake.
+
+As a result, the client mainly announces capabilities and makes requests of the output plugin. The output plugin will ERROR if required parameters are unset, or where incompatibilities that cannot be resolved are found. Otherwise the output plugin reports what it could and could not honour in the startup message it sends as the first message on the wire down to the client. The client chooses whether to continue replay or to disconnect and report an error to the user, then possibly reconnect with different options.
+
+=== Output plugin arguments
+
+The output plugin’s key/value arguments are specified in pairs, as key and value. They’re what’s passed to START_REPLICATION, etc.
+
+All parameters are passed in text form. They _should_ be limited to 7-bit ASCII, since the server’s text encoding is not known, but _may_ be normalized precomposed UTF-8. The types specified for parameters indicate what the output plugin should attempt to convert the text into. Clients should not send text values that are outside the range for that type.
+
+==== Capabilities
+
+Many values are capabilities flags for the client, indicating that it understands optional features like metadata caching, binary format transfers, etc. In general the output plugin _may_ disregard capabilities the client advertises as supported and act as if they are not supported. If a capability is advertised as unsupported or is not advertised the output plugin _must not_ enable the corresponding features.
+
+In other words, don’t send the client something it’s not expecting.
+
+==== Protocol versioning
+
+Two parameters max_proto_version and min_proto_version, which clients must always send, allow negotiation of the protocol version. The output plugin must ERROR if the client protocol support does not overlap its own protocol support range.
+
+The protocol version is only incremented when there are major breaking changes that all or most clients must be modified to accommodate. Most changes are done by adding new optional messages and/or by having clients advertise capabilities to opt in to features.
+
+Because these versions are expected to be incremented, to make it clear that the format of the startup parameters themselves haven’t changed, the first key/value pair _must_ be the parameter startup_params_format with value “1”.
+
+|===
+|*Key*|*Type*|*Value(s)*|*Notes*
+
+|startup_params_format|int8|1|The format version of this startup parameter set. Always the digit 1 (0x31), null terminated.
+|max_proto_version|int32|1|Newest version of the protocol supported by client. Output plugin must ERROR if supported version too old. *Required*, ERROR if missing.
+|min_proto_version|int32|1|Oldest version of the protocol supported by client. Output plugin must ERROR if supported version too old. *Required*, ERROR if missing.
+|===
+
+==== Client requirements and capabilities
+
+|===
+|*Key*|*Type*|*Default*|*Notes*
+
+|expected_encoding|string|null|The text encoding the downstream expects field values to be in. Applies to text, binary and internal representations of field values in native format. Has no effect on other protocol content. If specified, the upstream must honour it. For json protocol, must be unset or match `client_encoding`. (Current plugin versions ERROR if this is set for the native protocol and not equal to the upstream database's encoding).
+|want_coltypes|boolean|false|The client wants to receive data type information about columns.
+|===
+
+==== General client information
+
+These keys tell the output plugin about the client. They’re mainly for informational purposes. In particular, the versions must _not_ be used to determine compatibility for binary or send/recv format, as non-PostgreSQL clients will simply not send them at all but may still understand binary or send/recv format fields.
+
+|===
+|*Key*|*Type*|*Default*|*Notes*
+
+|pg_version_num|integer|null|PostgreSQL server_version_num of client, if it’s PostgreSQL. e.g. 090400
+|pg_version|string|null|PostgreSQL server_version of client, if it’s PostgreSQL.
+|===
+
+
+==== Parameters relating to exchange of binary values
+
+The downstream may specify to the upstream that it is capable of understanding binary (PostgreSQL internal binary datum format), and/or send/recv (PostgreSQL binary interchange) format data by setting the binary.want_binary_basetypes and/or binary.want_internal_basetypes options, or other yet-to-be-defined options.
+
+An upstream output plugin that does not support one or both formats _may_ ignore the downstream’s binary support and send text format, in which case it may ignore all binary. parameters. All downstreams _must_ support text format. An upstream output plugin _must not_ send binary or send/recv format unless the downstream has announced it can receive it. If both upstream and downstream support both formats an upstream should prefer binary format and fall back to send/recv, then to text, if compatibility requires.
+
+Internal and binary format selection should be done on a type-by-type basis. It is quite normal to send ‘text’ format for extension types while sending binary for built-in types.
+
+The downstream _must_ specify its compatibility requirements for internal and binary data if it requests either or both formats. The upstream _must_ honour these by falling back from binary to send/recv, and from send/recv to text, where the upstream and downstream are not compatible.
+
+An unspecified compatibility field _must_ presumed to be unsupported by the downstream so that older clients that don’t know about a change in a newer version don’t receive unexpected data. For example, in the unlikely event that PostgreSQL 99.8 switched to 128-bit DPD (Densely Packed Decimal) representations of NUMERIC instead of the current arbitrary-length BCD (Binary Coded Decimal) format, a new binary.dpd_numerics parameter would be added. Clients that didn’t know about the change wouldn’t know to set it, so the upstream would presume it unsupported and send text format NUMERIC to those clients. This also means that clients that support the new format wouldn’t be able to receive the old format in binary from older servers since they’d specify dpd_numerics = true in their compatibility parameters.
+
+At this time a downstream may specify compatibility with only one value for a given option; i.e. a downstream cannot say it supports both 4-byte and 8-byte sizeof(int).  Leaving it unspecified means the upstream must assume the downstream supports neither. (A future protocol extension may allow clients to specify alternative sets of supported formats).
+
+The `pg_version` option _must not_ be used to decide compatibility. Use `binary.basetypes_major_version` instead.
+
+|===
+|*Key name*|*Value type*|*Default*|*Description*
+
+|binary.want_binary_basetypes|boolean|false|True if the client accepts binary interchange (send/recv) format rows for PostgreSQL built-in base types.
+|binary.want_internal_basetypes|boolean|false|True if the client accepts PostgreSQL internal-format binary output for base PostgreSQL types not otherwise specified elsewhere.
+|binary.basetypes_major_version|uint16|null|The PostgreSQL major version (x.y) the downstream expects binary and send/recv format values to be in. Represented as an integer in XXYY format (no leading zero since it’s an integer), e.g. 9.5 is 905. This corresponds to PG_VERSION_NUM/100 in PostgreSQL.
+|binary.sizeof_int|uint8|+null+|sizeof(int) on the downstream.
+|binary.sizeof_long|uint8|null|sizeof(long) on the downstream.
+|binary.sizeof_datum|uint8|null|Same as sizeof_int, but for the PostgreSQL Datum typedef.
+|binary.maxalign|uint8|null|Downstream PostgreSQL server’s maxalign value - platform dependent, determined at build time.
+|binary.bigendian|bool|null|True iff the downstream is big-endian.
+|binary.float4_byval|bool|null|Downstream PostgreSQL’s float4_byval compile option.
+|binary.float8_byval|bool|null|Downstream PostgreSQL’s float8_byval compile option.
+|binary.integer_datetimes|bool|null|Downstream PostgreSQL’s integer_datetimes compile option.
+|===
+
+== Extensibility
+
+Because of the use of optional parameters in output plugin arguments, and the
+confirmation/response sent in the startup packet, a basic handshake is possible
+between upstream and downstream, allowing negotiation of capabilities.
+
+The output plugin must never send non-optional data or change its wire format
+without confirmation from the client that it can understand the new data. It
+may send optional data without negotiation.
+
+When extending the output plugin arguments, add-ons are expected to prefix all
+keys with the extension name, and should preferably use a single top level key
+with a json object value to carry their extension information. Additions to the
+startup message should follow the same pattern.
+
+Hooks and plugins can be used to add functionality specific to a client.
+
+== JSON protocol
+
+If `proto_format` is set to `json` then the output plugin will emit JSON
+instead of the custom binary protocol. JSON support is intended mainly for
+debugging and diagnostics.
+
+The JSON format supports all the same hooks.
