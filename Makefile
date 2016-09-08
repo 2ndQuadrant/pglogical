@@ -62,6 +62,8 @@ PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
 OBJS += $(srcdir)/compat95/pglogical_compat.o
 endif
 
+PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/pglogical_output/))
+
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 

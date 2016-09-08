@@ -73,12 +73,16 @@ you don't have `pg_config`.
 Then run `make USE_PGXS=1` to compile, and `make USE_PGXS=1 install` to
 install. You might need to use `sudo` for the install step.
 
+You also have to initialize the subprojects.
+
 e.g. for a typical Fedora or RHEL 7 install, assuming you're using the
 [yum.postgresql.org](http://yum.postgresql.org) packages for PostgreSQL:
 
     sudo dnf install postgresql95-devel
+    git submodule update --init
     PATH=/usr/pgsql-9.5/bin:$PATH make USE_PGXS=1 clean all
     sudo PATH=/usr/pgsql-9.5/bin:$PATH make USE_PGXS=1 install
+
 
 ## Usage
 
