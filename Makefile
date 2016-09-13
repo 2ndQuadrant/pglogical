@@ -44,7 +44,6 @@ SHLIB_LINK += $(libpq)
 
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
-requires =
 ifeq ($(PGVER),94)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat94))
 OBJS += $(srcdir)/compat94/pglogical_compat.o
@@ -56,7 +55,11 @@ REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
 requires = requires=pglogical_origin
+else
+DATA += pglogical_origin.control pglogical_origin--1.0.0.sql
+requires =
 endif
+
 ifeq ($(PGVER),95)
 PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
 OBJS += $(srcdir)/compat95/pglogical_compat.o
