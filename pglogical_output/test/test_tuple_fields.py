@@ -95,7 +95,6 @@ class TupleFieldsTest(PGLogicalOutputTest):
 
         # First UPDATE
         messages.expect_begin()
-        messages.expect_row_meta()
         m = messages.expect_update()
         self.assertEqual(m.message['newtup'][0], 'one-toasted\0')
         self.assertEqual(m.message['newtup'][1], '2\0')
@@ -111,7 +110,6 @@ class TupleFieldsTest(PGLogicalOutputTest):
 
         # Second UPDATE
         messages.expect_begin()
-        messages.expect_row_meta()
         m = messages.expect_update()
         self.assertEqual(m.message['newtup'][0], 'one-toasted\0')
         self.assertEqual(m.message['newtup'][1], '3\0')

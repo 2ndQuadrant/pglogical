@@ -201,7 +201,6 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         messages.expect_begin()
         messages.expect_row_meta()
         m = messages.expect_insert()
-        messages.expect_row_meta()
         m = messages.expect_insert()
         messages.expect_commit()
 
@@ -214,13 +213,9 @@ class ReplicationOriginTest(PGLogicalOutputTest):
             if expect_origins:
                 messages.expect_origin()
             # 9.4 forwards unconditionally
-            m = messages.expect_row_meta()
             m = messages.expect_insert()
-            m = messages.expect_row_meta()
             m = messages.expect_insert()
-            m = messages.expect_row_meta()
             m = messages.expect_delete()
-            m = messages.expect_row_meta()
             m = messages.expect_update()
             messages.expect_commit()
 
@@ -228,11 +223,8 @@ class ReplicationOriginTest(PGLogicalOutputTest):
         # originated tuples. It's locally originated so no origin
         # message is sent.
         messages.expect_begin()
-        m = messages.expect_row_meta()
         m = messages.expect_delete()
-        m = messages.expect_row_meta()
         m = messages.expect_update()
-        m = messages.expect_row_meta()
         m = messages.expect_insert()
         messages.expect_commit()
 

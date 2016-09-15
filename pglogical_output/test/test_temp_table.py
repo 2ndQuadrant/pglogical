@@ -26,9 +26,6 @@ class TempTableTest(PGLogicalOutputTest):
         self.conn.commit()
 
         messages = self.get_changes()
-        # verify - no startup message seen
-        with self.assertRaises(StopIteration):
-            messages.expect_startup()
         # verify - no ReplicationMessage for TEMP table
         with self.assertRaises(StopIteration):
             messages.message_generator.next()

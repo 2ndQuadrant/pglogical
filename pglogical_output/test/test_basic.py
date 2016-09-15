@@ -67,17 +67,14 @@ class BasicTest(PGLogicalOutputTest):
         messages.expect_row_meta()
         m = messages.expect_insert()
         self.assertEqual(m.message['newtup'][2], 'foobar\0')
-        messages.expect_row_meta()
         m = messages.expect_insert()
         self.assertEqual(m.message['newtup'][2], 'bazbar\0')
         messages.expect_commit()
 
         # delete and update in one tx
         messages.expect_begin()
-        messages.expect_row_meta()
         m = messages.expect_delete()
         self.assertEqual(m.message['keytup'][0], '1\0')
-        messages.expect_row_meta()
         m = messages.expect_update()
         self.assertEqual(m.message['newtup'][0], '2\0')
         self.assertEqual(m.message['newtup'][2], 'foobar\0')

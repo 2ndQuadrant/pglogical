@@ -90,10 +90,6 @@ class IntoTxState(ProtocolState):
     """
     def validateRelationId(self, replicationMsg):
         currRelid = replicationMsg.message[self.RELATION_IDENTFIER]
-        if currRelid not in self.relids:
-                raise ProtocolValidationException('Relation Message not received for relid:  %s'
-                                          %(currRelid))
-        self.validateRecentRelationId(currRelid)
 
     """ - For each RowChangeMessage coming in [I, U, D]:
            - if relidentifier recentRelid was just set from RelationMessage,
