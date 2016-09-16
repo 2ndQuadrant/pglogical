@@ -70,7 +70,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	'startup_params_format', '1');
  count 
 -------
-    39
+    29
 (1 row)
 
 -- ... and send/recv binary format
@@ -85,7 +85,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	'binary.basetypes_major_version', (current_setting('server_version_num')::integer / 100)::text);
  count 
 -------
-    39
+    29
 (1 row)
 
 -- Now enable the relation metadata cache and verify that we get the expected

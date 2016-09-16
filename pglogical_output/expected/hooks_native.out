@@ -47,7 +47,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	);
  count 
 -------
-    40
+    25
 (1 row)
 
 -- Test action filter
@@ -62,7 +62,7 @@ SELECT count(data) FROM pg_logical_slot_peek_binary_changes('regression_slot',
 	);
  count 
 -------
-    53
+    35
 (1 row)
 
 -- Invalid row fiter hook function

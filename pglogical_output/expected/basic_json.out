@@ -91,8 +91,7 @@ SELECT * FROM get_startup_params();
  max_proto_version                | "1"
  min_proto_version                | "1"
  no_txinfo                        | "t"
- relmeta_cache_size               | "0"
-(19 rows)
+(18 rows)
 
 SELECT * FROM get_queued_data();
                                                                              data                                                                             

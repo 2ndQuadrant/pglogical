@@ -126,8 +126,6 @@ SELECT count(data) FROM pg_logical_slot_get_binary_changes('regression_slot',
 	'max_proto_version', '1',
 	'startup_params_format', '1',
 	'relmeta_cache_size', '200');
-INFO:  fixed size cache not supported, forced to off
-DETAIL:  only relmeta_cache_size=0 (off) or relmeta_cache_size=-1 (unlimited) supported
  count 
 -------
      0
