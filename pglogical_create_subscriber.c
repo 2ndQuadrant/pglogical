@@ -126,7 +126,7 @@ static bool postmaster_is_alive(pid_t pid);
 static long get_pgpid(void);
 
 static PGconn *
-connectdb(char *connstr)
+connectdb(const char *connstr)
 {
 	PGconn *conn;
 

@@ -35,10 +35,6 @@
 
 #define EXTENSION_NAME "pglogical"
 
-#define PGLOGICAL_MASTER_TOC_MAGIC	123
-#define PGLOGICAL_MASTER_TOC_STATE	1
-#define PGLOGICAL_MASTER_TOC_APPLY	2
-
 #define REPLICATION_ORIGIN_ALL "all"
 
 extern bool pglogical_synchronous_commit;
