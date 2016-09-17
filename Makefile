@@ -4,6 +4,8 @@ MODULE_big = pglogical
 EXTENSION = pglogical
 PGFILEDESC = "pglogical - logical replication"
 
+SUBDIRS = pglogical_output
+
 DATA = pglogical--1.0.0.sql pglogical--1.0.1.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--1.1.0.sql pglogical--1.0.0--1.1.0.sql \
 	   pglogical--1.0.1--1.1.0.sql
@@ -73,14 +75,12 @@ ifeq ($(PGVER),94)
 regresscheck: ;
 check: ;
 
-$(srcdir)/pglogical_dump/pg_dump.c:
+pglogical_dump/pglogical_dump:
 	$(warning pglogical_dump empty, trying to fetch as submodule)
 	git submodule init
 	git submodule update
 
-pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
-	mkdir -p pglogical_dump
-	$(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump all
+SUBDIRS += pglogical_dump
 
 else
 # We can't do a normal 'make check' because PGXS doesn't support
@@ -161,27 +161,8 @@ git-dist: dist-common
 check_prove:
 	$(prove_check)
 
-# First stage of pglogical_output merging: automatically build
-# pglogical_output before pglogical, until it's flattened in.
-pglogical_output_all:
-	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output all
-
-pglogical_output_clean:
-	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output clean
-
-pglogical_output_check:
-	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output check
-
-pglogical_output_regresscheck:
-	$(MAKE) -C pglogical_output -f $(abspath $(srcdir))/pglogical_output/Makefile VPATH=$(abspath $(srcdir))/pglogical_output regresscheck
-
-pglogical.so: pglogical_output/
-
-all: pglogical_output_all
-clean: pglogical_output_clean
-check: pglogical_output_check
-regresscheck: pglogical_output_regresscheck
-
 .PHONY: pglogical_output_all pglogical_output_clean pglogical_output_check pglogical_output_check
 
 .PHONY: all pglogical-dump-clean check regresscheck
+
+$(recurse)
