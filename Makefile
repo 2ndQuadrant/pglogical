@@ -43,7 +43,7 @@ NO_TEMP_INSTALL = yes
 
 PG_CONFIG ?= pg_config
 
-PG_CPPFLAGS += -I$(libpq_srcdir) -Ipglogical_output/
+PG_CPPFLAGS += -I$(libpq_srcdir) $(addprefix -I,$(realpath $(srcdir)/pglogical_output/))
 SHLIB_LINK += $(libpq)
 
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
