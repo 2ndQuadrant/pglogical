@@ -113,13 +113,6 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(LIBS) -o $@$(X)
 
 
-# Even if we don't build pglogical_dump we should still clean it
-# if the submodule exists
-pglogical-dump-clean:
-	if [ -e pglogical_dump/Makefile ]; then $(MAKE) -C pglogical_dump -f $(abspath $(srcdir))/pglogical_dump/Makefile VPATH=$(abspath $(srcdir))/pglogical_dump clean; fi
-
-clean: pglogical-dump-clean
-
 pglogical.control: pglogical.control.in pglogical.h
 	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
 
@@ -163,8 +156,6 @@ git-dist: dist-common
 check_prove:
 	$(prove_check)
 
-.PHONY: pglogical_output_all pglogical_output_clean pglogical_output_check pglogical_output_check
-
-.PHONY: all pglogical-dump-clean check regresscheck
+.PHONY: all check regresscheck
 
 $(recurse)
