@@ -45,6 +45,7 @@
 #include "pglogical.h"
 
 #define CATALOG_REPSET			"replication_set"
+#define CATALOG_REPSET_RELATION_OLD	"replication_set_table"
 #define CATALOG_REPSET_RELATION	"replication_set_relation"
 
 typedef struct RepSetTuple
@@ -355,6 +356,7 @@ List *
 get_relation_replication_sets(Oid nodeid, Oid reloid)
 {
 	RangeVar	   *rv;
+	Oid				relid;
 	Relation		rel;
 	ScanKeyData		key[1];
 	SysScanDesc		scan;
@@ -364,7 +366,19 @@ get_relation_replication_sets(Oid nodeid, Oid reloid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_RELATION, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	relid = RangeVarGetRelid(rv, RowExclusiveLock, true);
+	/* Backwards compat with 1.0 where the relation name was different. */
+	if (!OidIsValid(relid))
+	{
+		rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_RELATION_OLD, -1);
+		relid = RangeVarGetRelid(rv, RowExclusiveLock, true);
+		if (!OidIsValid(relid))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_TABLE),
+					 errmsg("relation \"%s.%s\" does not exist",
+							rv->schemaname, rv->relname)));
+	}
+	rel = heap_open(relid, NoLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_relation_reloid,
