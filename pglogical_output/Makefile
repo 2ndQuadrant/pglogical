@@ -9,9 +9,7 @@ OBJS = pglogical_output.o pglogical_hooks.o pglogical_config.o \
 REGRESS = prep params_native basic_native hooks_native basic_json hooks_json encoding_json extension cleanup
 
 EXTENSION = pglogical_output
-DATA = pglogical_output--1.1.0.sql pglogical_output--1.0.0--1.1.0.sql pglogical_output--1.0.1--1.1.0.sql
-EXTRA_CLEAN += pglogical_output.control
-
+DATA = pglogical_output--1.1.0.sql
 
 # For regression checks
 # http://www.postgresql.org/message-id/CAB7nPqTsR5o3g-fBi6jbsVdhfPiLFWQ_0cGU5=94Rv_8W3qvFA@mail.gmail.com
@@ -31,16 +29,6 @@ plhooks:
 	make -C examples/hooks USE_PGXS=1 clean install
 
 installcheck: plhooks
-
-
-# The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
-# so it must be escaped. The $ placeholders in awk must be doubled too.
-pglogical_output_version=$(shell awk '/\#define PGLOGICAL_OUTPUT_VERSION[ \t]+\".*\"/ { print substr($$3,2,length($$3)-2) }' pglogical_output.h )
-
-all: pglogical_output.control
-
-pglogical_output.control: pglogical_output.control.in pglogical_output.h
-	sed 's/__PGLOGICAL_OUTPUT_VERSION__/$(pglogical_output_version)/' pglogical_output.control.in > pglogical_output.control
 
 install: header_install
 
