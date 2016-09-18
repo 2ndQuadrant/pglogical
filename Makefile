@@ -77,10 +77,12 @@ ifeq ($(PGVER),94)
 regresscheck: ;
 check: ;
 
-pglogical_dump/pglogical_dump:
+$(srcdir)/pglogical_dump/pg_dump.c:
 	$(warning pglogical_dump empty, trying to fetch as submodule)
 	git submodule init
 	git submodule update
+
+pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
 
 SUBDIRS += pglogical_dump
 
