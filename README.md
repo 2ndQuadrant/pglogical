@@ -34,10 +34,6 @@ Architectural details:
 
 To use pglogical the provider and subscriber must be running PostgreSQL 9.4 or newer.
 
-The `pglogical_output` extension needs to be installed on both provider and
-subscriber. No actual `CREATE EXTENSION` is required, it must just be present
-in the PostgreSQL installation.
-
 The `pglogical` extension must be installed on both provider and subscriber.
 You must `CREATE EXTENSION pglogical` on both.
 
@@ -668,8 +664,6 @@ It also adds some features:
 
 * Flexible connections between nodes; topology is not restricted to
   a mesh configuration like BDR's. Cascading logical replication is possible.
-
-* Loosely-coupled output plugin that's re-usable for other projects
 
 * JSON output so queued transactions can be inspected
 
