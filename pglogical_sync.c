@@ -99,7 +99,7 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -N pglogical_origin -F c -f \"%s\" \"%s\"",
+	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
 					 pg_dump, snapshot, EXTENSION_NAME, destfile,
 					 sub->origin_if->dsn);
 
