@@ -6,6 +6,12 @@ SELECT * FROM pglogical_regress_variables()
 SET client_min_messages = 'warning';
 DROP ROLE IF EXISTS nonreplica;
 CREATE USER nonreplica;
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+	END IF;
+END;$$;
 CREATE EXTENSION IF NOT EXISTS pglogical;
 GRANT ALL ON SCHEMA pglogical TO nonreplica;
 GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
@@ -13,6 +19,12 @@ GRANT ALL ON ALL TABLES IN SCHEMA pglogical TO nonreplica;
 \c :subscriber_dsn
 SET client_min_messages = 'warning';
 \set VERBOSITY terse
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+	END IF;
+END;$$;
 CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
 ALTER EXTENSION pglogical UPDATE;
 

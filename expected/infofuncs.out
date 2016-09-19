@@ -1,3 +1,9 @@
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+	END IF;
+END;$$;
 CREATE EXTENSION pglogical;
 SELECT pglogical.pglogical_max_proto_version();
  pglogical_max_proto_version 
