@@ -282,7 +282,7 @@ handle_origin(StringInfo s)
 	ensure_transaction();
 
 	origin = pglogical_read_origin(s, &remote_origin_lsn);
-	remote_origin_id = replorigin_by_name(origin, false);
+	remote_origin_id = replorigin_by_name(origin, true);
 }
 
 /*
