@@ -87,6 +87,7 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 	char		pg_dump[MAXPGPATH];
 	uint32		version;
 	int			res;
+	StringInfoData	schema_filter;
 	StringInfoData	command;
 
 	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump))
@@ -98,9 +99,17 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 			 version / 100 / 100, version / 100 % 100,
 			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
 
+	initStringInfo(&schema_filter);
+	appendStringInfo(&schema_filter, "-N %s", EXTENSION_NAME);
+	/* Filter out pglogical_origin schema iff it exists (GH #45) */
+	StartTransactionCommand();
+	if (OidIsValid(LookupExplicitNamespace("pglogical_origin", true)))
+		appendStringInfoString(&schema_filter, " -N pglogical_origin");
+	CommitTransactionCommand();
+
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" -s -N %s -F c -f \"%s\" \"%s\"",
-					 pg_dump, snapshot, EXTENSION_NAME, destfile,
+	appendStringInfo(&command, "%s --snapshot=\"%s\" %s -s -F c -f \"%s\" \"%s\"",
+					 pg_dump, snapshot, schema_filter.data, destfile,
 					 sub->origin_if->dsn);
 
 	res = system(command.data);
