@@ -1190,8 +1190,11 @@ pglogical_replication_set_add_relation(Name repset_name, Oid reloid,
 	repset = get_replication_set_by_name(node->node->id,
 										 NameStr(*repset_name), false);
 
-	/* Make sure the relation exists. */
-	rel = heap_open(reloid, AccessShareLock);
+	/*
+	 * Make sure the relation exists (lock mode has to be the same one as
+	 * in replication_set_add_relation).
+	 */
+	rel = heap_open(reloid, ShareRowExclusiveLock);
 
 	replication_set_add_relation(repset->id, reloid);
 
@@ -1592,56 +1595,6 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 }
 
 /*
- * pglogical_truncate_trigger_add
- *
- * This function, which is called as an event trigger handler, adds TRUNCATE
- * trigger to newly created tables where appropriate.
- *
- * Since triggers are created tgisinternal and their creation is
- * not replicated or dumped we must create truncate triggers on
- * tables even if they're created by a replicated command or
- * restore of a dump. Recursion is not a problem since we don't
- * queue anything for replication anymore.
- */
-Datum
-pglogical_truncate_trigger_add(PG_FUNCTION_ARGS)
-{
-	EventTriggerData   *trigdata = (EventTriggerData *) fcinfo->context;
-	const char	   *funcname = "truncate_trigger_add";
-
-	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
-		ereport(ERROR,
-				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("function \"%s\" was not called by event trigger manager",
-						funcname)));
-
-	/* Check if this is CREATE TABLE [AS] and if it is, add the trigger. */
-	if (strncmp(trigdata->tag, "CREATE TABLE", strlen("CREATE TABLE")) == 0 &&
-		IsA(trigdata->parsetree, CreateStmt))
-	{
-		CreateStmt *stmt = (CreateStmt *)trigdata->parsetree;
-		char *nspname;
-
-		/* Skip temporary and unlogged tables */
-		if (stmt->relation->relpersistence != RELPERSISTENCE_PERMANENT)
-			PG_RETURN_VOID();
-
-		nspname = get_namespace_name(RangeVarGetCreationNamespace(stmt->relation));
-
-		/*
-		 * By this time the relation has been created so it's safe to
-		 * call RangeVarGetRelid.
-		 */
-		create_truncate_trigger(nspname, stmt->relation->relname);
-
-		pfree(nspname);
-	}
-
-	PG_RETURN_VOID();
-}
-
-
-/*
  * pglogical_dependency_check_trigger
  *
  * This function, which is called as an event trigger handler, does
@@ -1861,4 +1814,11 @@ Datum
 pglogical_min_proto_version(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT32(PGLOGICAL_MIN_PROTO_VERSION_NUM);
+}
+
+/* Dummy function for backward comptibility. */
+Datum
+pglogical_truncate_trigger_add(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_VOID();
 }

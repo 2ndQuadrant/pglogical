@@ -36,6 +36,6 @@ extern QueuedMessage *queued_message_from_tuple(HeapTuple queue_tup);
 
 extern Oid get_queue_table_oid(void);
 
-extern void create_truncate_trigger(char *schemaname, char *relname);
+extern void create_truncate_trigger(Relation rel);
 
 #endif /* PGLOGICAL_NODE_H */

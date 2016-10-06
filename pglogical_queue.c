@@ -31,6 +31,8 @@
 
 #include "nodes/makefuncs.h"
 
+#include "parser/parse_func.h"
+
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -190,15 +192,39 @@ get_queue_table_oid(void)
  * This is basically wrapper around CreateTrigger().
  */
 void
-create_truncate_trigger(char *schemaname, char *relname)
+create_truncate_trigger(Relation rel)
 {
 	CreateTrigStmt *tgstmt;
-	RangeVar *relrv = makeRangeVar(schemaname, relname, -1);
+	Oid			fargtypes[1];
+	List	   *funcname = list_make2(makeString(EXTENSION_NAME),
+									  makeString("queue_truncate"));
+
+	/*
+	 * Check for already existing trigger on the table to avoid adding
+	 * duplicate ones.
+	 */
+	if (rel->trigdesc)
+	{
+		Trigger	   *trigger = rel->trigdesc->triggers;
+		int			i;
+		Oid			funcoid = LookupFuncName(funcname, 0, fargtypes, false);
+
+		for (i = 0; i < rel->trigdesc->numtriggers; i++)
+		{
+			if (!TRIGGER_FOR_TRUNCATE(trigger->tgtype))
+				continue;
+
+			if (trigger->tgfoid == funcoid)
+				return;
+
+			trigger++;
+		}
+	}
 
 	tgstmt = makeNode(CreateTrigStmt);
 	tgstmt->trigname = "queue_truncate_trigger";
-	tgstmt->relation = copyObject(relrv);
-	tgstmt->funcname = list_make2(makeString(EXTENSION_NAME), makeString("queue_truncate"));
+	tgstmt->relation = NULL;
+	tgstmt->funcname = funcname;
 	tgstmt->args = NIL;
 	tgstmt->row = false;
 	tgstmt->timing = TRIGGER_TYPE_AFTER;
@@ -210,7 +236,7 @@ create_truncate_trigger(char *schemaname, char *relname)
 	tgstmt->initdeferred = false;
 	tgstmt->constrrel = NULL;
 
-	(void) CreateTrigger(tgstmt, NULL, InvalidOid, InvalidOid,
+	(void) CreateTrigger(tgstmt, NULL, RelationGetRelid(rel), InvalidOid,
 						 InvalidOid, InvalidOid, true /* tgisinternal */);
 
 	/* Make the new trigger visible within this session */

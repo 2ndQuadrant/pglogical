@@ -41,6 +41,7 @@
 #include "utils/rel.h"
 
 #include "pglogical_node.h"
+#include "pglogical_queue.h"
 #include "pglogical_repset.h"
 #include "pglogical.h"
 
@@ -871,7 +872,7 @@ replication_set_add_relation(Oid setid, Oid reloid)
 	PGLogicalRepSet *repset = get_replication_set(setid);
 
 	/* Open the relation. */
-	targetrel = heap_open(reloid, AccessShareLock);
+	targetrel = heap_open(reloid, ShareRowExclusiveLock);
 
 	/* UNLOGGED and TEMP relations cannot be part of replication set. */
 	if (!RelationNeedsWAL(targetrel))
@@ -898,6 +899,8 @@ replication_set_add_relation(Oid setid, Oid reloid)
 								   "replication set is configured to replicate "
 								   "UPDATEs and/or DELETEs"),
 						 errhint("Add a PRIMARY KEY to the table")));
+
+				create_truncate_trigger(targetrel);
 			break;
 		case RELKIND_SEQUENCE:
 			/* Ensure track the state of the sequence. */
