@@ -175,9 +175,23 @@ ensure_replication_slot_snapshot(PGconn *origin_conn, char *slot_name,
 	/* TODO: check and handle already existing slot. */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
-		elog(FATAL, "could not send replication command \"%s\": status %s: %s\n",
-			 query.data,
-			 PQresStatus(PQresultStatus(res)), PQresultErrorMessage(res));
+		char	*err = PQresultErrorMessage(res);
+
+		/*
+		 * Report more pleasant message on snapshot too large
+		 * (there is not ERRCODE for it).
+		 *
+		 * Note that retry is not hanled by us but by the fact that this
+		 * function is only called when sync state is INIT.
+		 */
+		if (strstr(err, "snapshot too large"))
+			ereport(ERROR,
+					(errmsg("could not start synchronization, will retry later"),
+					 errdetail("recieved \"snapshot too large\" from provider")));
+		else
+			elog(FATAL, "could not send replication command \"%s\": status %s: %s\n",
+				 query.data,
+				 PQresStatus(PQresultStatus(res)), err);
 	}
 
 	*lsn = DatumGetLSN(DirectFunctionCall1Coll(pg_lsn_in, InvalidOid,
