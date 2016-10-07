@@ -42,9 +42,10 @@ typedef struct PGLogicalSubscription
 	PGlogicalInterface *origin_if;
 	PGlogicalInterface *target_if;
 	bool		enabled;
+	Interval   *apply_delay;
+	char	   *slot_name;
 	List	   *replication_sets;
 	List	   *forward_origins;
-	char	   *slot_name;
 } PGLogicalSubscription;
 
 extern void create_node(PGLogicalNode *node);

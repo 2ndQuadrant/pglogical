@@ -44,6 +44,8 @@ typedef struct PGLogicalRowFilterArgs
 	enum ReorderBufferChangeType	change_type;
 	/* detailed row change event from logical decoding */
 	ReorderBufferChange *change;
+	/* Attribute filter if any - set by the hook. */
+	bool	   *att_filter;
 } PGLogicalRowFilterArgs;
 
 typedef bool (*pglogical_row_filter_hook_fn)(PGLogicalRowFilterArgs *args);

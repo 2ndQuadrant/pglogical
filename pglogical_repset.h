@@ -31,7 +31,7 @@ typedef struct PGLogicalRepSet
 #define DDL_SQL_REPSET_NAME "ddl_sql"
 
 /* This is only valid within one output plugin instance/walsender. */
-typedef struct PGLogicalRepSetRelation
+typedef struct PGLogicalTableRepInfo
 {
 	Oid				reloid;				/* key */
 
@@ -40,17 +40,14 @@ typedef struct PGLogicalRepSetRelation
 	bool			replicate_insert;	/* should insert be replicated? */
 	bool			replicate_update;	/* should update be replicated? */
 	bool			replicate_delete;	/* should delete be replicated? */
-	bool			replicate_truncate; /* should truncate be replicated? */
-} PGLogicalRepSetRelation;
 
-/* Change types, can't use ReorderBufferChangeType as it's missing TRUNCATE. */
-typedef enum PGLogicalChangeType
-{
-	PGLogicalChangeInsert,
-	PGLogicalChangeUpdate,
-	PGLogicalChangeDelete,
-	PGLogicalChangeTruncate
-} PGLogicalChangeType;
+	bool		   *att_filter;			/* column filter
+										   NULL if everything is replicated
+										   otherwise one bool per column:
+										     true - column is replicated
+										     false - column not replicated */
+	List		   *row_filter;			/* compiled row_filter nodes */
+} PGLogicalTableRepInfo;
 
 extern PGLogicalRepSet *get_replication_set(Oid setid);
 extern PGLogicalRepSet *get_replication_set_by_name(Oid nodeid,
@@ -60,25 +57,27 @@ extern PGLogicalRepSet *get_replication_set_by_name(Oid nodeid,
 extern List *get_node_replication_sets(Oid nodeid);
 extern List *get_replication_sets(Oid nodeid, List *replication_set_names,
 								  bool missing_ok);
-extern List *get_relation_replication_sets(Oid nodeid, Oid reloid);
 
-extern bool relation_is_replicated(Relation rel, Oid nodeid,
-								   List *replication_set_names,
-								   PGLogicalChangeType change_type);
+extern PGLogicalTableRepInfo *get_table_replication_info(Oid nodeid,
+						   Oid reloid, List *subs_replication_sets);
 
 extern void create_replication_set(PGLogicalRepSet *repset);
 extern void alter_replication_set(PGLogicalRepSet *repset);
 extern void drop_replication_set(Oid setid);
 extern void drop_node_replication_sets(Oid nodeid);
 
-extern void replication_set_add_relation(Oid setid, Oid reloid);
-extern bool replication_set_has_relation(Oid setid, Oid reloid);
-extern List *replication_set_get_relations(Oid setid);
-extern void replication_set_remove_relation(Oid setid, Oid reloid,
-											bool from_drop);
+extern void replication_set_add_table(Oid setid, Oid reloid,
+						  List *att_filter, Node *row_filter);
+extern void replication_set_add_seq(Oid setid, Oid seqoid);
+extern List *replication_set_get_tables(Oid setid);
+extern List *replication_set_get_seqs(Oid setid);
+extern void replication_set_remove_table(Oid setid, Oid reloid,
+										 bool from_drop);
+extern void replication_set_remove_seq(Oid setid, Oid reloid,
+									   bool from_drop);
 
-extern PGLogicalChangeType to_pglogical_changetype(
-		enum ReorderBufferChangeType change);
+extern List *get_table_replication_sets(Oid nodeid, Oid reloid);
+extern List *get_seq_replication_sets(Oid nodeid, Oid seqoid);
 
 extern PGLogicalRepSet *replication_set_from_tuple(HeapTuple tuple);
 

@@ -20,6 +20,7 @@
 #include "access/xlog.h"
 
 #include "catalog/catalog.h"
+#include "catalog/heap.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
@@ -36,12 +37,21 @@
 
 #include "nodes/makefuncs.h"
 
+#include "pgtime.h"
+
+#include "parser/parse_coerce.h"
+#include "parser/parse_collate.h"
+#include "parser/parse_expr.h"
+#include "parser/parse_relation.h"
+
 #include "replication/origin.h"
 #include "replication/reorderbuffer.h"
 #include "replication/slot.h"
 
 #include "storage/latch.h"
 #include "storage/proc.h"
+
+#include "tcop/tcopprot.h"
 
 #include "utils/array.h"
 #include "utils/builtins.h"
@@ -355,6 +365,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	List				   *other_subs;
 	ListCell			   *lc;
 	NameData				slot_name;
+	struct pg_tm			tm;
 
 	/* Check that this is actually a node. */
 	localnode = get_local_node(true, false);
@@ -456,6 +467,15 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
 				  origin.name, sub_name);
 	sub.slot_name = pstrdup(NameStr(slot_name));
+
+	sub.apply_delay = (Interval *) palloc0(sizeof(Interval));
+	tm.tm_year = 0;
+	tm.tm_mon = 0;
+	tm.tm_mday = 0;
+	tm.tm_hour = 0;
+	tm.tm_min = 0;
+	tm.tm_sec = 0;
+	tm2interval(&tm, 0, sub.apply_delay);
 
 	create_subscription(&sub);
 
@@ -1165,19 +1185,40 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 }
 
 /*
- * Common function for adding replication set / relation mapping.
+ * error context callback for parse failure during pglogical_replication_set_add_table()
  */
-static Datum
-pglogical_replication_set_add_relation(Name repset_name, Oid reloid,
-									   bool synchronize, char relkind)
+static void
+pts_error_callback(void *arg)
 {
+	const char *row_filter_str = (const char *) arg;
+
+	errcontext("invalid row_filter expression \"%s\"", row_filter_str);
+
+	/*
+	 * Currently we just suppress any syntax error position report, rather
+	 * than transforming to an "internal query" error.  It's unlikely that a
+	 * type name is complex enough to need positioning.
+	 */
+	errposition(0);
+}
+
+/*
+ * Add replication set / table mapping.
+ */
+Datum
+pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
+{
+	Name				repset_name = PG_GETARG_NAME(0);
+	Oid					reloid = PG_GETARG_OID(1);
+	bool				synchronize = PG_GETARG_BOOL(2);
+	char			   *row_filter_str;
+	Node			   *row_filter = NULL;
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	PGLogicalLocalNode *node;
 	char			   *nspname;
 	char			   *relname;
 	StringInfoData		json;
-	char				cmdtype;
 
 	node = get_local_node(true, true);
 	if (!node)
@@ -1196,7 +1237,150 @@ pglogical_replication_set_add_relation(Name repset_name, Oid reloid,
 	 */
 	rel = heap_open(reloid, ShareRowExclusiveLock);
 
-	replication_set_add_relation(repset->id, reloid);
+	nspname = get_namespace_name(RelationGetNamespace(rel));
+	relname = RelationGetRelationName(rel);
+
+	if (!PG_ARGISNULL(4))
+	{
+		List *raw_parsetree_list;
+		SelectStmt *stmt;
+		ResTarget  *restarget;
+		ParseState *pstate;
+		RangeTblEntry *rte;
+		StringInfoData buf;
+		ErrorContextCallback ptserrcontext;
+
+		row_filter_str = text_to_cstring(PG_GETARG_TEXT_PP(4));
+
+		initStringInfo(&buf);
+		appendStringInfo(&buf, "SELECT %s FROM %s", row_filter_str,
+						 quote_qualified_identifier(nspname, relname));
+
+		ptserrcontext.callback = pts_error_callback;
+		ptserrcontext.arg = (void *) row_filter_str;
+		ptserrcontext.previous = error_context_stack;
+		error_context_stack = &ptserrcontext;
+
+		raw_parsetree_list = pg_parse_query(buf.data);
+
+		error_context_stack = ptserrcontext.previous;
+
+		if (list_length(raw_parsetree_list) != 1)
+			goto fail;
+		stmt = (SelectStmt *) linitial(raw_parsetree_list);
+		if (stmt == NULL ||
+			!IsA(stmt, SelectStmt) ||
+			stmt->distinctClause != NIL ||
+			stmt->intoClause != NULL ||
+			stmt->whereClause != NULL ||
+			stmt->groupClause != NIL ||
+			stmt->havingClause != NULL ||
+			stmt->windowClause != NIL ||
+			stmt->valuesLists != NIL ||
+			stmt->sortClause != NIL ||
+			stmt->limitOffset != NULL ||
+			stmt->limitCount != NULL ||
+			stmt->lockingClause != NIL ||
+			stmt->withClause != NULL ||
+			stmt->op != SETOP_NONE)
+			goto fail;
+		if (list_length(stmt->targetList) != 1)
+			goto fail;
+		restarget = (ResTarget *) linitial(stmt->targetList);
+		if (restarget == NULL ||
+			!IsA(restarget, ResTarget) ||
+			restarget->name != NULL ||
+			restarget->indirection != NIL ||
+			restarget->val == NULL)
+			goto fail;
+
+		row_filter = restarget->val;
+
+		/*
+		 * Create a dummy ParseState and insert the target relation as its sole
+		 * rangetable entry.  We need a ParseState for transformExpr.
+		 */
+		pstate = make_parsestate(NULL);
+		rte = addRangeTableEntryForRelation(pstate,
+											rel,
+											NULL,
+											false,
+											true);
+		addRTEtoQuery(pstate, rte, true, true, true);
+		row_filter = transformExpr(pstate, row_filter, EXPR_KIND_CHECK_CONSTRAINT);
+		row_filter = coerce_to_boolean(pstate, row_filter, "row_filter");
+		assign_expr_collations(pstate, row_filter);
+		if (list_length(pstate->p_rtable) != 1)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					 errmsg("only table \"%s\" can be referenced in row_filter",
+							relname)));
+		pfree(buf.data);
+	}
+
+	replication_set_add_table(repset->id, reloid, NIL, row_filter);
+
+	if (synchronize)
+	{
+		/* It's easier to construct json manually than via Jsonb API... */
+		initStringInfo(&json);
+		appendStringInfo(&json, "{\"schema_name\": ");
+		escape_json(&json, nspname);
+		appendStringInfo(&json, ",\"table_name\": ");
+		escape_json(&json, relname);
+		appendStringInfo(&json, "}");
+
+		/* Queue the truncate for replication. */
+		queue_message(list_make1(repset->name), GetUserId(),
+					  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
+	}
+
+	/* Cleanup. */
+	heap_close(rel, NoLock);
+
+	PG_RETURN_BOOL(true);
+
+fail:
+	ereport(ERROR,
+			(errcode(ERRCODE_SYNTAX_ERROR),
+			 errmsg("invalid row_filter expression \"%s\"", row_filter_str)));
+	PG_RETURN_BOOL(false);	/* keep compiler quiet */
+}
+
+/*
+ * Add replication set / sequence mapping.
+ */
+Datum
+pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
+{
+	Name				repset_name = PG_GETARG_NAME(0);
+	Oid					reloid = PG_GETARG_OID(1);
+	bool				synchronize = PG_GETARG_BOOL(2);
+	PGLogicalRepSet    *repset;
+	Relation			rel;
+	PGLogicalLocalNode *node;
+	char			   *nspname;
+	char			   *relname;
+	StringInfoData		json;
+
+	node = get_local_node(true, true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
+
+	/* Find the replication set. */
+	repset = get_replication_set_by_name(node->node->id,
+										 NameStr(*repset_name), false);
+
+	/*
+	 * Make sure the relation exists (lock mode has to be the same one as
+	 * in replication_set_add_relation).
+	 */
+	rel = heap_open(reloid, ShareRowExclusiveLock);
+
+	replication_set_add_seq(repset->id, reloid);
 
 	if (synchronize)
 	{
@@ -1207,66 +1391,21 @@ pglogical_replication_set_add_relation(Name repset_name, Oid reloid,
 		initStringInfo(&json);
 		appendStringInfo(&json, "{\"schema_name\": ");
 		escape_json(&json, nspname);
-		switch (relkind)
-		{
-			case RELKIND_RELATION:
-				appendStringInfo(&json, ",\"table_name\": ");
-				escape_json(&json, relname);
-				cmdtype = QUEUE_COMMAND_TYPE_TABLESYNC;
-				break;
-			case RELKIND_SEQUENCE:
-				appendStringInfo(&json, ",\"sequence_name\": ");
-				escape_json(&json, relname);
-                appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+		appendStringInfo(&json, ",\"sequence_name\": ");
+		escape_json(&json, relname);
+        appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
 								 sequence_get_last_value(reloid));
-				cmdtype = QUEUE_COMMAND_TYPE_SEQUENCE;
-				break;
-			default:
-				elog(ERROR, "unsupported relkind '%c'", relkind);
-		}
 		appendStringInfo(&json, "}");
 
 		/* Queue the truncate for replication. */
-		queue_message(list_make1(repset->name), GetUserId(), cmdtype,
-					  json.data);
+		queue_message(list_make1(repset->name), GetUserId(),
+					  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 	}
 
 	/* Cleanup. */
 	heap_close(rel, NoLock);
 
-	PG_RETURN_BOOL(true);
-}
-
-
-/*
- * Add replication set / table mapping.
- */
-Datum
-pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
-{
-	Name		repset_name = PG_GETARG_NAME(0);
-	Oid			reloid = PG_GETARG_OID(1);
-	bool		synchronize = PG_GETARG_BOOL(2);
-
-	return pglogical_replication_set_add_relation(repset_name, reloid,
-												  synchronize,
-												  RELKIND_RELATION);
-}
-
-/*
- * Add replication set / sequence mapping.
- */
-Datum
-pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
-{
-	Name		repset_name = PG_GETARG_NAME(0);
-	Oid			reloid = PG_GETARG_OID(1);
-	bool		synchronize = PG_GETARG_BOOL(2);
-
-	return pglogical_replication_set_add_relation(repset_name, reloid,
-												  synchronize,
-												  RELKIND_SEQUENCE);
-}
+	PG_RETURN_BOOL(true);}
 
 /*
  * Common function for adding replication set / relation mapping based on
@@ -1281,6 +1420,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 	Relation			rel;
 	PGLogicalLocalNode *node;
 	ListCell		   *lc;
+	List			   *existing_relations = NIL;
 
 	node = get_local_node(true, true);
 	if (!node)
@@ -1292,6 +1432,10 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
 										 NameStr(*repset_name), false);
+
+	existing_relations = replication_set_get_tables(repset->id);
+	existing_relations = list_concat_unique_oid(existing_relations,
+												replication_set_get_seqs(repset->id));
 
 	rel = heap_open(RelationRelationId, RowExclusiveLock);
 
@@ -1325,44 +1469,48 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 				IsSystemClass(reloid, reltup))
 				continue;
 
-			if (!replication_set_has_relation(repset->id, reloid))
-				replication_set_add_relation(repset->id, reloid);
-
-			/* XXX refactoring */
-			if (synchronize)
+			if (!list_member_oid(existing_relations, reloid))
 			{
-				char			   *relname;
-				StringInfoData		json;
-				char				cmdtype;
+				if (relkind == RELKIND_RELATION)
+					replication_set_add_table(repset->id, reloid, NIL, NULL);
+				else
+					replication_set_add_seq(repset->id, reloid);
 
-				relname = get_rel_name(reloid);
-
-				/* It's easier to construct json manually than via Jsonb API... */
-				initStringInfo(&json);
-				appendStringInfo(&json, "{\"schema_name\": ");
-				escape_json(&json, nspname);
-				switch (relkind)
+				if (synchronize)
 				{
-					case RELKIND_RELATION:
-						appendStringInfo(&json, ",\"table_name\": ");
-						escape_json(&json, relname);
-						cmdtype = QUEUE_COMMAND_TYPE_TABLESYNC;
-						break;
-					case RELKIND_SEQUENCE:
-						appendStringInfo(&json, ",\"sequence_name\": ");
-						escape_json(&json, relname);
-						appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
-										 sequence_get_last_value(reloid));
-						cmdtype = QUEUE_COMMAND_TYPE_SEQUENCE;
-						break;
-					default:
-						elog(ERROR, "unsupported relkind '%c'", relkind);
-				}
-				appendStringInfo(&json, "}");
+					char			   *relname;
+					StringInfoData		json;
+					char				cmdtype;
 
-				/* Queue the truncate for replication. */
-				queue_message(list_make1(repset->name), GetUserId(), cmdtype,
-							  json.data);
+					relname = get_rel_name(reloid);
+
+					/* It's easier to construct json manually than via Jsonb API... */
+					initStringInfo(&json);
+					appendStringInfo(&json, "{\"schema_name\": ");
+					escape_json(&json, nspname);
+					switch (relkind)
+					{
+						case RELKIND_RELATION:
+							appendStringInfo(&json, ",\"table_name\": ");
+							escape_json(&json, relname);
+							cmdtype = QUEUE_COMMAND_TYPE_TABLESYNC;
+							break;
+						case RELKIND_SEQUENCE:
+							appendStringInfo(&json, ",\"sequence_name\": ");
+							escape_json(&json, relname);
+							appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+											 sequence_get_last_value(reloid));
+							cmdtype = QUEUE_COMMAND_TYPE_SEQUENCE;
+							break;
+						default:
+							elog(ERROR, "unsupported relkind '%c'", relkind);
+					}
+					appendStringInfo(&json, "}");
+
+					/* Queue the truncate for replication. */
+					queue_message(list_make1(repset->name), GetUserId(), cmdtype,
+								  json.data);
+				}
 			}
 		}
 
@@ -1428,7 +1576,7 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 	repset = get_replication_set_by_name(node->node->id,
 										 NameStr(*PG_GETARG_NAME(0)), false);
 
-	replication_set_remove_relation(repset->id, reloid, false);
+	replication_set_remove_table(repset->id, reloid, false);
 
 	PG_RETURN_BOOL(true);
 }
@@ -1439,8 +1587,24 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 Datum
 pglogical_replication_set_remove_sequence(PG_FUNCTION_ARGS)
 {
-	/* Sequences can be handled same way as tables. */
-	return pglogical_replication_set_remove_table(fcinfo);
+	Oid			seqoid = PG_GETARG_OID(1);
+	PGLogicalRepSet    *repset;
+	PGLogicalLocalNode *node;
+
+	node = get_local_node(true, true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
+
+	/* Find the replication set. */
+	repset = get_replication_set_by_name(node->node->id,
+										 NameStr(*PG_GETARG_NAME(0)), false);
+
+	replication_set_remove_seq(repset->id, seqoid, false);
+
+	PG_RETURN_BOOL(true);
 }
 
 /*
@@ -1577,8 +1741,8 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	escape_json(&json, relname);
 	appendStringInfo(&json, "}");
 
-	repsets = get_relation_replication_sets(local_node->node->id,
-											RelationGetRelid(trigdata->tg_relation));
+	repsets = get_table_replication_sets(local_node->node->id,
+										 RelationGetRelid(trigdata->tg_relation));
 
 	repset_names = NIL;
 	foreach (lc, repsets)
@@ -1643,6 +1807,7 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 		char   *object_type;
 		bool	isnull;
 		List   *repsets;
+		bool	istable;
 
 		reloid = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
 									 SPI_tuptable->tupdesc, 1, &isnull);
@@ -1654,7 +1819,12 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 		object_type = SPI_getvalue(SPI_tuptable->vals[i],
 								   SPI_tuptable->tupdesc, 4);
 
-		repsets = get_relation_replication_sets(node->node->id, reloid);
+		istable = (strcmp(object_type, "table") == 0);
+
+		if (istable)
+			repsets = get_table_replication_sets(node->node->id, reloid);
+		else
+			repsets = get_seq_replication_sets(node->node->id, reloid);
 
 		if (list_length(repsets))
 		{
@@ -1675,7 +1845,12 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 				/* We always drop on replica. */
 				if (stmt->behavior == DROP_CASCADE ||
 					SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
-					replication_set_remove_relation(repset->id, reloid, true);
+				{
+					if (istable)
+						replication_set_remove_table(repset->id, reloid, true);
+					else
+						replication_set_remove_seq(repset->id, reloid, true);
+				}
 			}
 		}
 

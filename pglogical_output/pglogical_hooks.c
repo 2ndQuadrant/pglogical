@@ -180,6 +180,7 @@ call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
 		hook_args.txn = txn;
 		hook_args.changed_rel = rel;
 		hook_args.change = change;
+		hook_args.att_filter = NULL;
 
 		elog(DEBUG3, "calling pglogical row filter hook");
 

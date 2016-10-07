@@ -84,12 +84,10 @@ typedef struct SubscriptionTuple
     Oid			sub_origin_if;
 	Oid			sub_target_if;
 	bool		sub_enabled;
-	NameData	slot_name;
-	text		sub_replication_sets[1];
-	text		sub_forward_origins[1];
+	NameData	sub_slot_name;
 } SubscriptionTuple;
 
-#define Natts_subscription			10
+#define Natts_subscription			11
 #define Anum_sub_id					1
 #define Anum_sub_name				2
 #define Anum_sub_origin				3
@@ -100,6 +98,7 @@ typedef struct SubscriptionTuple
 #define Anum_sub_slot_name			8
 #define Anum_sub_replication_sets	9
 #define Anum_sub_forward_origins	10
+#define Anum_sub_apply_delay		11
 
 /*
  * We impose same validation rules as replication slot name validation does.
@@ -687,7 +686,7 @@ create_subscription(PGLogicalSubscription *sub)
 	Datum		values[Natts_subscription];
 	bool		nulls[Natts_subscription];
 	NameData	sub_name;
-	NameData	slot_name;
+	NameData	sub_slot_name;
 
 	/* Validate the new subscription name. */
 	validate_subscription_name(sub->name);
@@ -716,8 +715,8 @@ create_subscription(PGLogicalSubscription *sub)
 	values[Anum_sub_origin_if - 1] = ObjectIdGetDatum(sub->origin_if->id);
 	values[Anum_sub_target_if - 1] = ObjectIdGetDatum(sub->target_if->id);
 	values[Anum_sub_enabled - 1] = BoolGetDatum(sub->enabled);
-	namestrcpy(&slot_name, sub->slot_name);
-	values[Anum_sub_slot_name - 1] = NameGetDatum(&slot_name);
+	namestrcpy(&sub_slot_name, sub->slot_name);
+	values[Anum_sub_slot_name - 1] = NameGetDatum(&sub_slot_name);
 
 	if (list_length(sub->replication_sets) > 0)
 		values[Anum_sub_replication_sets - 1] =
@@ -730,6 +729,8 @@ create_subscription(PGLogicalSubscription *sub)
 			PointerGetDatum(strlist_to_textarray(sub->forward_origins));
 	else
 		nulls[Anum_sub_forward_origins - 1] = true;
+
+	values[Anum_sub_apply_delay - 1] = IntervalPGetDatum(sub->apply_delay);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -765,7 +766,7 @@ alter_subscription(PGLogicalSubscription *sub)
 	Datum		values[Natts_subscription];
 	bool		nulls[Natts_subscription];
 	bool		replaces[Natts_subscription];
-	NameData	slot_name;
+	NameData	sub_slot_name;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SUBSCRIPTION, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -801,8 +802,8 @@ alter_subscription(PGLogicalSubscription *sub)
 	values[Anum_sub_origin_if - 1] = ObjectIdGetDatum(sub->origin_if->id);
 	values[Anum_sub_target_if - 1] = ObjectIdGetDatum(sub->target_if->id);
 	values[Anum_sub_enabled - 1] = BoolGetDatum(sub->enabled);
-	namestrcpy(&slot_name, sub->slot_name);
-	values[Anum_sub_slot_name - 1] = NameGetDatum(&slot_name);
+	namestrcpy(&sub_slot_name, sub->slot_name);
+	values[Anum_sub_slot_name - 1] = NameGetDatum(&sub_slot_name);
 
 	if (list_length(sub->replication_sets) > 0)
 		values[Anum_sub_replication_sets - 1] =
@@ -815,6 +816,9 @@ alter_subscription(PGLogicalSubscription *sub)
 			PointerGetDatum(strlist_to_textarray(sub->forward_origins));
 	else
 		nulls[Anum_sub_forward_origins - 1] = true;
+
+	replaces[Anum_sub_apply_delay - 1] = false;
+	//values[Anum_sub_apply_delay - 1] = PointerGetDatum(sub->apply_delay);
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -886,7 +890,7 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 	sub->id = subtup->sub_id;
 	sub->name = pstrdup(NameStr(subtup->sub_name));
 	sub->enabled = subtup->sub_enabled;
-	sub->slot_name = pstrdup(NameStr(subtup->slot_name));
+	sub->slot_name = pstrdup(NameStr(subtup->sub_slot_name));
 
 	sub->origin = get_node(subtup->sub_origin);
 	sub->target = get_node(subtup->sub_target);
@@ -914,6 +918,13 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 		forward_origin_names = textarray_to_list(DatumGetArrayTypeP(d));
 		sub->forward_origins = forward_origin_names;
 	}
+
+	/* Get apply_delay. */
+	d = heap_getattr(tuple, Anum_sub_apply_delay, desc, &isnull);
+	if (isnull)
+		sub->apply_delay = 0;
+	else
+		sub->apply_delay = DatumGetIntervalP(d);
 
 	return sub;
 }

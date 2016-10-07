@@ -12,7 +12,7 @@ SELECT pglogical.replicate_ddl_command($$
 	);
 $$);
 
-SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, '{id}', 'id > 1');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 

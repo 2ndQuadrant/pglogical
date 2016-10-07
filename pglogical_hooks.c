@@ -31,7 +31,14 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 
+#include "executor/executor.h"
+
 #include "nodes/makefuncs.h"
+#include "nodes/nodeFuncs.h"
+
+#include "optimizer/planner.h"
+
+#include "parser/parse_coerce.h"
 
 #include "replication/origin.h"
 
@@ -148,11 +155,49 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 	}
 }
 
+static bool
+eval_row_filter(ExprContext *econtext, Node *row_filter)
+{
+	ExprState  *exprstate;
+	Expr	   *expr;
+	Oid			exprtype;
+	bool		isnull;
+	Datum		res;
+
+	exprtype = exprType(row_filter);
+	expr = (Expr *) coerce_to_target_type(NULL,	/* no UNKNOWN params here */
+										  row_filter, exprtype,
+										  BOOLOID, -1,
+										  COERCION_ASSIGNMENT,
+										  COERCE_IMPLICIT_CAST,
+										  -1);
+
+	/* This should never happen but just to be sure. */
+	if (expr == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("cannot cast the row_filter to boolean"),
+			   errhint("You will need to rewrite the row_filter.")));
+
+	expr = expression_planner(expr);
+	exprstate = ExecInitExpr(expr, NULL);
+
+	/* And evaluate the expression. */
+	res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
+
+	/* NULL is same as false for our use. */
+	if (isnull)
+		return false;
+
+	return DatumGetBool(res);
+}
+
 bool
 pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 {
 	PGLogicalHooksPrivate *private = (PGLogicalHooksPrivate*)rowfilter_args->private_data;
-	bool ret;
+	PGLogicalTableRepInfo *tblinfo;
+	ListCell	   *lc;
 
 	if (private->replicate_only_table)
 	{
@@ -251,12 +296,112 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 	}
 
 	/* Normal case - use replication set membership. */
-	ret = relation_is_replicated(rowfilter_args->changed_rel,
-								 private->local_node_id,
-								 private->replication_sets,
-						 to_pglogical_changetype(rowfilter_args->change_type));
+	tblinfo = get_table_replication_info(private->local_node_id,
+										 RelationGetRelid(rowfilter_args->changed_rel),
+										 private->replication_sets);
 
-	return ret;
+	/* First try filter out by change type. */
+	switch (rowfilter_args->change_type)
+	{
+		case REORDER_BUFFER_CHANGE_INSERT:
+			if (!tblinfo->replicate_insert)
+				return false;
+			break;
+		case REORDER_BUFFER_CHANGE_UPDATE:
+			if (!tblinfo->replicate_update)
+				return false;
+			break;
+		case REORDER_BUFFER_CHANGE_DELETE:
+			if (!tblinfo->replicate_delete)
+				return false;
+			break;
+		default:
+			elog(ERROR, "Unhandled reorder buffer change type %d",
+				 rowfilter_args->change_type);
+			return false; /* shut compiler up */
+	}
+
+	if (list_length(tblinfo->row_filter) > 0)
+	{
+		EState		   *estate;
+		ExprContext	   *econtext;
+		ResultRelInfo  *resultRelInfo;
+		RangeTblEntry  *rte;
+		TupleDesc		tupdesc = RelationGetDescr(rowfilter_args->changed_rel);
+		HeapTuple		oldtup = rowfilter_args->change->data.tp.oldtuple ?
+			&rowfilter_args->change->data.tp.oldtuple->tuple : NULL;
+		HeapTuple		newtup = rowfilter_args->change->data.tp.newtuple ?
+			&rowfilter_args->change->data.tp.newtuple->tuple : NULL;
+		TupleTableSlot *oldslot = NULL;
+		TupleTableSlot *newslot = NULL;
+		MemoryContext	oldContext;
+
+		/* Dummy range table entry needed by executor. */
+		rte = makeNode(RangeTblEntry);
+		rte->rtekind = RTE_RELATION;
+		rte->relid = RelationGetRelid(rowfilter_args->changed_rel);
+		rte->relkind = rowfilter_args->changed_rel->rd_rel->relkind;
+		rte->requiredPerms = AccessShareLock;
+
+		/* Initialize executor state in which we'll execute the row_filters. */
+		estate = CreateExecutorState();
+		resultRelInfo = makeNode(ResultRelInfo);
+		InitResultRelInfo(resultRelInfo,
+						  rowfilter_args->changed_rel,
+						  1,		/* dummy rangetable index */
+						  0);
+		estate->es_result_relations = resultRelInfo;
+		estate->es_num_result_relations = 1;
+		estate->es_result_relation_info = resultRelInfo;
+		estate->es_range_table = list_make1(rte);
+
+		econtext = GetPerTupleExprContext(estate);
+
+		if (HeapTupleIsValid(oldtup))
+		{
+			if (estate->es_trig_oldtup_slot == NULL)
+			{
+				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
+				estate->es_trig_oldtup_slot = ExecInitExtraTupleSlot(estate);
+				MemoryContextSwitchTo(oldContext);
+			}
+			oldslot = estate->es_trig_oldtup_slot;
+			if (oldslot->tts_tupleDescriptor != tupdesc)
+				ExecSetSlotDescriptor(oldslot, tupdesc);
+			ExecStoreTuple(oldtup, oldslot, InvalidBuffer, false);
+		}
+		if (HeapTupleIsValid(newtup))
+		{
+			if (estate->es_trig_newtup_slot == NULL)
+			{
+				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
+				estate->es_trig_newtup_slot = ExecInitExtraTupleSlot(estate);
+				MemoryContextSwitchTo(oldContext);
+			}
+			newslot = estate->es_trig_newtup_slot;
+			if (newslot->tts_tupleDescriptor != tupdesc)
+				ExecSetSlotDescriptor(newslot, tupdesc);
+			ExecStoreTuple(newtup, newslot, InvalidBuffer, false);
+		}
+
+		econtext->ecxt_innertuple = oldslot;
+		econtext->ecxt_outertuple = newslot;
+		econtext->ecxt_scantuple = newslot;
+
+		/* Next try the row_filters if there are any. */
+		foreach (lc, tblinfo->row_filter)
+		{
+			Node   *row_filter = (Node *) lfirst(lc);
+
+			if (!eval_row_filter(econtext, row_filter))
+				return false;
+		}
+	}
+
+	/* Make sure caller is aware of any attribute filter. */
+	rowfilter_args->att_filter = tblinfo->att_filter;
+
+	return true;
 }
 
 bool
