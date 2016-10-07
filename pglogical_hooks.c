@@ -332,8 +332,7 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 			&rowfilter_args->change->data.tp.oldtuple->tuple : NULL;
 		HeapTuple		newtup = rowfilter_args->change->data.tp.newtuple ?
 			&rowfilter_args->change->data.tp.newtuple->tuple : NULL;
-		TupleTableSlot *oldslot = NULL;
-		TupleTableSlot *newslot = NULL;
+		TupleTableSlot *slot = NULL;
 		MemoryContext	oldContext;
 
 		/* Dummy range table entry needed by executor. */
@@ -357,19 +356,6 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 
 		econtext = GetPerTupleExprContext(estate);
 
-		if (HeapTupleIsValid(oldtup))
-		{
-			if (estate->es_trig_oldtup_slot == NULL)
-			{
-				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
-				estate->es_trig_oldtup_slot = ExecInitExtraTupleSlot(estate);
-				MemoryContextSwitchTo(oldContext);
-			}
-			oldslot = estate->es_trig_oldtup_slot;
-			if (oldslot->tts_tupleDescriptor != tupdesc)
-				ExecSetSlotDescriptor(oldslot, tupdesc);
-			ExecStoreTuple(oldtup, oldslot, InvalidBuffer, false);
-		}
 		if (HeapTupleIsValid(newtup))
 		{
 			if (estate->es_trig_newtup_slot == NULL)
@@ -378,15 +364,28 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 				estate->es_trig_newtup_slot = ExecInitExtraTupleSlot(estate);
 				MemoryContextSwitchTo(oldContext);
 			}
-			newslot = estate->es_trig_newtup_slot;
-			if (newslot->tts_tupleDescriptor != tupdesc)
-				ExecSetSlotDescriptor(newslot, tupdesc);
-			ExecStoreTuple(newtup, newslot, InvalidBuffer, false);
+			slot = estate->es_trig_newtup_slot;
+			if (slot->tts_tupleDescriptor != tupdesc)
+				ExecSetSlotDescriptor(slot, tupdesc);
+			ExecStoreTuple(newtup, slot, InvalidBuffer, false);
+		}
+		if (HeapTupleIsValid(oldtup))
+		{
+			if (estate->es_trig_oldtup_slot == NULL)
+			{
+				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
+				estate->es_trig_oldtup_slot = ExecInitExtraTupleSlot(estate);
+				MemoryContextSwitchTo(oldContext);
+			}
+			slot = estate->es_trig_oldtup_slot;
+			if (slot->tts_tupleDescriptor != tupdesc)
+				ExecSetSlotDescriptor(slot, tupdesc);
+			ExecStoreTuple(oldtup, slot, InvalidBuffer, false);
 		}
 
-		econtext->ecxt_innertuple = oldslot;
-		econtext->ecxt_outertuple = newslot;
-		econtext->ecxt_scantuple = newslot;
+		econtext->ecxt_innertuple = slot;
+		econtext->ecxt_outertuple = slot;
+		econtext->ecxt_scantuple = slot;
 
 		/* Next try the row_filters if there are any. */
 		foreach (lc, tblinfo->row_filter)

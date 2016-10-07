@@ -25,12 +25,14 @@ extern void pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data
 extern void pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data,
 								 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
 extern void pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
-								 Relation rel, HeapTuple newtuple);
+								 Relation rel, HeapTuple newtuple,
+								 bool *att_filter);
 extern void pglogical_json_write_update(StringInfo out, PGLogicalOutputData *data,
 								 Relation rel, HeapTuple oldtuple,
-								 HeapTuple newtuple);
+								 HeapTuple newtuple, bool *att_filter);
 extern void pglogical_json_write_delete(StringInfo out, PGLogicalOutputData *data,
-								 Relation rel, HeapTuple oldtuple);
+								 Relation rel, HeapTuple oldtuple,
+								 bool *att_filter);
 extern void json_write_startup_message(StringInfo out, List *msg);
 
 #endif /* PG_LOGICAL_PROTO_JSON_H */

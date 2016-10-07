@@ -168,7 +168,7 @@ call_shutdown_hook(PGLogicalOutputData *data)
  */
 bool
 call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
-		Relation rel, ReorderBufferChange *change)
+		Relation rel, ReorderBufferChange *change, bool **att_filter)
 {
 	struct  PGLogicalRowFilterArgs hook_args;
 	bool ret = true;
@@ -186,11 +186,15 @@ call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
 
 		ret = (*data->hooks.row_filter_hook)(&hook_args);
 
+		*att_filter = hook_args.att_filter;
+
 		/* Filter hooks shouldn't change the private data ptr */
 		Assert(data->hooks.hooks_private_data == hook_args.private_data);
 
 		elog(DEBUG3, "called pglogical row filter hook, returned %d", (int)ret);
 	}
+	else
+		*att_filter = NULL;
 
 	return ret;
 }

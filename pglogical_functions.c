@@ -1213,8 +1213,10 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	bool				synchronize = PG_GETARG_BOOL(2);
 	char			   *row_filter_str;
 	Node			   *row_filter = NULL;
+	List			   *att_filter = NIL;
 	PGLogicalRepSet    *repset;
 	Relation			rel;
+	TupleDesc			tupDesc;
 	PGLogicalLocalNode *node;
 	char			   *nspname;
 	char			   *relname;
@@ -1236,9 +1238,28 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	 * in replication_set_add_relation).
 	 */
 	rel = heap_open(reloid, ShareRowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
 
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
+
+	if (!PG_ARGISNULL(3))
+	{
+		ArrayType  *att_names = PG_GETARG_ARRAYTYPE_P(3);
+		ListCell   *lc;
+
+		att_filter = textarray_to_list(att_names);
+		foreach (lc, att_filter)
+		{
+			char   *attname = (char *) lfirst(lc);
+			if (get_att_num_by_name(tupDesc, attname) < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("table %s does not have column %s",
+								quote_qualified_identifier(nspname, relname),
+								attname)));
+		}
+	}
 
 	if (!PG_ARGISNULL(4))
 	{
@@ -1318,7 +1339,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		pfree(buf.data);
 	}
 
-	replication_set_add_table(repset->id, reloid, NIL, row_filter);
+	replication_set_add_table(repset->id, reloid, att_filter, row_filter);
 
 	if (synchronize)
 	{

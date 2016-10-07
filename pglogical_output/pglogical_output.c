@@ -392,12 +392,13 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				 Relation relation, ReorderBufferChange *change)
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
-	MemoryContext old;
+	MemoryContext	old;
+	bool		   *att_filter;
 	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
 
 
 	/* First check the table filter */
-	if (!call_row_filter_hook(data, txn, relation, change))
+	if (!call_row_filter_hook(data, txn, relation, change, &att_filter))
 		return;
 
 	/* Avoid leaking memory by using and resetting our own context */
@@ -414,7 +415,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			!pglogical_cache_relmeta(data, relation, &cached_relmeta))
 	{
 		OutputPluginPrepareWrite(ctx, false);
-		data->api->write_rel(ctx->out, data, relation, cached_relmeta);
+		data->api->write_rel(ctx->out, data, relation, cached_relmeta,
+							 att_filter);
 		OutputPluginWrite(ctx, false);
 	}
 
@@ -424,7 +426,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		case REORDER_BUFFER_CHANGE_INSERT:
 			OutputPluginPrepareWrite(ctx, true);
 			data->api->write_insert(ctx->out, data, relation,
-									&change->data.tp.newtuple->tuple);
+									&change->data.tp.newtuple->tuple,
+									att_filter);
 			OutputPluginWrite(ctx, true);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
@@ -434,7 +437,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 				OutputPluginPrepareWrite(ctx, true);
 				data->api->write_update(ctx->out, data, relation, oldtuple,
-										&change->data.tp.newtuple->tuple);
+										&change->data.tp.newtuple->tuple,
+										att_filter);
 				OutputPluginWrite(ctx, true);
 				break;
 			}
@@ -443,7 +447,8 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			{
 				OutputPluginPrepareWrite(ctx, true);
 				data->api->write_delete(ctx->out, data, relation,
-										&change->data.tp.oldtuple->tuple);
+										&change->data.tp.oldtuple->tuple,
+										att_filter);
 				OutputPluginWrite(ctx, true);
 			}
 			else

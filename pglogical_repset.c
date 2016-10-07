@@ -204,12 +204,24 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 		while ((entry = hash_seq_search(&status)) != NULL)
 		{
 			entry->isvalid = false;
+			if (entry->att_filter)
+				pfree(entry->att_filter);
+			entry->att_filter = NULL;
+			if (list_length(entry->row_filter))
+				list_free(entry->row_filter);
+			entry->row_filter = NIL;
 		}
 	}
 	else if ((entry = hash_search(RepSetTableHash, &reloid,
 								  HASH_FIND, NULL)) != NULL)
 	{
 		entry->isvalid = false;
+		if (entry->att_filter)
+			pfree(entry->att_filter);
+		entry->att_filter = NULL;
+		if (list_length(entry->row_filter))
+			list_free(entry->row_filter);
+		entry->row_filter = NIL;
 	}
 }
 
@@ -338,23 +350,6 @@ get_replication_sets(Oid nodeid, List *replication_set_names, bool missing_ok)
 	return replication_sets;
 }
 
-static int
-get_att_id(TupleDesc desc, const char *attname)
-{
-	int		i;
-
-	for (i = 0; i < desc->natts; i++)
-	{
-		if (desc->attrs[i]->attisdropped)
-			continue;
-
-		if (namestrcmp(&(desc->attrs[i]->attname), attname) == 0)
-			return i;
-	}
-
-	return -1;
-}
-
 PGLogicalTableRepInfo *
 get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 {
@@ -456,7 +451,11 @@ get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 					int			nelems, i;
 
 					if (!entry->att_filter)
+					{
+						MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
 						entry->att_filter = palloc0(sizeof(bool) * desc->natts);
+						MemoryContextSwitchTo(olctx);
+					}
 
 					deconstruct_array(DatumGetArrayTypeP(d),
 									  TEXTOID, -1, false, 'i',
@@ -465,7 +464,7 @@ get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 					for (i = 0; i < nelems; i++)
 					{
 						const char *attname = TextDatumGetCString(elems[i]);
-						entry->att_filter[get_att_id(desc, attname)] = true;
+						entry->att_filter[get_att_num_by_name(desc, attname)] = true;
 					}
 				}
 
@@ -474,8 +473,10 @@ get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 								 desc, &isnull);
 				if (!isnull)
 				{
+					MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
 					Node   *row_filter = stringToNode(TextDatumGetCString(d));
 					entry->row_filter = lappend(entry->row_filter, row_filter);
+					MemoryContextSwitchTo(olctx);
 				}
 			}
 		}
@@ -1026,7 +1027,7 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_filter,
 	values[Anum_repset_table_setid - 1] = ObjectIdGetDatum(repset->id);
 	values[Anum_repset_table_reloid - 1] = ObjectIdGetDatum(reloid);
 
-	if (list_length(att_filter) > 0)
+	if (list_length(att_filter))
 		values[Anum_repset_table_att_filter - 1] =
 			PointerGetDatum(strlist_to_textarray(att_filter));
 	else
@@ -1353,4 +1354,21 @@ stringlist_to_identifierstr(List *strings)
 	}
 
 	return res.data;
+}
+
+int
+get_att_num_by_name(TupleDesc desc, const char *attname)
+{
+	int		i;
+
+	for (i = 0; i < desc->natts; i++)
+	{
+		if (desc->attrs[i]->attisdropped)
+			continue;
+
+		if (namestrcmp(&(desc->attrs[i]->attname), attname) == 0)
+			return i;
+	}
+
+	return -1;
 }
