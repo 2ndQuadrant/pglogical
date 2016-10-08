@@ -130,6 +130,21 @@ static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
 						  const char *subscriber_name);
 
+static PGLogicalLocalNode *
+check_local_node(bool for_update)
+{
+	PGLogicalLocalNode *node;
+
+	node = get_local_node(for_update, true);
+	if (!node)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("current database is not configured as pglogical node"),
+				 errhint("create pglogical node first")));
+
+	return node;
+}
+
 /*
  * Create new node
  */
@@ -1001,12 +1016,7 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 				 errmsg("materialize mode required, but it is not " \
 						"allowed in this context")));
 
-	node = get_local_node(false, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(false);
 
 	if (PG_ARGISNULL(0))
 	{
@@ -1098,12 +1108,7 @@ pglogical_create_replication_set(PG_FUNCTION_ARGS)
 	PGLogicalRepSet		repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	repset.id = InvalidOid;
 
@@ -1134,12 +1139,7 @@ pglogical_alter_replication_set(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("set_name cannot be NULL")));
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	repset = get_replication_set_by_name(node->node->id,
 										 NameStr(*PG_GETARG_NAME(0)), false);
@@ -1169,12 +1169,7 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 	PGLogicalRepSet    *repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	repset = get_replication_set_by_name(node->node->id, set_name, !ifexists);
 
@@ -1188,7 +1183,7 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
  * error context callback for parse failure during pglogical_replication_set_add_table()
  */
 static void
-pts_error_callback(void *arg)
+add_table_parser_error_callback(void *arg)
 {
 	const char *row_filter_str = (const char *) arg;
 
@@ -1202,6 +1197,111 @@ pts_error_callback(void *arg)
 	errposition(0);
 }
 
+static Node *
+parse_row_filter(Relation rel, char *row_filter_str)
+{
+	Node	   *row_filter = NULL;
+	List	   *raw_parsetree_list;
+	SelectStmt *stmt;
+	ResTarget  *restarget;
+	ParseState *pstate;
+	char	   *nspname;
+	char	   *relname;
+	RangeTblEntry *rte;
+	StringInfoData buf;
+	ErrorContextCallback myerrcontext;
+
+	nspname = get_namespace_name(RelationGetNamespace(rel));
+	relname = RelationGetRelationName(rel);
+
+	/*
+	 * Build fake query which includes the expression so that we can
+	 * pass it to the parser.
+	 */
+	initStringInfo(&buf);
+	appendStringInfo(&buf, "SELECT %s FROM %s", row_filter_str,
+					 quote_qualified_identifier(nspname, relname));
+
+	/* Parse it, providing proper error context. */
+	myerrcontext.callback = add_table_parser_error_callback;
+	myerrcontext.arg = (void *) row_filter_str;
+	myerrcontext.previous = error_context_stack;
+	error_context_stack = &myerrcontext;
+
+	raw_parsetree_list = pg_parse_query(buf.data);
+
+	error_context_stack = myerrcontext.previous;
+
+	/* Validate the output from the parser. */
+	if (list_length(raw_parsetree_list) != 1)
+		goto fail;
+	stmt = (SelectStmt *) linitial(raw_parsetree_list);
+	if (stmt == NULL ||
+		!IsA(stmt, SelectStmt) ||
+		stmt->distinctClause != NIL ||
+		stmt->intoClause != NULL ||
+		stmt->whereClause != NULL ||
+		stmt->groupClause != NIL ||
+		stmt->havingClause != NULL ||
+		stmt->windowClause != NIL ||
+		stmt->valuesLists != NIL ||
+		stmt->sortClause != NIL ||
+		stmt->limitOffset != NULL ||
+		stmt->limitCount != NULL ||
+		stmt->lockingClause != NIL ||
+		stmt->withClause != NULL ||
+		stmt->op != SETOP_NONE)
+		goto fail;
+	if (list_length(stmt->targetList) != 1)
+		goto fail;
+	restarget = (ResTarget *) linitial(stmt->targetList);
+	if (restarget == NULL ||
+		!IsA(restarget, ResTarget) ||
+		restarget->name != NULL ||
+		restarget->indirection != NIL ||
+		restarget->val == NULL)
+		goto fail;
+
+	row_filter = restarget->val;
+
+	/*
+	 * Create a dummy ParseState and insert the target relation as its sole
+	 * rangetable entry.  We need a ParseState for transformExpr.
+	 */
+	pstate = make_parsestate(NULL);
+	rte = addRangeTableEntryForRelation(pstate,
+										rel,
+										NULL,
+										false,
+										true);
+	addRTEtoQuery(pstate, rte, true, true, true);
+	/*
+	 * Transform the expression and check it follows limits of row_filter
+	 * which are same as those of CHECK constraint so we can use the builtin
+	 * checks for that.
+	 *
+	 * TODO: make the errors look more informative (currently they will
+	 * complain about CHECK constraint. (Possibly add context?)
+	 */
+	row_filter = transformExpr(pstate, row_filter, EXPR_KIND_CHECK_CONSTRAINT);
+	row_filter = coerce_to_boolean(pstate, row_filter, "row_filter");
+	assign_expr_collations(pstate, row_filter);
+	if (list_length(pstate->p_rtable) != 1)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+				 errmsg("only table \"%s\" can be referenced in row_filter",
+						relname)));
+	pfree(buf.data);
+
+	return row_filter;
+
+fail:
+	ereport(ERROR,
+			(errcode(ERRCODE_SYNTAX_ERROR),
+			 errmsg("invalid row_filter expression \"%s\"", row_filter_str)));
+	return NULL;	/* keep compiler quiet */
+}
+
 /*
  * Add replication set / table mapping.
  */
@@ -1211,7 +1311,6 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	Name				repset_name = PG_GETARG_NAME(0);
 	Oid					reloid = PG_GETARG_OID(1);
 	bool				synchronize = PG_GETARG_BOOL(2);
-	char			   *row_filter_str;
 	Node			   *row_filter = NULL;
 	List			   *att_filter = NIL;
 	PGLogicalRepSet    *repset;
@@ -1222,12 +1321,26 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	char			   *relname;
 	StringInfoData		json;
 
-	node = get_local_node(true, true);
-	if (!node)
+	/* Proccess for required parameters. */
+	if (PG_ARGISNULL(0))
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("set_name cannot be NULL")));
+	if (PG_ARGISNULL(1))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("relation cannot be NULL")));
+	if (PG_ARGISNULL(2))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("synchronize_data cannot be NULL")));
+
+	repset_name = PG_GETARG_NAME(0);
+	reloid = PG_GETARG_OID(1);
+	synchronize = PG_GETARG_BOOL(2);
+
+	/* standard check for node. */
+	node = check_local_node(true);
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
@@ -1243,6 +1356,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
 
+	/* Proccess att_filter. */
 	if (!PG_ARGISNULL(3))
 	{
 		ArrayType  *att_names = PG_GETARG_ARRAYTYPE_P(3);
@@ -1261,82 +1375,11 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		}
 	}
 
+	/* Proccess row_filter if any. */
 	if (!PG_ARGISNULL(4))
 	{
-		List *raw_parsetree_list;
-		SelectStmt *stmt;
-		ResTarget  *restarget;
-		ParseState *pstate;
-		RangeTblEntry *rte;
-		StringInfoData buf;
-		ErrorContextCallback ptserrcontext;
-
-		row_filter_str = text_to_cstring(PG_GETARG_TEXT_PP(4));
-
-		initStringInfo(&buf);
-		appendStringInfo(&buf, "SELECT %s FROM %s", row_filter_str,
-						 quote_qualified_identifier(nspname, relname));
-
-		ptserrcontext.callback = pts_error_callback;
-		ptserrcontext.arg = (void *) row_filter_str;
-		ptserrcontext.previous = error_context_stack;
-		error_context_stack = &ptserrcontext;
-
-		raw_parsetree_list = pg_parse_query(buf.data);
-
-		error_context_stack = ptserrcontext.previous;
-
-		if (list_length(raw_parsetree_list) != 1)
-			goto fail;
-		stmt = (SelectStmt *) linitial(raw_parsetree_list);
-		if (stmt == NULL ||
-			!IsA(stmt, SelectStmt) ||
-			stmt->distinctClause != NIL ||
-			stmt->intoClause != NULL ||
-			stmt->whereClause != NULL ||
-			stmt->groupClause != NIL ||
-			stmt->havingClause != NULL ||
-			stmt->windowClause != NIL ||
-			stmt->valuesLists != NIL ||
-			stmt->sortClause != NIL ||
-			stmt->limitOffset != NULL ||
-			stmt->limitCount != NULL ||
-			stmt->lockingClause != NIL ||
-			stmt->withClause != NULL ||
-			stmt->op != SETOP_NONE)
-			goto fail;
-		if (list_length(stmt->targetList) != 1)
-			goto fail;
-		restarget = (ResTarget *) linitial(stmt->targetList);
-		if (restarget == NULL ||
-			!IsA(restarget, ResTarget) ||
-			restarget->name != NULL ||
-			restarget->indirection != NIL ||
-			restarget->val == NULL)
-			goto fail;
-
-		row_filter = restarget->val;
-
-		/*
-		 * Create a dummy ParseState and insert the target relation as its sole
-		 * rangetable entry.  We need a ParseState for transformExpr.
-		 */
-		pstate = make_parsestate(NULL);
-		rte = addRangeTableEntryForRelation(pstate,
-											rel,
-											NULL,
-											false,
-											true);
-		addRTEtoQuery(pstate, rte, true, true, true);
-		row_filter = transformExpr(pstate, row_filter, EXPR_KIND_CHECK_CONSTRAINT);
-		row_filter = coerce_to_boolean(pstate, row_filter, "row_filter");
-		assign_expr_collations(pstate, row_filter);
-		if (list_length(pstate->p_rtable) != 1)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-					 errmsg("only table \"%s\" can be referenced in row_filter",
-							relname)));
-		pfree(buf.data);
+		row_filter = parse_row_filter(rel,
+									  text_to_cstring(PG_GETARG_TEXT_PP(4)));
 	}
 
 	replication_set_add_table(repset->id, reloid, att_filter, row_filter);
@@ -1360,12 +1403,6 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	heap_close(rel, NoLock);
 
 	PG_RETURN_BOOL(true);
-
-fail:
-	ereport(ERROR,
-			(errcode(ERRCODE_SYNTAX_ERROR),
-			 errmsg("invalid row_filter expression \"%s\"", row_filter_str)));
-	PG_RETURN_BOOL(false);	/* keep compiler quiet */
 }
 
 /*
@@ -1384,12 +1421,7 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 	char			   *relname;
 	StringInfoData		json;
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
@@ -1443,12 +1475,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 	ListCell		   *lc;
 	List			   *existing_relations = NIL;
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
@@ -1586,12 +1613,7 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 	PGLogicalRepSet    *repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
@@ -1612,12 +1634,7 @@ pglogical_replication_set_remove_sequence(PG_FUNCTION_ARGS)
 	PGLogicalRepSet    *repset;
 	PGLogicalLocalNode *node;
 
-	node = get_local_node(true, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+	node = check_local_node(true);
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
@@ -1644,13 +1661,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	PGLogicalLocalNode *node;
 	StringInfoData		cmd;
 
-	node = get_local_node(false, true);
-	if (!node)
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
-
+	node = check_local_node(false);
 
 	/* XXX: This is here for backwards compatibility with pre 1.1 extension. */
 	if (PG_NARGS() < 2)
