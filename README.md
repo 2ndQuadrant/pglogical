@@ -349,7 +349,7 @@ The following functions are provided for managing the replication sets:
   Parameters:
   - `set_name` - name of the existing replication set
 
-- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean)`
+- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, att_filter text[], row_filter text)`
   Adds a table to replication set.
 
   Parameters:
@@ -357,6 +357,11 @@ The following functions are provided for managing the replication sets:
   - `relation` - name or OID of the table to be added to the set
   - `synchronize_data` - if true, the table data is synchronized on all
     subscribers which are subscribed to given replication set, default false
+  - `att_filter` - list of columns to replicate, normally when all columns
+    should be replicated replicated this will be set to NULL which is the
+    default
+  - `row_filter` - row filtering expression, default NULL (no filtering),
+    see [Row Filtering](#row-filtering) for more info
 
 - `pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize_data boolean)`
   Adds all tables in given schemas. Only existing tables are added, table that
@@ -460,6 +465,39 @@ by extensions will go to `default` replication set.
 
   Parameters:
   - `relation` - name of existing sequence, optionally qualified
+
+### Row Filtering
+
+PGLogical allows row based filtering both on provider side and the subscriber
+side.
+
+#### Row Filtering on Provider
+
+On the provider the row filtering can be done by specifying `row_filter`
+parameter for the `pglogical.replication_set_add_table` function. The
+`row_filter` is normal PostgreSQL expression which has the same limitations
+on what's allowed as the `CHECK` constaint.
+
+Simple `row_filter` would look something like `row_filter := 'id > 0'` which
+would ensure that only rows where values of `id` column is bigger than zero
+will be replicated.
+
+It's allowed to use volatile function inside `row_filter` but caution must
+be excercised with regard to writes as any expression which will do writes
+will throw error and stop replication.
+
+It's also worth noting that the `row_filter` is running inside the replication
+session so session specific expressions such as `CURRENT_USER` will have
+values of the replication session and not the session wich did the writes.
+
+#### Row Filtering on Subscriber
+
+On the subscriber the row based filtering can be implemented using standard
+`BEFORE TRIGGER` mechanism.
+
+It is required to mark any such triggers as either `ENABLE REPLICA` or
+`ENABLE ALWAYS` otherwise they will not be executed by the replication
+proccess.
 
 ## Conflicts
 
