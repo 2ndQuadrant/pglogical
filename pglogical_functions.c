@@ -368,6 +368,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	bool					sync_structure = PG_GETARG_BOOL(3);
 	bool					sync_data = PG_GETARG_BOOL(4);
 	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(5);
+	Interval			   *apply_delay = PG_GETARG_INTERVAL_P(6);
 	PGconn				   *conn;
 	PGLogicalSubscription	sub;
 	PGLogicalSyncStatus		sync;
@@ -380,7 +381,6 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	List				   *other_subs;
 	ListCell			   *lc;
 	NameData				slot_name;
-	struct pg_tm			tm;
 
 	/* Check that this is actually a node. */
 	localnode = get_local_node(true, false);
@@ -482,15 +482,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
 				  origin.name, sub_name);
 	sub.slot_name = pstrdup(NameStr(slot_name));
-
-	sub.apply_delay = (Interval *) palloc0(sizeof(Interval));
-	tm.tm_year = 0;
-	tm.tm_mon = 0;
-	tm.tm_mday = 0;
-	tm.tm_hour = 0;
-	tm.tm_min = 0;
-	tm.tm_sec = 0;
-	tm2interval(&tm, 0, sub.apply_delay);
+	sub.apply_delay = apply_delay;
 
 	create_subscription(&sub);
 

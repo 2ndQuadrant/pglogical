@@ -730,7 +730,10 @@ create_subscription(PGLogicalSubscription *sub)
 	else
 		nulls[Anum_sub_forward_origins - 1] = true;
 
-	values[Anum_sub_apply_delay - 1] = IntervalPGetDatum(sub->apply_delay);
+	if (sub->apply_delay)
+		values[Anum_sub_apply_delay - 1] = IntervalPGetDatum(sub->apply_delay);
+	else
+		nulls[Anum_sub_apply_delay - 1] = true;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -817,8 +820,7 @@ alter_subscription(PGLogicalSubscription *sub)
 	else
 		nulls[Anum_sub_forward_origins - 1] = true;
 
-	replaces[Anum_sub_apply_delay - 1] = false;
-	//values[Anum_sub_apply_delay - 1] = PointerGetDatum(sub->apply_delay);
+	values[Anum_sub_apply_delay - 1] = IntervalPGetDatum(sub->apply_delay);
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -877,7 +879,6 @@ drop_subscription(Oid subid)
 	pglogical_subscription_changed(subid);
 }
 
-
 static PGLogicalSubscription*
 subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 {
@@ -922,7 +923,7 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 	/* Get apply_delay. */
 	d = heap_getattr(tuple, Anum_sub_apply_delay, desc, &isnull);
 	if (isnull)
-		sub->apply_delay = 0;
+		sub->apply_delay = NULL;
 	else
 		sub->apply_delay = DatumGetIntervalP(d);
 

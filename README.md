@@ -189,7 +189,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 
 - `pglogical.create_subscription(subscription_name name, provider_dsn text,
   replication_sets text[], synchronize_structure boolean,
-  synchronize_data boolean, forward_origins text[])`
+  synchronize_data boolean, forward_origins text[], apply_delay interval)`
   Creates a subscription from current node to the provider node. Command does
   not block, just initiates the action.
 
@@ -206,6 +206,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     supported values are empty array meaning don't forward any changes
     that didn't originate on provider node, or "{all}" which means replicate
     all changes no matter what is their origin, default is "{all}"
+  - `apply_delay` - how much to delay replication, default is 0 seconds
 
 - `pglogical.drop_subscription(subscription_name name, ifexists bool)`
   Disconnects the subscription and removes it from the catalog.

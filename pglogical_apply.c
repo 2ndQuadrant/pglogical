@@ -72,6 +72,7 @@ void pglogical_apply_main(Datum main_arg);
 static bool			in_remote_transaction = false;
 static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
 static RepOriginId	remote_origin_id = InvalidRepOriginId;
+static TimeOffset	apply_delay = 0;
 
 static Oid			QueueRelid = InvalidOid;
 
@@ -143,6 +144,28 @@ handle_begin(StringInfo s)
 	replorigin_session_origin_timestamp = commit_time;
 	replorigin_session_origin_lsn = commit_lsn;
 	remote_origin_id = InvalidRepOriginId;
+
+	/* don't want the overhead otherwise */
+	if (apply_delay > 0)
+	{
+		TimestampTz		current;
+		current = GetCurrentIntegerTimestamp();
+
+		/* ensure no weirdness due to clock drift */
+		if (current > replorigin_session_origin_timestamp)
+		{
+			long		sec;
+			int			usec;
+
+			current = TimestampTzPlusMilliseconds(current,
+												  -apply_delay);
+
+			TimestampDifference(current, replorigin_session_origin_timestamp,
+								&sec, &usec);
+			/* FIXME: deal with overflow? */
+			pg_usleep(usec + (sec * USECS_PER_SEC));
+		}
+	}
 
 	in_remote_transaction = true;
 
@@ -1926,6 +1949,24 @@ start_sync_worker(RangeVar *rv)
 	(void) pglogical_worker_register(&worker);
 }
 
+static inline TimeOffset
+interval_to_timeoffset(const Interval *interval)
+{
+	TimeOffset	span;
+
+	span = interval->time;
+
+#ifdef HAVE_INT64_TIMESTAMP
+	span += interval->month * INT64CONST(30) * USECS_PER_DAY;
+	span += interval->day * INT64CONST(24) * USECS_PER_HOUR;
+#else
+	span += interval->month * ((double) DAYS_PER_MONTH * SECS_PER_DAY);
+	span += interval->day * ((double) HOURS_PER_DAY * SECS_PER_HOUR);
+#endif
+
+	return span;
+}
+
 void
 pglogical_apply_main(Datum main_arg)
 {
@@ -1979,6 +2020,11 @@ pglogical_apply_main(Datum main_arg)
 	CommitTransactionCommand();
 
 	elog(LOG, "starting apply for subscription %s", MySubscription->name);
+
+	/* Set apply delay if any. */
+	if (MySubscription->apply_delay)
+		apply_delay =
+			interval_to_timeoffset(MySubscription->apply_delay) / 1000;
 
 	/* If the subscription isn't initialized yet, initialize it. */
 	pglogical_sync_subscription(MySubscription);
