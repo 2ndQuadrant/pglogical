@@ -52,6 +52,7 @@
 #include "utils/rel.h"
 #include "utils/resowner.h"
 
+#include "pglogical_relcache.h"
 #include "pglogical_repset.h"
 #include "pglogical_rpc.h"
 #include "pglogical_sync.h"
@@ -296,25 +297,99 @@ finish_copy_target_tx(PGconn *conn)
 }
 
 
+static int
+physatt_in_attmap(PGLogicalRelation *rel, int attid)
+{
+	AttrNumber	i;
+
+	for (i = 0; i < rel->natts; i++)
+		if (rel->attmap[i] == attid)
+			return i;
+
+	return -1;
+}
+
+/*
+ * Create list of columns for COPY based on logical relation mapping.
+ */
+static List *
+make_copy_attnamelist(PGLogicalRelation *rel)
+{
+	List	   *attnamelist = NIL;
+	TupleDesc	desc = RelationGetDescr(rel->rel);
+	int			attnum;
+
+	for (attnum = 0; attnum < desc->natts; attnum++)
+	{
+		int		remoteattnum = physatt_in_attmap(rel, attnum);
+
+		/* Skip dropped attributes. */
+		if (desc->attrs[attnum]->attisdropped)
+			continue;
+
+		if (remoteattnum < 0)
+			continue;
+
+		attnamelist = lappend(attnamelist,
+							  makeString(rel->attnames[remoteattnum]));
+	}
+
+	return attnamelist;
+}
+
 /*
  * COPY single table over wire.
  */
 static void
 copy_table_data(PGconn *origin_conn, PGconn *target_conn,
-				const char *nspname, const char *relname)
+				PGLogicalRemoteRel *remoterel)
 {
+	PGLogicalRelation *rel;
 	PGresult   *res;
 	int			bytes;
 	char	   *copybuf;
+	List	   *attnamelist;
+	ListCell   *lc;
+	bool		first = true;
 	StringInfoData	query;
+	StringInfoData	attlist;
+	MemoryContext	curctx = CurrentMemoryContext,
+					oldctx;
+
+	/* Build the relation map. */
+	StartTransactionCommand();
+	oldctx = MemoryContextSwitchTo(curctx);
+	pglogical_relation_cache_updater(remoterel);
+	rel = pglogical_relation_open(remoterel->relid, AccessShareLock);
+	attnamelist = make_copy_attnamelist(rel);
+
+	initStringInfo(&attlist);
+	foreach (lc, attnamelist)
+	{
+		char *attname = strVal(lfirst(lc));
+		if (first)
+		{
+			appendStringInfoString(&attlist, "(");
+			first = false;
+		}
+		else
+			appendStringInfoString(&attlist, ",");
+		appendStringInfoString(&attlist, attname);
+	}
+	if (list_length(attnamelist))
+		appendStringInfoString(&attlist, ")");
+	MemoryContextSwitchTo(oldctx);
+	pglogical_relation_close(rel, AccessShareLock);
+	CommitTransactionCommand();
 
 	/* Build COPY TO query. */
 	initStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s TO stdout",
-					 PQescapeIdentifier(origin_conn, nspname,
-										strlen(nspname)),
-					 PQescapeIdentifier(origin_conn, relname,
-										strlen(relname)));
+	appendStringInfo(&query, "COPY %s.%s %s TO stdout",
+					 PQescapeIdentifier(origin_conn, remoterel->nspname,
+										strlen(remoterel->nspname)),
+					 PQescapeIdentifier(origin_conn, remoterel->relname,
+										strlen(remoterel->relname)),
+					 attlist.data);
 
 	/* Execute COPY TO. */
 	res = PQexec(origin_conn, query.data);
@@ -329,10 +404,10 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	/* Build COPY FROM query. */
 	resetStringInfo(&query);
 	appendStringInfo(&query, "COPY %s.%s FROM stdin",
-					 PQescapeIdentifier(origin_conn, nspname,
-										strlen(nspname)),
-					 PQescapeIdentifier(origin_conn, relname,
-										strlen(relname)));
+					 PQescapeIdentifier(origin_conn, remoterel->nspname,
+										strlen(remoterel->nspname)),
+					 PQescapeIdentifier(origin_conn, remoterel->relname,
+										strlen(remoterel->relname)));
 
 	/* Execute COPY FROM. */
 	res = PQexec(target_conn, query.data);
@@ -386,7 +461,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 static void
 copy_tables_data(char *sub_name, const char *origin_dsn,
 				 const char *target_dsn, const char *origin_snapshot,
-				 List *tables)
+				 List *tables, List *replication_sets)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
@@ -404,9 +479,12 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 	foreach (lc, tables)
 	{
 		RangeVar	*rv = lfirst(lc);
+		PGLogicalRemoteRel	*remoterel;
 
-		copy_table_data(origin_conn, target_conn,
-						rv->schemaname, rv->relname);
+		remoterel = pg_logical_get_remote_repset_table(origin_conn, rv,
+													   replication_sets);
+
+		copy_table_data(origin_conn, target_conn, remoterel);
 
 		CHECK_FOR_INTERRUPTS();
 	}
@@ -451,10 +529,9 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 	/* Copy every table. */
 	foreach (lc, tables)
 	{
-		RangeVar	*rv = lfirst(lc);
+		PGLogicalRemoteRel	*remoterel = lfirst(lc);
 
-		copy_table_data(origin_conn, target_conn,
-						rv->schemaname, rv->relname);
+		copy_table_data(origin_conn, target_conn, remoterel);
 
 		CHECK_FOR_INTERRUPTS();
 	}
@@ -652,7 +729,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					StartTransactionCommand();
 					foreach (lc, tables)
 					{
-						RangeVar	   *rv = (RangeVar *) lfirst(lc);
+						RangeVar	   *rv = lfirst(lc);
 						PGLogicalSyncStatus	   *oldsync;
 
 						oldsync = get_table_sync_status(sub->id,
@@ -777,7 +854,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 
 		/* Copy data. */
 		copy_tables_data(sub->name, sub->origin_if->dsn,sub->target_if->dsn,
-						 snapshot, list_make1(table));
+						 snapshot, list_make1(table), sub->replication_sets);
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));

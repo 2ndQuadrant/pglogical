@@ -44,6 +44,7 @@ extern char *pglogical_extra_connection_options;
 extern char *shorten_hash(const char *str, int maxlen);
 
 extern List *textarray_to_list(ArrayType *textarray);
+extern bool parsePGArray(const char *atext, char ***itemarray, int *nitems);
 
 extern Oid get_pglogical_table_oid(const char *table);
 

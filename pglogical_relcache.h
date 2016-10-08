@@ -13,6 +13,18 @@
 #ifndef PGLOGICAL_RELCACHE_H
 #define PGLOGICAL_RELCACHE_H
 
+typedef struct PGLogicalRemoteRel
+{
+	uint32		relid;
+	char	   *nspname;
+	char	   *relname;
+	int			natts;
+	char	  **attnames;
+
+	/* Only returned by info function, not protocol. */
+	bool		hasRowFilter;
+} PGLogicalRemoteRel;
+
 typedef struct PGLogicalRelation
 {
 	/* Info coming from the remote side. */
@@ -34,6 +46,7 @@ typedef struct PGLogicalRelation
 extern void pglogical_relation_cache_update(uint32 remoteid,
 											 char *schemaname, char *relname,
 											 int natts, char **attnames);
+extern void pglogical_relation_cache_updater(PGLogicalRemoteRel *remoterel);
 
 extern PGLogicalRelation *pglogical_relation_open(uint32 remoteid,
 												   LOCKMODE lockmode);

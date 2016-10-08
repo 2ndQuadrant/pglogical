@@ -157,6 +157,42 @@ pglogical_relation_cache_update(uint32 remoteid, char *schemaname,
 }
 
 void
+pglogical_relation_cache_updater(PGLogicalRemoteRel *remoterel)
+{
+	MemoryContext		oldcontext;
+	PGLogicalRelation  *entry;
+	bool				found;
+	int					i;
+
+	if (PGLogicalRelationHash == NULL)
+		pglogical_relcache_init();
+
+	/*
+	 * HASH_ENTER returns the existing entry if present or creates a new one.
+	 */
+	entry = hash_search(PGLogicalRelationHash, (void *) &remoterel->relid,
+						HASH_ENTER, &found);
+
+	if (found)
+		relcache_free_entry(entry);
+
+	/* Make cached copy of the data */
+	oldcontext = MemoryContextSwitchTo(CacheMemoryContext);
+	entry->nspname = pstrdup(remoterel->nspname);
+	entry->relname = pstrdup(remoterel->relname);
+	entry->natts = remoterel->natts;
+	entry->attnames = palloc(remoterel->natts * sizeof(char *));
+	for (i = 0; i < remoterel->natts; i++)
+		entry->attnames[i] = pstrdup(remoterel->attnames[i]);
+	entry->attmap = palloc(remoterel->natts * sizeof(int));
+	MemoryContextSwitchTo(oldcontext);
+
+	/* XXX Should we validate the relation against local schema here? */
+
+	entry->reloid = InvalidOid;
+}
+
+void
 pglogical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 {
 	heap_close(rel->rel, lockmode);

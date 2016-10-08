@@ -132,7 +132,7 @@ CREATE VIEW pglogical.TABLES AS
            AND n.nspname != 'information_schema'
            AND n.nspname != 'pglogical'
     )
-    SELECT n.nspname, r.relname, s.set_name
+    SELECT r.oid AS relid, n.nspname, r.relname, s.set_name
       FROM pg_catalog.pg_namespace n,
            pg_catalog.pg_class r,
            set_relations s
@@ -140,7 +140,7 @@ CREATE VIEW pglogical.TABLES AS
        AND n.oid = r.relnamespace
        AND r.oid = s.set_reloid
      UNION
-    SELECT t.nspname, t.relname, NULL
+    SELECT t.oid AS relid, t.nspname, t.relname, NULL
       FROM user_tables t
      WHERE t.oid NOT IN (SELECT set_reloid FROM set_relations);
 
@@ -155,7 +155,8 @@ RETURNS oid CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglo
 CREATE FUNCTION pglogical.drop_replication_set(set_name name, ifexists boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
 
-CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean DEFAULT false, columns text[] DEFAULT NULL, row_filter pg_node_tree DEFAULT NULL)
+CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean DEFAULT false,
+	att_filter text[] DEFAULT NULL, row_filter pg_node_tree DEFAULT NULL)
 RETURNS boolean CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
 CREATE FUNCTION pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize_data boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_all_tables';
@@ -177,6 +178,10 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alte
 
 CREATE FUNCTION pglogical.synchronize_sequence(relation regclass)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_synchronize_sequence';
+
+CREATE FUNCTION pglogical.show_repset_table_info(relation regclass, repsets text[], OUT relid oid, OUT nspname text,
+	OUT relname text, OUT att_filter text[], OUT has_row_filter boolean)
+RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_repset_table_info';
 
 CREATE FUNCTION pglogical.show_subscription_table(subscription_name name, relation regclass, OUT nspname text, OUT relname text, OUT status text)
 RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_subscription_table';

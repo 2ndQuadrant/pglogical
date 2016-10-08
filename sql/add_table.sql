@@ -5,9 +5,16 @@ SELECT * FROM pglogical_regress_variables()
 
 \c :provider_dsn
 
+CREATE TABLE public.test_publicschema(id serial primary key, data text);
+
+\c :subscriber_dsn
+
+CREATE TABLE public.test_publicschema(data text, id serial primary key);
+
+\c :provider_dsn
+
 SELECT pglogical.replicate_ddl_command($$
 CREATE SCHEMA "strange.schema-IS";
-CREATE TABLE public.test_publicschema(id serial primary key, data text);
 CREATE TABLE public.test_nosync(id serial primary key, data text);
 CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
 CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key, data text DEFAULT '');

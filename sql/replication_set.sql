@@ -17,7 +17,8 @@ $$);
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
 -- show initial replication sets
-SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+SELECT nspname, relname, set_name FROM pglogical.tables
+ WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
 
 -- not existing replication set
 SELECT * FROM pglogical.replication_set_add_table('nonexisting', 'test_publicschema');
@@ -46,11 +47,13 @@ SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', repli
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', replicate_delete := true);
 
 -- check the replication sets
-SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+SELECT nspname, relname, set_name FROM pglogical.tables
+ WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
 
 SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
-SELECT * FROM pglogical.tables WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+SELECT nspname, relname, set_name FROM pglogical.tables
+ WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
 
 --too short
 SELECT pglogical.create_replication_set('');

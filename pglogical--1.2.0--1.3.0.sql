@@ -32,3 +32,40 @@ CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_d
     replication_sets text[] = '{default,default_insert_only,ddl_sql}', synchronize_structure boolean = false,
     synchronize_data boolean = true, forward_origins text[] = '{all}', apply_delay interval DEFAULT '0')
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';
+
+DROP VIEW pglogical.TABLES;
+CREATE VIEW pglogical.TABLES AS
+    WITH set_relations AS (
+        SELECT s.set_name, r.set_reloid
+          FROM pglogical.replication_set_table r,
+               pglogical.replication_set s,
+               pglogical.local_node n
+         WHERE s.set_nodeid = n.node_id
+           AND s.set_id = r.set_id
+    ),
+    user_tables AS (
+        SELECT r.oid, n.nspname, r.relname, r.relreplident
+          FROM pg_catalog.pg_class r,
+               pg_catalog.pg_namespace n
+         WHERE r.relkind = 'r'
+           AND r.relpersistence = 'p'
+           AND n.oid = r.relnamespace
+           AND n.nspname !~ '^pg_'
+           AND n.nspname != 'information_schema'
+           AND n.nspname != 'pglogical'
+    )
+    SELECT r.oid AS relid, n.nspname, r.relname, s.set_name
+      FROM pg_catalog.pg_namespace n,
+           pg_catalog.pg_class r,
+           set_relations s
+     WHERE r.relkind = 'r'
+       AND n.oid = r.relnamespace
+       AND r.oid = s.set_reloid
+     UNION
+    SELECT t.oid AS relid, t.nspname, t.relname, NULL
+      FROM user_tables t
+     WHERE t.oid NOT IN (SELECT set_reloid FROM set_relations);
+
+CREATE FUNCTION pglogical.show_repset_table_info(relation regclass, repsets text[], OUT relid oid, OUT nspname text,
+	OUT relname text, OUT att_filter text[], OUT has_row_filter boolean)
+RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_repset_table_info';

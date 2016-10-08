@@ -65,6 +65,7 @@
 
 #include "pglogical_node.h"
 #include "pglogical_queue.h"
+#include "pglogical_relcache.h"
 #include "pglogical_repset.h"
 #include "pglogical_rpc.h"
 #include "pglogical_sync.h"
@@ -119,6 +120,7 @@ PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 /* Internal utils */
 PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
 PG_FUNCTION_INFO_V1(pglogical_node_info);
+PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info);
 
 /* Information */
 PG_FUNCTION_INFO_V1(pglogical_version);
@@ -782,24 +784,25 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	/* Compare with sync status on subscription. And add missing ones. */
 	foreach (lc, tables)
 	{
-		RangeVar	   *rv = (RangeVar *) lfirst(lc);
+		PGLogicalRemoteRel	   *remoterel = lfirst(lc);
 		PGLogicalSyncStatus	   *oldsync;
 
-		oldsync = get_table_sync_status(sub->id, rv->schemaname, rv->relname,
-										true);
+		oldsync = get_table_sync_status(sub->id, remoterel->nspname,
+										remoterel->relname, true);
+
 		if (!oldsync)
 		{
 			PGLogicalSyncStatus	   newsync;
 
 			newsync.kind = SYNC_KIND_DATA;
 			newsync.subid = sub->id;
-			newsync.nspname = rv->schemaname;
-			newsync.relname = rv->relname;
+			newsync.nspname = remoterel->nspname;
+			newsync.relname = remoterel->relname;
 			newsync.status = SYNC_STATUS_INIT;
 			create_local_sync_status(&newsync);
 
 			if (truncate)
-				truncate_table(rv->schemaname, rv->relname);
+				truncate_table(remoterel->nspname, remoterel->relname);
 		}
 	}
 
@@ -1921,12 +1924,11 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 
 	node = get_local_node(false, false);
 
-	memset(nulls, 0, sizeof(nulls));
-
 	snprintf(sysid, sizeof(sysid), UINT64_FORMAT,
 			 GetSystemIdentifier());
 	repsets = get_node_replication_sets(node->node->id);
 
+	memset(nulls, 0, sizeof(nulls));
 	values[0] = ObjectIdGetDatum(node->node->id);
 	values[1] = CStringGetTextDatum(node->node->name);
 	values[2] = CStringGetTextDatum(sysid);
@@ -1936,7 +1938,75 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 	htup = heap_form_tuple(tupdesc, values, nulls);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
+}
 
+/*
+ * Get replication info about table.
+ *
+ * This is called by downstream sync worker on the upstream to obtain
+ * info needed to do initial synchronization correctly.
+ */
+Datum
+pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
+{
+	Oid			reloid = PG_GETARG_OID(0);
+ 	ArrayType  *rep_set_names = PG_GETARG_ARRAYTYPE_P(1);
+	Relation	rel;
+	List	   *replication_sets;
+	TupleDesc	reldesc;
+	TupleDesc	rettupdesc;
+	int			i;
+	List	   *att_filter = NIL;
+	Datum		values[5];
+	bool		nulls[5];
+	char	   *nspname;
+	char	   *relname;
+	HeapTuple	htup;
+	PGLogicalLocalNode *node;
+	PGLogicalTableRepInfo *tableinfo;
+
+	node = get_local_node(false, false);
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &rettupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
+	rettupdesc = BlessTupleDesc(rettupdesc);
+
+	rel = heap_open(reloid, AccessShareLock);
+	reldesc = RelationGetDescr(rel);
+	replication_sets = textarray_to_list(rep_set_names);
+
+	nspname = get_namespace_name(RelationGetNamespace(rel));
+	relname = RelationGetRelationName(rel);
+
+	/* Build the replication info for the table. */
+	tableinfo = get_table_replication_info(node->node->id, rel,
+										   replication_sets);
+
+	/* Build the column list. */
+	for (i = 0; i < reldesc->natts; i++)
+	{
+		/* Skip filtered columns if any. */
+		if (tableinfo->att_filter && !tableinfo->att_filter[i])
+			continue;
+
+		elog(WARNING, "MODOS att %s", NameStr(reldesc->attrs[i]->attname));
+		att_filter = lappend(att_filter, NameStr(reldesc->attrs[i]->attname));
+	}
+
+	/* And now build the result. */
+	memset(nulls, false, sizeof(nulls));
+	values[0] = ObjectIdGetDatum(RelationGetRelid(rel));
+	values[1] = CStringGetTextDatum(nspname);
+	values[2] = CStringGetTextDatum(relname);
+	values[3] = PointerGetDatum(strlist_to_textarray(att_filter));
+	values[4] = BoolGetDatum(list_length(tableinfo->row_filter) > 0);
+
+	htup = heap_form_tuple(rettupdesc, values, nulls);
+
+	heap_close(rel, NoLock);
+
+	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
 }
 
 Datum
