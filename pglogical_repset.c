@@ -208,7 +208,7 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 				pfree(entry->att_filter);
 			entry->att_filter = NULL;
 			if (list_length(entry->row_filter))
-				list_free(entry->row_filter);
+				list_free_deep(entry->row_filter);
 			entry->row_filter = NIL;
 		}
 	}
@@ -220,7 +220,7 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 			pfree(entry->att_filter);
 		entry->att_filter = NULL;
 		if (list_length(entry->row_filter))
-			list_free(entry->row_filter);
+			list_free_deep(entry->row_filter);
 		entry->row_filter = NIL;
 	}
 }
@@ -351,13 +351,15 @@ get_replication_sets(Oid nodeid, List *replication_set_names, bool missing_ok)
 }
 
 PGLogicalTableRepInfo *
-get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
+get_table_replication_info(Oid nodeid, Relation table,
+						   List *subs_replication_sets)
 {
 	PGLogicalTableRepInfo *entry;
 	bool			found;
 	RangeVar	   *rv;
-	Oid				relid;
-	Relation		rel;
+	Oid				reloid = RelationGetRelid(table);
+	Oid				repset_reloid;
+	Relation		repset_rel;
 	ScanKeyData		key[1];
 	SysScanDesc		scan;
 	HeapTuple		tuple;
@@ -398,20 +400,20 @@ get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 	 * to have special handling for them.
 	 */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-	relid = RangeVarGetRelid(rv, RowExclusiveLock, true);
+	repset_reloid = RangeVarGetRelid(rv, RowExclusiveLock, true);
 	/* Backwards compat with 1.1/1.2 where the relation name was different. */
-	if (!OidIsValid(relid))
+	if (!OidIsValid(repset_reloid))
 	{
 		rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_RELATION, -1);
-		relid = RangeVarGetRelid(rv, RowExclusiveLock, true);
-		if (!OidIsValid(relid))
+		repset_reloid = RangeVarGetRelid(rv, RowExclusiveLock, true);
+		if (!OidIsValid(repset_reloid))
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_TABLE),
 					 errmsg("relation \"%s.%s\" does not exist",
 							rv->schemaname, rv->relname)));
 	}
-	rel = heap_open(relid, NoLock);
-	desc = RelationGetDescr(rel);
+	repset_rel = heap_open(repset_reloid, NoLock);
+	desc = RelationGetDescr(table);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_table_reloid,
@@ -419,7 +421,7 @@ get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 				ObjectIdGetDatum(reloid));
 
 	/* TODO: use index */
-	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+	scan = systable_beginscan(repset_rel, 0, true, NULL, 1, key);
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
@@ -483,7 +485,7 @@ get_table_replication_info(Oid nodeid, Oid reloid, List *subs_replication_sets)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	heap_close(repset_rel, RowExclusiveLock);
 	entry->isvalid = true;
 
 	return entry;

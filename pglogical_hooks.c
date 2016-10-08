@@ -297,7 +297,7 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 
 	/* Normal case - use replication set membership. */
 	tblinfo = get_table_replication_info(private->local_node_id,
-										 RelationGetRelid(rowfilter_args->changed_rel),
+										 rowfilter_args->changed_rel,
 										 private->replication_sets);
 
 	/* First try filter out by change type. */
