@@ -1,0 +1,219 @@
+-- row based filtering
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.basic_dml (
+		id serial primary key,
+		other integer,
+		data text,
+		something interval
+	);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+-- we allow volatile functions, it's user's responsibility to not do writes
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'current_user = data');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+-- fail -- subselect
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := '(SELECT count(*) FROM pg_class) > 1');
+ERROR:  cannot use subquery in check constraint
+-- fail -- SELECT
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'SELECT true');
+ERROR:  syntax error at or near "SELECT"
+CONTEXT:  invalid row_filter expression "SELECT true"
+-- fail -- nonexisting column
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'foobar');
+ERROR:  column "foobar" does not exist
+-- fail -- not coercable to bool
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'data');
+ERROR:  argument of row_filter must be type boolean, not type text
+-- use this filter for rest of the test
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
+ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
+\c :provider_dsn
+-- check basic insert replication
+INSERT INTO basic_dml(other, data, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval),
+       (3, 'baz', '2 years 1 hour'::interval),
+       (2, 'qux', '8 months 2 days'::interval),
+       (1, NULL, NULL);
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+ id | other | data |    something    
+----+-------+------+-----------------
+  2 |     4 | bar  | @ 84 days
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(3 rows)
+
+-- update one row
+\c :provider_dsn
+UPDATE basic_dml SET other = '4', data = NULL, something = '3 days'::interval WHERE id = 4;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+ id | other | data | something 
+----+-------+------+-----------
+  2 |     4 | bar  | @ 84 days
+  4 |     4 |      | @ 3 days
+  5 |     1 |      | 
+(3 rows)
+
+-- update multiple rows
+\c :provider_dsn
+UPDATE basic_dml SET other = id, data = data || id::text;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+ id | other | data | something 
+----+-------+------+-----------
+  2 |     2 | bar2 | @ 84 days
+  4 |     4 |      | @ 3 days
+  5 |     5 |      | 
+(3 rows)
+
+\c :provider_dsn
+UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
+UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
+DELETE FROM basic_dml WHERE id = 3;
+INSERT INTO basic_dml VALUES (3, 99, 'bazbaz', '2 years 1 hour'::interval);
+UPDATE basic_dml SET data = 'baz' WHERE id = 3;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
+ id | other |  data  |     something      | subonly | subonly_def 
+----+-------+--------+--------------------+---------+-------------
+  2 |     2 | bar2   | @ 84 days -10 secs |         |          99
+  3 |    99 | bazbaz | @ 2 years 1 hour   |         |          99
+  4 |     4 |        | @ 3 days 10 secs   |         |          99
+  5 |     5 |        |                    |         |          99
+(4 rows)
+
+-- delete one row
+\c :provider_dsn
+DELETE FROM basic_dml WHERE id = 2;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+ id | other |  data  |    something     
+----+-------+--------+------------------
+  3 |    99 | bazbaz | @ 2 years 1 hour
+  4 |     4 |        | @ 3 days 10 secs
+  5 |     5 |        | 
+(3 rows)
+
+-- delete multiple rows
+\c :provider_dsn
+DELETE FROM basic_dml WHERE id < 4;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+ id | other | data |    something     
+----+-------+------+------------------
+  4 |     4 |      | @ 3 days 10 secs
+  5 |     5 |      | 
+(2 rows)
+
+-- truncate
+\c :provider_dsn
+TRUNCATE basic_dml;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+ id | other | data | something 
+----+-------+------+-----------
+(0 rows)
+
+-- copy
+\c :provider_dsn
+\COPY basic_dml FROM STDIN WITH CSV
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+  id  | other | data | something 
+------+-------+------+-----------
+ 9000 |     1 | aaa  | @ 1 hour
+ 9002 |     3 | ccc  | @ 3 mins
+ 9003 |     4 | ddd  | @ 4 days
+(3 rows)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.basic_dml CASCADE;
+$$);
+NOTICE:  drop cascades to 1 other object
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
