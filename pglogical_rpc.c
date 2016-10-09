@@ -19,7 +19,7 @@
 
 #include "catalog/pg_type.h"
 
-#include "storage/lockdefs.h"
+#include "storage/lock.h"
 
 #include "utils/rel.h"
 
