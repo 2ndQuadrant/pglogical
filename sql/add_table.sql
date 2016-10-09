@@ -70,9 +70,10 @@ END;
 $$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
-SELECT count(1) FROM pg_replication_slots;
 
 \c :provider_dsn
+SELECT count(1) FROM pg_replication_slots;
+
 INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
@@ -205,7 +206,8 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
 
 SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) as synced
   FROM pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
- WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS');
+ WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS')
+ ORDER BY 1, 2;
 
 \c :provider_dsn
 

@@ -149,13 +149,13 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
  f         | 3848008564 |                   |                    | r
 (3 rows)
 
+\c :provider_dsn
 SELECT count(1) FROM pg_replication_slots;
  count 
 -------
      1
 (1 row)
 
-\c :provider_dsn
 INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
@@ -411,14 +411,15 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
 
 SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) as synced
   FROM pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
- WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS');
+ WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS')
+ ORDER BY 1, 2;
     schemaname     |         tablename         | synced 
 -------------------+---------------------------+--------
  public            | some_local_seq            | t
- public            | test_publicschema_id_seq  | t
  public            | test_nosync_id_seq        | t
- strange.schema-IS | test_strangeschema_id_seq | t
+ public            | test_publicschema_id_seq  | t
  strange.schema-IS | test_diff_repset_id_seq   | t
+ strange.schema-IS | test_strangeschema_id_seq | t
 (5 rows)
 
 \c :provider_dsn
