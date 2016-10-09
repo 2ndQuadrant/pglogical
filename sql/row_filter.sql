@@ -12,6 +12,14 @@ SELECT pglogical.replicate_ddl_command($$
 	);
 $$);
 
+-- used to check if initial copy does row filtering
+\COPY basic_dml FROM STDIN WITH CSV
+5000,1,aaa,1 hour
+5001,2,bbb,2 years
+5002,3,ccc,3 minutes
+5003,4,ddd,4 days
+\.
+
 -- we allow volatile functions, it's user's responsibility to not do writes
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'current_user = data');
 SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
@@ -25,16 +33,20 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'data');
 
 -- use this filter for rest of the test
-SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
+SELECT id, other, data, something FROM basic_dml ORDER BY id;
+
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
 ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
 
 \c :provider_dsn
+
+TRUNCATE basic_dml;
 
 -- check basic insert replication
 INSERT INTO basic_dml(other, data, something)

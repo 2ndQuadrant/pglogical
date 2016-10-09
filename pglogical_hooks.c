@@ -155,42 +155,6 @@ pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args)
 	}
 }
 
-static bool
-eval_row_filter(ExprContext *econtext, Node *row_filter)
-{
-	ExprState  *exprstate;
-	Expr	   *expr;
-	Oid			exprtype;
-	bool		isnull;
-	Datum		res;
-
-	exprtype = exprType(row_filter);
-	expr = (Expr *) coerce_to_target_type(NULL,	/* no UNKNOWN params here */
-										  row_filter, exprtype,
-										  BOOLOID, -1,
-										  COERCION_ASSIGNMENT,
-										  COERCE_IMPLICIT_CAST,
-										  -1);
-
-	/* This should never happen but just to be sure. */
-	if (expr == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg("cannot cast the row_filter to boolean"),
-			   errhint("You will need to rewrite the row_filter.")));
-
-	expr = expression_planner(expr);
-	exprstate = ExecInitExpr(expr, NULL);
-
-	/* And evaluate the expression. */
-	res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
-
-	/* NULL is same as false for our use. */
-	if (isnull)
-		return false;
-
-	return DatumGetBool(res);
-}
 
 bool
 pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
@@ -321,80 +285,53 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 			return false; /* shut compiler up */
 	}
 
+	/*
+	 * Proccess row filters.
+	 * XXX: we could probably cache some of the executor stuff.
+	 */
 	if (list_length(tblinfo->row_filter) > 0)
 	{
 		EState		   *estate;
 		ExprContext	   *econtext;
-		ResultRelInfo  *resultRelInfo;
-		RangeTblEntry  *rte;
 		TupleDesc		tupdesc = RelationGetDescr(rowfilter_args->changed_rel);
 		HeapTuple		oldtup = rowfilter_args->change->data.tp.oldtuple ?
 			&rowfilter_args->change->data.tp.oldtuple->tuple : NULL;
 		HeapTuple		newtup = rowfilter_args->change->data.tp.newtuple ?
 			&rowfilter_args->change->data.tp.newtuple->tuple : NULL;
-		TupleTableSlot *slot = NULL;
-		MemoryContext	oldContext;
 
-		/* Dummy range table entry needed by executor. */
-		rte = makeNode(RangeTblEntry);
-		rte->rtekind = RTE_RELATION;
-		rte->relid = RelationGetRelid(rowfilter_args->changed_rel);
-		rte->relkind = rowfilter_args->changed_rel->rd_rel->relkind;
-		rte->requiredPerms = AccessShareLock;
-
-		/* Initialize executor state in which we'll execute the row_filters. */
-		estate = CreateExecutorState();
-		resultRelInfo = makeNode(ResultRelInfo);
-		InitResultRelInfo(resultRelInfo,
-						  rowfilter_args->changed_rel,
-						  1,		/* dummy rangetable index */
-						  0);
-		estate->es_result_relations = resultRelInfo;
-		estate->es_num_result_relations = 1;
-		estate->es_result_relation_info = resultRelInfo;
-		estate->es_range_table = list_make1(rte);
-
-		econtext = GetPerTupleExprContext(estate);
-
-		if (HeapTupleIsValid(newtup))
+		/* Skip empty changes. */
+		if (!newtup && !oldtup)
 		{
-			if (estate->es_trig_newtup_slot == NULL)
-			{
-				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
-				estate->es_trig_newtup_slot = ExecInitExtraTupleSlot(estate);
-				MemoryContextSwitchTo(oldContext);
-			}
-			slot = estate->es_trig_newtup_slot;
-			if (slot->tts_tupleDescriptor != tupdesc)
-				ExecSetSlotDescriptor(slot, tupdesc);
-			ExecStoreTuple(newtup, slot, InvalidBuffer, false);
-		}
-		if (HeapTupleIsValid(oldtup))
-		{
-			if (estate->es_trig_oldtup_slot == NULL)
-			{
-				oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
-				estate->es_trig_oldtup_slot = ExecInitExtraTupleSlot(estate);
-				MemoryContextSwitchTo(oldContext);
-			}
-			slot = estate->es_trig_oldtup_slot;
-			if (slot->tts_tupleDescriptor != tupdesc)
-				ExecSetSlotDescriptor(slot, tupdesc);
-			ExecStoreTuple(oldtup, slot, InvalidBuffer, false);
+			elog(DEBUG1, "pglogical output got empty change");
+			return false;
 		}
 
-		econtext->ecxt_innertuple = slot;
-		econtext->ecxt_outertuple = slot;
-		econtext->ecxt_scantuple = slot;
+		estate = create_estate_for_relation(rowfilter_args->changed_rel, false);
+		econtext = prepare_per_tuple_econtext(estate, tupdesc);
+
+		ExecStoreTuple(newtup ? newtup : oldtup, econtext->ecxt_scantuple,
+					   InvalidBuffer, false);
 
 		/* Next try the row_filters if there are any. */
 		foreach (lc, tblinfo->row_filter)
 		{
-			Node   *row_filter = (Node *) lfirst(lc);
+			Node	   *row_filter = (Node *) lfirst(lc);
+			ExprState  *exprstate = pglogical_prepare_row_filter(row_filter);
+			Datum		res;
+			bool		isnull;
 
-			if (!eval_row_filter(econtext, row_filter))
+			res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
+
+			/* NULL is same as false for our use. */
+			if (isnull)
+				return false;
+
+			if (!DatumGetBool(res))
 				return false;
 		}
+
+		ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
+		FreeExecutorState(estate);
 	}
 
 	/* Make sure caller is aware of any attribute filter. */

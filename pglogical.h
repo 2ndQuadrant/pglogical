@@ -17,6 +17,7 @@
 #include "postmaster/bgworker.h"
 #include "utils/array.h"
 #include "access/xlogdefs.h"
+#include "executor/executor.h"
 
 #include "libpq-fe.h"
 
@@ -47,6 +48,10 @@ extern List *textarray_to_list(ArrayType *textarray);
 extern bool parsePGArray(const char *atext, char ***itemarray, int *nitems);
 
 extern Oid get_pglogical_table_oid(const char *table);
+
+extern EState *create_estate_for_relation(Relation rel, bool hasTriggers);
+extern ExprContext *prepare_per_tuple_econtext(EState *estate, TupleDesc tupdesc);
+extern ExprState *pglogical_prepare_row_filter(Node *row_filter);
 
 extern void pglogical_execute_sql_command(char *cmdstr, char *role,
 										  bool isTopLevel);

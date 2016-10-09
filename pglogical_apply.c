@@ -320,59 +320,6 @@ handle_relation(StringInfo s)
 	(void) pglogical_read_rel(s);
 }
 
-
-static EState *
-create_estate_for_relation(PGLogicalRelation *rel)
-{
-	EState	   *estate;
-	ResultRelInfo *resultRelInfo;
-	RangeTblEntry *rte;
-
-	estate = CreateExecutorState();
-
-	rte = makeNode(RangeTblEntry);
-	rte->rtekind = RTE_RELATION;
-	rte->relid = RelationGetRelid(rel->rel);
-	rte->relkind = rel->rel->rd_rel->relkind;
-	estate->es_range_table = list_make1(rte);
-
-	resultRelInfo = makeNode(ResultRelInfo);
-/*	InitResultRelInfo(resultRelInfo,
-					  rel,
-					  1,
-					  0);*/
-	resultRelInfo->ri_RangeTableIndex = 1;
-	resultRelInfo->ri_RelationDesc = rel->rel;
-	resultRelInfo->ri_TrigInstrument = NULL;
-
-	estate->es_result_relations = resultRelInfo;
-	estate->es_num_result_relations = 1;
-	estate->es_result_relation_info = resultRelInfo;
-
-	if (rel->hasTriggers)
-		resultRelInfo->ri_TrigDesc = CopyTriggerDesc(rel->rel->trigdesc);
-
-	if (resultRelInfo->ri_TrigDesc)
-	{
-		int			n = resultRelInfo->ri_TrigDesc->numtriggers;
-
-		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
-			palloc0(n * sizeof(FmgrInfo));
-		resultRelInfo->ri_TrigWhenExprs = (List **)
-			palloc0(n * sizeof(List *));
-
-		/* Triggers might need a slot */
-		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
-	}
-	else
-	{
-		resultRelInfo->ri_TrigFunctions = NULL;
-		resultRelInfo->ri_TrigWhenExprs = NULL;
-	}
-
-	return estate;
-}
-
 static List *
 UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 {
@@ -477,7 +424,7 @@ init_apply_exec_state(PGLogicalRelation *rel)
 	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
 
 	/* Initialize the executor state. */
-	aestate->estate = create_estate_for_relation(rel);
+	aestate->estate = create_estate_for_relation(rel->rel, rel->hasTriggers);
 	aestate->resultRelInfo = aestate->estate->es_result_relation_info;
 
 	aestate->slot = ExecInitExtraTupleSlot(aestate->estate);

@@ -342,7 +342,7 @@ make_copy_attnamelist(PGLogicalRelation *rel)
  */
 static void
 copy_table_data(PGconn *origin_conn, PGconn *target_conn,
-				PGLogicalRemoteRel *remoterel)
+				PGLogicalRemoteRel *remoterel, List *replication_sets)
 {
 	PGLogicalRelation *rel;
 	PGresult   *res;
@@ -350,7 +350,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	char	   *copybuf;
 	List	   *attnamelist;
 	ListCell   *lc;
-	bool		first = true;
+	bool		first;
 	StringInfoData	query;
 	StringInfoData	attlist;
 	MemoryContext	curctx = CurrentMemoryContext,
@@ -364,32 +364,78 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	attnamelist = make_copy_attnamelist(rel);
 
 	initStringInfo(&attlist);
+	first = true;
 	foreach (lc, attnamelist)
 	{
 		char *attname = strVal(lfirst(lc));
 		if (first)
-		{
-			appendStringInfoString(&attlist, "(");
 			first = false;
-		}
 		else
 			appendStringInfoString(&attlist, ",");
 		appendStringInfoString(&attlist, attname);
 	}
-	if (list_length(attnamelist))
-		appendStringInfoString(&attlist, ")");
 	MemoryContextSwitchTo(oldctx);
 	pglogical_relation_close(rel, AccessShareLock);
 	CommitTransactionCommand();
 
 	/* Build COPY TO query. */
 	initStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s %s TO stdout",
-					 PQescapeIdentifier(origin_conn, remoterel->nspname,
-										strlen(remoterel->nspname)),
-					 PQescapeIdentifier(origin_conn, remoterel->relname,
-										strlen(remoterel->relname)),
-					 attlist.data);
+	appendStringInfoString(&query, "COPY ");
+
+	/*
+	 * If the table is row-filtered we need to run query over the table
+	 * to execute the filter.
+	 */
+	if (remoterel->hasRowFilter)
+	{
+		StringInfoData	relname;
+		StringInfoData	repsetarr;
+		ListCell   *lc;
+
+		initStringInfo(&relname);
+		appendStringInfo(&relname, "%s.%s",
+						 PQescapeIdentifier(origin_conn, remoterel->nspname,
+											strlen(remoterel->nspname)),
+						 PQescapeIdentifier(origin_conn, remoterel->relname,
+											strlen(remoterel->relname)));
+
+		initStringInfo(&repsetarr);
+		first = true;
+		foreach (lc, replication_sets)
+		{
+			char	   *repset_name = lfirst(lc);
+
+			if (first)
+				first = false;
+			else
+				appendStringInfoChar(&repsetarr, ',');
+
+			appendStringInfo(&repsetarr, "%s",
+							 PQescapeLiteral(origin_conn, repset_name,
+											 strlen(repset_name)));
+		}
+
+		appendStringInfo(&query,
+						 "(SELECT %s FROM pglogical.table_data_filtered(NULL::%s, %s::regclass, ARRAY[%s])) ",
+						 list_length(attnamelist) ? attlist.data : "*",
+						 relname.data,
+						 PQescapeLiteral(origin_conn, relname.data, relname.len),
+						 repsetarr.data);
+	}
+	else
+	{
+		/* Otherwise just copy the table. */
+		appendStringInfo(&query, "%s.%s ",
+						 PQescapeIdentifier(origin_conn, remoterel->nspname,
+											strlen(remoterel->nspname)),
+						 PQescapeIdentifier(origin_conn, remoterel->relname,
+											strlen(remoterel->relname)));
+
+		if (list_length(attnamelist))
+			appendStringInfo(&query, "(%s) ", attlist.data);
+	}
+	appendStringInfoString(&query, "TO stdout");
+
 
 	/* Execute COPY TO. */
 	res = PQexec(origin_conn, query.data);
@@ -484,7 +530,7 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 		remoterel = pg_logical_get_remote_repset_table(origin_conn, rv,
 													   replication_sets);
 
-		copy_table_data(origin_conn, target_conn, remoterel);
+		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
 
 		CHECK_FOR_INTERRUPTS();
 	}
@@ -531,7 +577,7 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 	{
 		PGLogicalRemoteRel	*remoterel = lfirst(lc);
 
-		copy_table_data(origin_conn, target_conn, remoterel);
+		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
 
 		CHECK_FOR_INTERRUPTS();
 	}

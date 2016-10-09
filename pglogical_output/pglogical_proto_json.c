@@ -140,7 +140,8 @@ pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
  */
 void
 pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
-							Relation rel, HeapTuple newtuple)
+							Relation rel, HeapTuple newtuple,
+							bool *att_filter)
 {
 	pglogical_json_write_change(out, "I", rel, NULL, newtuple);
 }
@@ -151,7 +152,7 @@ pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
 void
 pglogical_json_write_update(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple,
-							HeapTuple newtuple)
+							HeapTuple newtuple, bool *att_filter)
 {
 	pglogical_json_write_change(out, "U", rel, oldtuple, newtuple);
 }
@@ -161,7 +162,8 @@ pglogical_json_write_update(StringInfo out, PGLogicalOutputData *data,
  */
 void
 pglogical_json_write_delete(StringInfo out, PGLogicalOutputData *data,
-							Relation rel, HeapTuple oldtuple)
+							Relation rel, HeapTuple oldtuple,
+							bool *att_filter)
 {
 	pglogical_json_write_change(out, "D", rel, oldtuple, NULL);
 }

@@ -13,8 +13,6 @@
 
 #include "postgres.h"
 
-#include "fe_utils/string_utils.h"
-
 #include "lib/stringinfo.h"
 
 #include "nodes/makefuncs.h"
@@ -143,7 +141,6 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	remoterel->relid = atooid(PQgetvalue(res, 0, 0));
 	remoterel->nspname = pstrdup(PQgetvalue(res, 0, 1));
 	remoterel->relname = pstrdup(PQgetvalue(res, 0, 2));
-	elog(WARNING, "MODOS %s", PQgetvalue(res, 0, 3));
 	if (!parsePGArray(PQgetvalue(res, 0, 3), &remoterel->attnames,
 					  &remoterel->natts))
 		elog(ERROR, "could not parse column list for table");

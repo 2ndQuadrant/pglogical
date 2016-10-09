@@ -62,6 +62,7 @@
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 
 #include "pglogical_node.h"
 #include "pglogical_queue.h"
@@ -121,6 +122,7 @@ PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
 PG_FUNCTION_INFO_V1(pglogical_node_info);
 PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info);
+PG_FUNCTION_INFO_V1(pglogical_table_data_filtered);
 
 /* Information */
 PG_FUNCTION_INFO_V1(pglogical_version);
@@ -1975,6 +1977,9 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	rel = heap_open(reloid, AccessShareLock);
 	reldesc = RelationGetDescr(rel);
 	replication_sets = textarray_to_list(rep_set_names);
+	replication_sets = get_replication_sets(node->node->id,
+											replication_sets,
+											false);
 
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
@@ -1990,7 +1995,6 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 		if (tableinfo->att_filter && !tableinfo->att_filter[i])
 			continue;
 
-		elog(WARNING, "MODOS att %s", NameStr(reldesc->attrs[i]->attname));
 		att_filter = lappend(att_filter, NameStr(reldesc->attrs[i]->attname));
 	}
 
@@ -2007,6 +2011,173 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	heap_close(rel, NoLock);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
+}
+
+
+/*
+ * Decide if to return tuple or not.
+ */
+static bool
+filter_tuple(HeapTuple htup, ExprContext *econtext, List *row_filter_list)
+{
+	ListCell	   *lc;
+
+	ExecStoreTuple(htup, econtext->ecxt_scantuple, InvalidBuffer, false);
+
+	foreach (lc, row_filter_list)
+	{
+		ExprState  *exprstate = (ExprState *) lfirst(lc);
+		Datum		res;
+		bool		isnull;
+
+		res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
+
+		/* NULL is same as false for our use. */
+		if (isnull)
+			return false;
+
+		if (!DatumGetBool(res))
+			return false;
+	}
+
+	return true;
+}
+
+/*
+ * Do sequential table scan and return all rows that pass the row filter(s)
+ * defined in speficied replication set(s) for a table.
+ *
+ * This is called by downstream sync worker on the upstream to obtain
+ * filtered data for initial COPY.
+ */
+Datum
+pglogical_table_data_filtered(PG_FUNCTION_ARGS)
+{
+	Oid			argtype = get_fn_expr_argtype(fcinfo->flinfo, 0);
+	Oid			reloid;
+ 	ArrayType  *rep_set_names;
+	ReturnSetInfo *rsi;
+	Relation	rel;
+	List	   *replication_sets;
+	ListCell   *lc;
+	TupleDesc	tupdesc;
+	TupleDesc	reltupdesc;
+	HeapScanDesc scandesc;
+	HeapTuple	htup;
+	List	   *row_filter_list = NIL;
+	EState		   *estate;
+	ExprContext	   *econtext;
+	Tuplestorestate *tupstore;
+	PGLogicalLocalNode *node;
+	PGLogicalTableRepInfo *tableinfo;
+	MemoryContext per_query_ctx;
+	MemoryContext oldcontext;
+
+	node = get_local_node(false, false);
+
+	/* Validate parameter. */
+	if (PG_ARGISNULL(1))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("relation cannot be NULL")));
+	if (PG_ARGISNULL(2))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("repsets cannot be NULL")));
+
+	reloid = PG_GETARG_OID(1);
+	rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
+
+	if (!type_is_rowtype(argtype))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("first argument of %s must be a row type",
+						"pglogical_table_data_filtered")));
+
+	rsi = (ReturnSetInfo *) fcinfo->resultinfo;
+
+	if (!rsi || !IsA(rsi, ReturnSetInfo) ||
+		(rsi->allowedModes & SFRM_Materialize) == 0 ||
+		rsi->expectedDesc == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("set-valued function called in context that "
+						"cannot accept a set")));
+
+	/* Switch into long-lived context to construct returned data structures */
+	per_query_ctx = rsi->econtext->ecxt_per_query_memory;
+	oldcontext = MemoryContextSwitchTo(per_query_ctx);
+
+	/*
+	 * get the tupdesc from the result set info - it must be a record type
+	 * because we already checked that arg1 is a record type, or we're in a
+	 * to_record function which returns a setof record.
+	 */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("function returning record called in context "
+						"that cannot accept type record")));
+	tupdesc = BlessTupleDesc(tupdesc);
+
+	/* Prepare output tuple store. */
+	tupstore = tuplestore_begin_heap(false, false, work_mem);
+	rsi->returnMode = SFRM_Materialize;
+	rsi->setResult = tupstore;
+	rsi->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	/* Check output type and table row type are the same. */
+	rel = heap_open(reloid, AccessShareLock);
+	reltupdesc = RelationGetDescr(rel);
+	if (!equalTupleDescs(tupdesc, reltupdesc))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("return type of %s must be same as row type of the relation",
+						"pglogical_table_data_filtered")));
+
+	/* Build the replication info for the table. */
+	replication_sets = textarray_to_list(rep_set_names);
+	replication_sets = get_replication_sets(node->node->id,
+											replication_sets,
+											false);
+	tableinfo = get_table_replication_info(node->node->id, rel,
+										   replication_sets);
+
+	/* Prepare executor. */
+	estate = create_estate_for_relation(rel, false);
+	econtext = prepare_per_tuple_econtext(estate, reltupdesc);
+
+	/* Prepare the row filter expression. */
+	foreach (lc, tableinfo->row_filter)
+	{
+		Node	   *row_filter = (Node *) lfirst(lc);
+		ExprState  *exprstate = pglogical_prepare_row_filter(row_filter);
+
+		row_filter_list = lappend(row_filter_list, exprstate);
+	}
+
+
+	/* Scan the table. */
+	scandesc = heap_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+
+	while (HeapTupleIsValid(htup = heap_getnext(scandesc, ForwardScanDirection)))
+	{
+		if (!filter_tuple(htup, econtext, row_filter_list))
+			continue;
+
+		tuplestore_puttuple(tupstore, htup);
+	}
+
+	/* Cleanup. */
+	ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
+	FreeExecutorState(estate);
+
+	heap_endscan(scandesc);
+	heap_close(rel, NoLock);
+
+	PG_RETURN_NULL();
 }
 
 Datum
