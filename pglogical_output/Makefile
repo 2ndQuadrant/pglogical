@@ -29,10 +29,3 @@ plhooks:
 	make -C examples/hooks USE_PGXS=1 clean install
 
 installcheck: plhooks
-
-install: header_install
-
-header_install: pglogical_output/compat.h pglogical_output/hooks.h
-	$(MKDIR_P) '$(DESTDIR)$(includedir)'/pglogical_output
-	$(INSTALL_DATA) pglogical_output/compat.h '$(DESTDIR)$(includedir)'/pglogical_output
-	$(INSTALL_DATA) pglogical_output/hooks.h '$(DESTDIR)$(includedir)'/pglogical_output
