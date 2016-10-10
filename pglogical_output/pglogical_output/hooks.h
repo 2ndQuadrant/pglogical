@@ -9,6 +9,13 @@
 #include "pglogical_output/compat.h"
 
 /*
+ * This define was added after we merged the pglogical and pglogical_output
+ * codebases to detect cases where an old hooks header is found in the source
+ * tree.
+ */
+#define PGLOGICAL_HOOKS_INTREE
+
+/*
  * This header is to be included by extensions that implement pglogical output
  * plugin callback hooks for transaction origin and row filtering, etc. It is
  * installed as "pglogical_output/hooks.h"
