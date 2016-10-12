@@ -18,9 +18,6 @@ CREATE TABLE pglogical.local_node (
     node_local_interface oid NOT NULL REFERENCES node_interface(if_id)
 );
 
--- Currently we allow only one node record per database
-CREATE UNIQUE INDEX local_node_onlyone ON pglogical.local_node ((true));
-
 CREATE TABLE pglogical.subscription (
     sub_id oid NOT NULL PRIMARY KEY,
     sub_name name NOT NULL UNIQUE,
