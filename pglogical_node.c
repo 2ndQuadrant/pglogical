@@ -348,6 +348,9 @@ create_local_node(Oid nodeid, Oid ifid)
 	/* Insert the tuple to the catalog. */
 	simple_heap_insert(rel, tup);
 
+	/* Update the indexes. */
+	CatalogUpdateIndexes(rel, tup);
+
 	/* Cleanup. */
 	heap_freetuple(tup);
 	heap_close(rel, AccessExclusiveLock);
