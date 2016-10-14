@@ -20,6 +20,7 @@
 #include "access/hash.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/sysattr.h"
 #include "access/xact.h"
 
 #include "catalog/indexing.h"
@@ -452,13 +453,6 @@ get_table_replication_info(Oid nodeid, Relation table,
 					Datum	   *elems;
 					int			nelems, i;
 
-					if (!entry->att_filter)
-					{
-						MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
-						entry->att_filter = palloc0(sizeof(bool) * desc->natts);
-						MemoryContextSwitchTo(olctx);
-					}
-
 					deconstruct_array(DatumGetArrayTypeP(d),
 									  TEXTOID, -1, false, 'i',
 									  &elems, NULL, &nelems);
@@ -466,7 +460,12 @@ get_table_replication_info(Oid nodeid, Relation table,
 					for (i = 0; i < nelems; i++)
 					{
 						const char *attname = TextDatumGetCString(elems[i]);
-						entry->att_filter[get_att_num_by_name(desc, attname)] = true;
+						int			attnum = get_att_num_by_name(desc, attname);
+
+						MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
+						entry->att_filter = bms_add_member(entry->att_filter,
+								attnum - FirstLowInvalidHeapAttributeNumber);
+						MemoryContextSwitchTo(olctx);
 					}
 				}
 
@@ -1369,8 +1368,8 @@ get_att_num_by_name(TupleDesc desc, const char *attname)
 			continue;
 
 		if (namestrcmp(&(desc->attrs[i]->attname), attname) == 0)
-			return i;
+			return desc->attrs[i]->attnum;
 	}
 
-	return -1;
+	return FirstLowInvalidHeapAttributeNumber;
 }

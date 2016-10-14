@@ -41,11 +41,10 @@ typedef struct PGLogicalTableRepInfo
 	bool			replicate_update;	/* should update be replicated? */
 	bool			replicate_delete;	/* should delete be replicated? */
 
-	bool		   *att_filter;			/* column filter
+	Bitmapset	   *att_filter;			/* column filter
 										   NULL if everything is replicated
-										   otherwise one bool per column:
-										     true - column is replicated
-										     false - column not replicated */
+										   otherwise each replicated column
+										   is a member */
 	List		   *row_filter;			/* compiled row_filter nodes */
 } PGLogicalTableRepInfo;
 

@@ -16,6 +16,7 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 
@@ -1360,18 +1361,32 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	{
 		ArrayType  *att_names = PG_GETARG_ARRAYTYPE_P(3);
 		ListCell   *lc;
+		Bitmapset  *idattrs;
+
+		/* fetch bitmap of REPLICATION IDENTITY attributes */
+		idattrs = RelationGetIndexAttrBitmap(rel, INDEX_ATTR_BITMAP_IDENTITY_KEY);
 
 		att_filter = textarray_to_list(att_names);
 		foreach (lc, att_filter)
 		{
 			char   *attname = (char *) lfirst(lc);
-			if (get_att_num_by_name(tupDesc, attname) < 0)
+			int		attnum = get_att_num_by_name(tupDesc, attname);
+
+			if (attnum < 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_SYNTAX_ERROR),
 						 errmsg("table %s does not have column %s",
 								quote_qualified_identifier(nspname, relname),
 								attname)));
+
+			idattrs = bms_del_member(idattrs,
+								attnum - FirstLowInvalidHeapAttributeNumber);
 		}
+
+		if (!bms_is_empty(idattrs))
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("REPLICA IDENTITY columns must be replicated")));
 	}
 
 	/* Proccess row_filter if any. */
@@ -1993,11 +2008,15 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	/* Build the column list. */
 	for (i = 0; i < reldesc->natts; i++)
 	{
+		Form_pg_attribute att = reldesc->attrs[i];
+
 		/* Skip filtered columns if any. */
-		if (tableinfo->att_filter && !tableinfo->att_filter[i])
+		if (tableinfo->att_filter &&
+			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						   tableinfo->att_filter))
 			continue;
 
-		att_filter = lappend(att_filter, NameStr(reldesc->attrs[i]->attname));
+		att_filter = lappend(att_filter, NameStr(att->attname));
 	}
 
 	/* And now build the result. */

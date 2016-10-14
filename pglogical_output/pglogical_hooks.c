@@ -168,7 +168,7 @@ call_shutdown_hook(PGLogicalOutputData *data)
  */
 bool
 call_row_filter_hook(PGLogicalOutputData *data, ReorderBufferTXN *txn,
-		Relation rel, ReorderBufferChange *change, bool **att_filter)
+		Relation rel, ReorderBufferChange *change, Bitmapset **att_filter)
 {
 	struct  PGLogicalRowFilterArgs hook_args;
 	bool ret = true;

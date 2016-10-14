@@ -23,7 +23,7 @@
 
 typedef void (*pglogical_write_rel_fn) (StringInfo out, PGLogicalOutputData * data,
 						   Relation rel, PGLRelMetaCacheEntry * cache_entry,
-						   bool *att_filter);
+						   Bitmapset *att_filter);
 
 typedef void (*pglogical_write_begin_fn) (StringInfo out, PGLogicalOutputData * data,
 													  ReorderBufferTXN *txn);
@@ -35,13 +35,14 @@ typedef void (*pglogical_write_origin_fn) (StringInfo out, const char *origin,
 
 typedef void (*pglogical_write_insert_fn) (StringInfo out, PGLogicalOutputData * data,
 										   Relation rel, HeapTuple newtuple,
-										   bool *att_filter);
+										   Bitmapset *att_filter);
 typedef void (*pglogical_write_update_fn) (StringInfo out, PGLogicalOutputData * data,
 											Relation rel, HeapTuple oldtuple,
-											HeapTuple newtuple, bool *att_filter);
+											HeapTuple newtuple,
+											Bitmapset *att_filter);
 typedef void (*pglogical_write_delete_fn) (StringInfo out, PGLogicalOutputData * data,
 										   Relation rel, HeapTuple oldtuple,
-										   bool *att_filter);
+										   Bitmapset *att_filter);
 
 typedef void (*write_startup_message_fn) (StringInfo out, List *msg);
 

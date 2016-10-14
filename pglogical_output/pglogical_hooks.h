@@ -16,7 +16,7 @@ extern void call_shutdown_hook(PGLogicalOutputData *data);
 
 extern bool call_row_filter_hook(PGLogicalOutputData *data,
 		ReorderBufferTXN *txn, Relation rel, ReorderBufferChange *change,
-		bool **att_filter);
+		Bitmapset **att_filter);
 
 extern bool call_txn_filter_hook(PGLogicalOutputData *data,
 		RepOriginId txn_origin);

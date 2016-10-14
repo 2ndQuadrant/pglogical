@@ -393,7 +393,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext	old;
-	bool		   *att_filter;
+	Bitmapset	   *att_filter;
 	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
 
 

@@ -29,10 +29,10 @@
 #define IS_REPLICA_IDENTITY 1
 
 static void pglogical_write_attrs(StringInfo out, Relation rel,
-								  bool *att_filter);
+								  Bitmapset *att_filter);
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 								  Relation rel, HeapTuple tuple,
-								  bool *att_filter);
+								  Bitmapset *att_filter);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
 								  bool allow_internal_basetypes,
@@ -43,7 +43,7 @@ static char decide_datum_transfer(Form_pg_attribute att,
  */
 void
 pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
-		PGLRelMetaCacheEntry *cache_entry, bool *att_filter)
+		PGLRelMetaCacheEntry *cache_entry, Bitmapset *att_filter)
 {
 	char	   *nspname;
 	uint8		nspnamelen;
@@ -99,7 +99,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
  * Write relation attributes to the outputstream.
  */
 static void
-pglogical_write_attrs(StringInfo out, Relation rel, bool *att_filter)
+pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_filter)
 {
 	TupleDesc	desc;
 	int			i;
@@ -113,9 +113,13 @@ pglogical_write_attrs(StringInfo out, Relation rel, bool *att_filter)
 	/* send number of live attributes */
 	for (i = 0; i < desc->natts; i++)
 	{
-		if (desc->attrs[i]->attisdropped)
+		Form_pg_attribute att = desc->attrs[i];
+
+		if (att->attisdropped)
 			continue;
-		if (att_filter && !att_filter[i])
+		if (att_filter &&
+			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						   att_filter))
 			continue;
 		nliveatts++;
 	}
@@ -134,7 +138,9 @@ pglogical_write_attrs(StringInfo out, Relation rel, bool *att_filter)
 
 		if (att->attisdropped)
 			continue;
-		if (att_filter && !att_filter[i])
+		if (att_filter &&
+			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						   att_filter))
 			continue;
 
 		if (bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
@@ -226,7 +232,7 @@ pglogical_write_origin(StringInfo out, const char *origin,
 void
 pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple,
-						bool *att_filter)
+						Bitmapset *att_filter)
 {
 	uint8 flags = 0;
 
@@ -248,7 +254,7 @@ pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 void
 pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple,
-						bool *att_filter)
+						Bitmapset *att_filter)
 {
 	uint8 flags = 0;
 
@@ -285,7 +291,8 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
  */
 void
 pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
-						Relation rel, HeapTuple oldtuple, bool *att_filter)
+						Relation rel, HeapTuple oldtuple,
+						Bitmapset *att_filter)
 {
 	uint8 flags = 0;
 
@@ -332,7 +339,7 @@ write_startup_message(StringInfo out, List *msg)
  */
 static void
 pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
-					  Relation rel, HeapTuple tuple, bool *att_filter)
+					  Relation rel, HeapTuple tuple, Bitmapset *att_filter)
 {
 	TupleDesc	desc;
 	Datum		values[MaxTupleAttributeNumber];
@@ -346,9 +353,13 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 	for (i = 0; i < desc->natts; i++)
 	{
-		if (desc->attrs[i]->attisdropped)
+		Form_pg_attribute att = desc->attrs[i];
+
+		if (att->attisdropped)
 			continue;
-		if (att_filter && !att_filter[i])
+		if (att_filter &&
+			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						   att_filter))
 			continue;
 		nliveatts++;
 	}
@@ -375,7 +386,9 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 		/* skip dropped columns */
 		if (att->attisdropped)
 			continue;
-		if (att_filter && !att_filter[i])
+		if (att_filter &&
+			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						   att_filter))
 			continue;
 
 		if (isnull[i])
