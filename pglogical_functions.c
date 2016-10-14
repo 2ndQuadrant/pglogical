@@ -828,6 +828,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 {
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	Oid						reloid = PG_GETARG_OID(1);
+	bool					truncate = PG_GETARG_BOOL(2);
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGLogicalSyncStatus	   *oldsync;
 	PGLogicalWorker		   *apply;
@@ -865,7 +866,8 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 
 	heap_close(rel, NoLock);
 
-	truncate_table(nspname, relname);
+	if (truncate)
+		truncate_table(nspname, relname);
 
 	/* Tell apply to re-read sync statuses. */
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);

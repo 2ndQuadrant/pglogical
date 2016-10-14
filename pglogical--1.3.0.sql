@@ -170,7 +170,8 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_repl
 CREATE FUNCTION pglogical.alter_subscription_synchronize(subscription_name name, truncate boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_synchronize';
 
-CREATE FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass)
+CREATE FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass,
+	truncate boolean DEFAULT true)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_resynchronize_table';
 
 CREATE FUNCTION pglogical.synchronize_sequence(relation regclass)

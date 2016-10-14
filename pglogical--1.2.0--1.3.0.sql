@@ -25,6 +25,11 @@ DROP FUNCTION pglogical.replication_set_add_table(set_name name, relation regcla
 CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean DEFAULT false, att_filter text[] DEFAULT NULL, row_filter text DEFAULT NULL)
 RETURNS boolean CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
 
+DROP FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass);
+CREATE FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass,
+	truncate boolean DEFAULT true)
+RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_resynchronize_table';
+
 DROP FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
     replication_sets text[], synchronize_structure boolean,
     synchronize_data boolean, forward_origins text[]);
