@@ -17,6 +17,7 @@
 #ifndef PGLOGICAL_HOOKS_INTREE
 #error You have an old pglogical_output/hooks.h in your PostgreSQL install tree. Delete it and try again.
 #endif
+#include "pglogical_executor.h"
 #include "pglogical_repset.h"
 #include "pglogical_queue.h"
 #include "pglogical.h"

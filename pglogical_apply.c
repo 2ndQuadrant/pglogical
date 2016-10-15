@@ -56,6 +56,7 @@
 #include "utils/snapmgr.h"
 
 #include "pglogical_conflict.h"
+#include "pglogical_executor.h"
 #include "pglogical_node.h"
 #include "pglogical_proto.h"
 #include "pglogical_queue.h"

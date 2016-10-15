@@ -62,10 +62,12 @@
 #include "utils/json.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
 #include "pglogical_node.h"
+#include "pglogical_executor.h"
 #include "pglogical_queue.h"
 #include "pglogical_relcache.h"
 #include "pglogical_repset.h"
@@ -1464,7 +1466,7 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 								 sequence_get_last_value(reloid));
 		appendStringInfo(&json, "}");
 
-		/* Queue the truncate for replication. */
+		/* Add sequence to the queue. */
 		queue_message(list_make1(repset->name), GetUserId(),
 					  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 	}
@@ -1731,25 +1733,21 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(true);
 }
 
+
 /*
  * pglogical_queue_trigger
  *
  * Trigger which queues the TRUNCATE command.
  *
- * XXX: There does not seem to be a way to support RESTART IDENTITY at the
- * moment.
+ * This function only writes to internal linked list, actual queueing is done
+ * by pglogical_finish_truncate().
  */
 Datum
 pglogical_queue_truncate(PG_FUNCTION_ARGS)
 {
 	TriggerData	   *trigdata = (TriggerData *) fcinfo->context;
 	const char	   *funcname = "queue_truncate";
-	char		   *nspname;
-	char		   *relname;
-	List		   *repsets;
-	List		   *repset_names;
-	ListCell	   *lc;
-	StringInfoData	json;
+	MemoryContext	oldcontext;
 	PGLogicalLocalNode *local_node;
 
 	/* Return if this function was called from apply process. */
@@ -1775,31 +1773,11 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	if (!local_node)
 		PG_RETURN_VOID();
 
-	/* Format the query. */
-	nspname = get_namespace_name(RelationGetNamespace(trigdata->tg_relation));
-	relname = RelationGetRelationName(trigdata->tg_relation);
-
-	/* It's easier to construct json manually than via Jsonb API... */
-	initStringInfo(&json);
-	appendStringInfo(&json, "{\"schema_name\": ");
-	escape_json(&json, nspname);
-	appendStringInfo(&json, ",\"table_name\": ");
-	escape_json(&json, relname);
-	appendStringInfo(&json, "}");
-
-	repsets = get_table_replication_sets(local_node->node->id,
-										 RelationGetRelid(trigdata->tg_relation));
-
-	repset_names = NIL;
-	foreach (lc, repsets)
-	{
-		PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(lc);
-		repset_names = lappend(repset_names, pstrdup(repset->name));
-	}
-
-	/* Queue the truncate for replication. */
-	queue_message(repset_names, GetUserId(), QUEUE_COMMAND_TYPE_TRUNCATE,
-				  json.data);
+	/* Make sure the list change survives the trigger call. */
+	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
+	pglogical_truncated_tables = lappend_oid(pglogical_truncated_tables,
+									RelationGetRelid(trigdata->tg_relation));
+	MemoryContextSwitchTo(oldcontext);
 
 	PG_RETURN_VOID();
 }
