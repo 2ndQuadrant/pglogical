@@ -385,7 +385,7 @@ The following functions are provided for managing the replication sets:
   - `relation` - name or OID of the table to be removed from the set
 
 - `pglogical.replication_set_add_sequence(set_name name, relation regclass, synchronize_data boolean)`
-  Adds a table to replication set.
+  Adds a sequence to a replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
@@ -393,7 +393,7 @@ The following functions are provided for managing the replication sets:
   - `synchronize_data` - if true, the the sequence value will be synchronized immediately, default false
 
 - `pglogical.replication_set_add_all_sequences(set_name name, schema_names text[], synchronize_data boolean)`
-  Adds all sequences in given schemas. Only existing sequences are added, any sequences that
+  Adds all sequences from the given schemas. Only existing sequences are added, any sequences that
   will be created in future will not be added automatically.
 
   Parameters:
@@ -403,7 +403,7 @@ The following functions are provided for managing the replication sets:
   - `synchronize_data` - if true, the the sequence value will be synchronized immediately, default false
 
 - `pglogical.replication_set_remove_sequence(set_name name, relation regclass)`
-  Remove a table from replication set.
+  Remove a sequence from a replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
