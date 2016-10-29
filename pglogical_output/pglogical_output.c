@@ -393,12 +393,12 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext	old;
-	Bitmapset	   *att_filter;
+	Bitmapset	   *att_list;
 	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
 
 
 	/* First check the table filter */
-	if (!call_row_filter_hook(data, txn, relation, change, &att_filter))
+	if (!call_row_filter_hook(data, txn, relation, change, &att_list))
 		return;
 
 	/* Avoid leaking memory by using and resetting our own context */
@@ -416,7 +416,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	{
 		OutputPluginPrepareWrite(ctx, false);
 		data->api->write_rel(ctx->out, data, relation, cached_relmeta,
-							 att_filter);
+							 att_list);
 		OutputPluginWrite(ctx, false);
 	}
 
@@ -427,7 +427,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			OutputPluginPrepareWrite(ctx, true);
 			data->api->write_insert(ctx->out, data, relation,
 									&change->data.tp.newtuple->tuple,
-									att_filter);
+									att_list);
 			OutputPluginWrite(ctx, true);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
@@ -438,7 +438,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				OutputPluginPrepareWrite(ctx, true);
 				data->api->write_update(ctx->out, data, relation, oldtuple,
 										&change->data.tp.newtuple->tuple,
-										att_filter);
+										att_list);
 				OutputPluginWrite(ctx, true);
 				break;
 			}
@@ -448,7 +448,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				OutputPluginPrepareWrite(ctx, true);
 				data->api->write_delete(ctx->out, data, relation,
 										&change->data.tp.oldtuple->tuple,
-										att_filter);
+										att_list);
 				OutputPluginWrite(ctx, true);
 			}
 			else

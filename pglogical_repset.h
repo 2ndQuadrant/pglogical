@@ -41,7 +41,7 @@ typedef struct PGLogicalTableRepInfo
 	bool			replicate_update;	/* should update be replicated? */
 	bool			replicate_delete;	/* should delete be replicated? */
 
-	Bitmapset	   *att_filter;			/* column filter
+	Bitmapset	   *att_list;			/* column filter
 										   NULL if everything is replicated
 										   otherwise each replicated column
 										   is a member */
@@ -66,7 +66,7 @@ extern void drop_replication_set(Oid setid);
 extern void drop_node_replication_sets(Oid nodeid);
 
 extern void replication_set_add_table(Oid setid, Oid reloid,
-						  List *att_filter, Node *row_filter);
+						  List *att_list, Node *row_filter);
 extern void replication_set_add_seq(Oid setid, Oid seqoid);
 extern List *replication_set_get_tables(Oid setid);
 extern List *replication_set_get_seqs(Oid setid);

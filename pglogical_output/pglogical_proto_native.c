@@ -29,10 +29,10 @@
 #define IS_REPLICA_IDENTITY 1
 
 static void pglogical_write_attrs(StringInfo out, Relation rel,
-								  Bitmapset *att_filter);
+								  Bitmapset *att_list);
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 								  Relation rel, HeapTuple tuple,
-								  Bitmapset *att_filter);
+								  Bitmapset *att_list);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
 								  bool allow_internal_basetypes,
@@ -43,7 +43,7 @@ static char decide_datum_transfer(Form_pg_attribute att,
  */
 void
 pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
-		PGLRelMetaCacheEntry *cache_entry, Bitmapset *att_filter)
+		PGLRelMetaCacheEntry *cache_entry, Bitmapset *att_list)
 {
 	char	   *nspname;
 	uint8		nspnamelen;
@@ -78,7 +78,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 	pq_sendbytes(out, relname, relnamelen);
 
 	/* send the attribute info */
-	pglogical_write_attrs(out, rel, att_filter);
+	pglogical_write_attrs(out, rel, att_list);
 
 	/*
 	 * Since we've sent the whole relation metadata not just the columns for
@@ -99,7 +99,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
  * Write relation attributes to the outputstream.
  */
 static void
-pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_filter)
+pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_list)
 {
 	TupleDesc	desc;
 	int			i;
@@ -117,9 +117,9 @@ pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_filter)
 
 		if (att->attisdropped)
 			continue;
-		if (att_filter &&
+		if (att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   att_filter))
+						   att_list))
 			continue;
 		nliveatts++;
 	}
@@ -138,9 +138,9 @@ pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_filter)
 
 		if (att->attisdropped)
 			continue;
-		if (att_filter &&
+		if (att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   att_filter))
+						   att_list))
 			continue;
 
 		if (bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
@@ -232,7 +232,7 @@ pglogical_write_origin(StringInfo out, const char *origin,
 void
 pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple newtuple,
-						Bitmapset *att_filter)
+						Bitmapset *att_list)
 {
 	uint8 flags = 0;
 
@@ -245,7 +245,7 @@ pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 	pq_sendint(out, RelationGetRelid(rel), 4);
 
 	pq_sendbyte(out, 'N');		/* new tuple follows */
-	pglogical_write_tuple(out, data, rel, newtuple, att_filter);
+	pglogical_write_tuple(out, data, rel, newtuple, att_list);
 }
 
 /*
@@ -254,7 +254,7 @@ pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
 void
 pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple, HeapTuple newtuple,
-						Bitmapset *att_filter)
+						Bitmapset *att_list)
 {
 	uint8 flags = 0;
 
@@ -279,11 +279,11 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 	if (oldtuple != NULL)
 	{
 		pq_sendbyte(out, 'K');	/* old key follows */
-		pglogical_write_tuple(out, data, rel, oldtuple, att_filter);
+		pglogical_write_tuple(out, data, rel, oldtuple, att_list);
 	}
 
 	pq_sendbyte(out, 'N');		/* new tuple follows */
-	pglogical_write_tuple(out, data, rel, newtuple, att_filter);
+	pglogical_write_tuple(out, data, rel, newtuple, att_list);
 }
 
 /*
@@ -292,7 +292,7 @@ pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 void
 pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 						Relation rel, HeapTuple oldtuple,
-						Bitmapset *att_filter)
+						Bitmapset *att_list)
 {
 	uint8 flags = 0;
 
@@ -310,7 +310,7 @@ pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 	 * See notes on update for details
 	 */
 	pq_sendbyte(out, 'K');	/* old key follows */
-	pglogical_write_tuple(out, data, rel, oldtuple, att_filter);
+	pglogical_write_tuple(out, data, rel, oldtuple, att_list);
 }
 
 /*
@@ -339,7 +339,7 @@ write_startup_message(StringInfo out, List *msg)
  */
 static void
 pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
-					  Relation rel, HeapTuple tuple, Bitmapset *att_filter)
+					  Relation rel, HeapTuple tuple, Bitmapset *att_list)
 {
 	TupleDesc	desc;
 	Datum		values[MaxTupleAttributeNumber];
@@ -357,9 +357,9 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 		if (att->attisdropped)
 			continue;
-		if (att_filter &&
+		if (att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   att_filter))
+						   att_list))
 			continue;
 		nliveatts++;
 	}
@@ -386,9 +386,9 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 		/* skip dropped columns */
 		if (att->attisdropped)
 			continue;
-		if (att_filter &&
+		if (att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   att_filter))
+						   att_list))
 			continue;
 
 		if (isnull[i])

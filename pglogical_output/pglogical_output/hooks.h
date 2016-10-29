@@ -52,7 +52,7 @@ typedef struct PGLogicalRowFilterArgs
 	/* detailed row change event from logical decoding */
 	ReorderBufferChange *change;
 	/* Attribute filter if any - set by the hook. */
-	Bitmapset  *att_filter;
+	Bitmapset  *att_list;
 } PGLogicalRowFilterArgs;
 
 typedef bool (*pglogical_row_filter_hook_fn)(PGLogicalRowFilterArgs *args);

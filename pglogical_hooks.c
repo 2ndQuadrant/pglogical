@@ -331,7 +331,7 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 	}
 
 	/* Make sure caller is aware of any attribute filter. */
-	rowfilter_args->att_filter = tblinfo->att_filter;
+	rowfilter_args->att_list = tblinfo->att_list;
 
 	return true;
 }

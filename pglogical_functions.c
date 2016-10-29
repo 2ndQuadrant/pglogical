@@ -1314,7 +1314,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	Oid					reloid = PG_GETARG_OID(1);
 	bool				synchronize = PG_GETARG_BOOL(2);
 	Node			   *row_filter = NULL;
-	List			   *att_filter = NIL;
+	List			   *att_list = NIL;
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	TupleDesc			tupDesc;
@@ -1358,7 +1358,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
 
-	/* Proccess att_filter. */
+	/* Proccess att_list. */
 	if (!PG_ARGISNULL(3))
 	{
 		ArrayType  *att_names = PG_GETARG_ARRAYTYPE_P(3);
@@ -1368,8 +1368,8 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		/* fetch bitmap of REPLICATION IDENTITY attributes */
 		idattrs = RelationGetIndexAttrBitmap(rel, INDEX_ATTR_BITMAP_IDENTITY_KEY);
 
-		att_filter = textarray_to_list(att_names);
-		foreach (lc, att_filter)
+		att_list = textarray_to_list(att_names);
+		foreach (lc, att_list)
 		{
 			char   *attname = (char *) lfirst(lc);
 			int		attnum = get_att_num_by_name(tupDesc, attname);
@@ -1398,7 +1398,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 									  text_to_cstring(PG_GETARG_TEXT_PP(4)));
 	}
 
-	replication_set_add_table(repset->id, reloid, att_filter, row_filter);
+	replication_set_add_table(repset->id, reloid, att_list, row_filter);
 
 	if (synchronize)
 	{
@@ -1953,7 +1953,7 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	TupleDesc	reldesc;
 	TupleDesc	rettupdesc;
 	int			i;
-	List	   *att_filter = NIL;
+	List	   *att_list = NIL;
 	Datum		values[5];
 	bool		nulls[5];
 	char	   *nspname;
@@ -1989,12 +1989,12 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 		Form_pg_attribute att = reldesc->attrs[i];
 
 		/* Skip filtered columns if any. */
-		if (tableinfo->att_filter &&
+		if (tableinfo->att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   tableinfo->att_filter))
+						   tableinfo->att_list))
 			continue;
 
-		att_filter = lappend(att_filter, NameStr(att->attname));
+		att_list = lappend(att_list, NameStr(att->attname));
 	}
 
 	/* And now build the result. */
@@ -2002,7 +2002,7 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	values[0] = ObjectIdGetDatum(RelationGetRelid(rel));
 	values[1] = CStringGetTextDatum(nspname);
 	values[2] = CStringGetTextDatum(relname);
-	values[3] = PointerGetDatum(strlist_to_textarray(att_filter));
+	values[3] = PointerGetDatum(strlist_to_textarray(att_list));
 	values[4] = BoolGetDatum(list_length(tableinfo->row_filter) > 0);
 
 	htup = heap_form_tuple(rettupdesc, values, nulls);

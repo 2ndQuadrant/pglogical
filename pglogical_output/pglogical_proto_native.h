@@ -29,7 +29,7 @@
 
 extern void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data,
 		Relation rel, PGLRelMetaCacheEntry *cache_entry,
-		Bitmapset *att_filter);
+		Bitmapset *att_list);
 extern void pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 		ReorderBufferTXN *txn);
 extern void pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
@@ -37,12 +37,12 @@ extern void pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 extern void pglogical_write_origin(StringInfo out, const char *origin,
 		XLogRecPtr origin_lsn);
 extern void pglogical_write_insert(StringInfo out, PGLogicalOutputData *data,
-		Relation rel, HeapTuple newtuple, Bitmapset *att_filter);
+		Relation rel, HeapTuple newtuple, Bitmapset *att_list);
 extern void pglogical_write_update(StringInfo out, PGLogicalOutputData *data,
 		Relation rel, HeapTuple oldtuple, HeapTuple newtuple,
-		Bitmapset *att_filter);
+		Bitmapset *att_list);
 extern void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
-		Relation rel, HeapTuple oldtuple, Bitmapset *att_filter);
+		Relation rel, HeapTuple oldtuple, Bitmapset *att_list);
 extern void write_startup_message(StringInfo out, List *msg);
 
 #endif /* PG_LOGICAL_PROTO_NATIVE_H */

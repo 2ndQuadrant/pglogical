@@ -18,11 +18,11 @@ DELETE FROM replication_set_relation r USING seqs s WHERE r.set_reloid = s.set_r
 
 ALTER TABLE pglogical.replication_set_relation RENAME TO replication_set_table;
 ALTER TABLE pglogical.replication_set_table
-    ADD COLUMN set_att_filter text[],
+    ADD COLUMN set_att_list text[],
     ADD COLUMN set_row_filter pg_node_tree;
 
 DROP FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean);
-CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean DEFAULT false, att_filter text[] DEFAULT NULL, row_filter text DEFAULT NULL)
+CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean DEFAULT false, columns text[] DEFAULT NULL, row_filter text DEFAULT NULL)
 RETURNS boolean CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
 
 DROP FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass);
@@ -72,7 +72,7 @@ CREATE VIEW pglogical.TABLES AS
      WHERE t.oid NOT IN (SELECT set_reloid FROM set_relations);
 
 CREATE FUNCTION pglogical.show_repset_table_info(relation regclass, repsets text[], OUT relid oid, OUT nspname text,
-	OUT relname text, OUT att_filter text[], OUT has_row_filter boolean)
+	OUT relname text, OUT att_list text[], OUT has_row_filter boolean)
 RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_repset_table_info';
 
 CREATE FUNCTION pglogical.table_data_filtered(reltyp anyelement, relation regclass, repsets text[])

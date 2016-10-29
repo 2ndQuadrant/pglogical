@@ -8,7 +8,7 @@ CREATE TABLE public.basic_dml (
 	data text,
 	something interval
 );
-SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', att_filter := '{id, data, something}');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', columns := '{id, data, something}');
  replication_set_add_table 
 ---------------------------
  t

@@ -60,7 +60,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 
 	initStringInfo(&query);
 	appendStringInfo(&query,
-					 "SELECT i.relid, i.nspname, i.relname, i.att_filter,"
+					 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
 					 "       i.has_row_filter"
 					 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
 					 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
@@ -127,7 +127,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 
 	initStringInfo(&query);
 	appendStringInfo(&query,
-					 "SELECT i.relid, i.nspname, i.relname, i.att_filter,"
+					 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
 					 "       i.has_row_filter"
 					 "  FROM pglogical.show_repset_table_info(%s::regclass, ARRAY[%s]) i",
 					 PQescapeLiteral(conn, relname.data, relname.len),

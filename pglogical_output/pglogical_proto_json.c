@@ -141,7 +141,7 @@ pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
 void
 pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple newtuple,
-							Bitmapset *att_filter)
+							Bitmapset *att_list)
 {
 	pglogical_json_write_change(out, "I", rel, NULL, newtuple);
 }
@@ -152,7 +152,7 @@ pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
 void
 pglogical_json_write_update(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple,
-							HeapTuple newtuple, Bitmapset *att_filter)
+							HeapTuple newtuple, Bitmapset *att_list)
 {
 	pglogical_json_write_change(out, "U", rel, oldtuple, newtuple);
 }
@@ -163,7 +163,7 @@ pglogical_json_write_update(StringInfo out, PGLogicalOutputData *data,
 void
 pglogical_json_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple,
-							Bitmapset *att_filter)
+							Bitmapset *att_list)
 {
 	pglogical_json_write_change(out, "D", rel, oldtuple, NULL);
 }

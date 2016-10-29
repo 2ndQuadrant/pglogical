@@ -86,14 +86,14 @@ typedef struct RepSetTableTuple
 {
 	Oid			setid;
 	Oid			reloid;
-	text		att_filter[1];
+	text		att_list[1];
 	text		row_filter;
 } RepSetTableTuple;
 
 #define Natts_repset_table				4
 #define Anum_repset_table_setid			1
 #define Anum_repset_table_reloid		2
-#define Anum_repset_table_att_filter	3
+#define Anum_repset_table_att_list	3
 #define Anum_repset_table_row_filter	4
 
 
@@ -205,9 +205,9 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 		while ((entry = hash_seq_search(&status)) != NULL)
 		{
 			entry->isvalid = false;
-			if (entry->att_filter)
-				pfree(entry->att_filter);
-			entry->att_filter = NULL;
+			if (entry->att_list)
+				pfree(entry->att_list);
+			entry->att_list = NULL;
 			if (list_length(entry->row_filter))
 				list_free_deep(entry->row_filter);
 			entry->row_filter = NIL;
@@ -217,9 +217,9 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 								  HASH_FIND, NULL)) != NULL)
 	{
 		entry->isvalid = false;
-		if (entry->att_filter)
-			pfree(entry->att_filter);
-		entry->att_filter = NULL;
+		if (entry->att_list)
+			pfree(entry->att_list);
+		entry->att_list = NULL;
 		if (list_length(entry->row_filter))
 			list_free_deep(entry->row_filter);
 		entry->row_filter = NIL;
@@ -388,7 +388,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 	entry->replicate_insert = false;
 	entry->replicate_update = false;
 	entry->replicate_delete = false;
-	entry->att_filter = NULL;
+	entry->att_list = NULL;
 	entry->row_filter = NIL;
 
 	/*
@@ -446,7 +446,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 					entry->replicate_delete = true;
 
 				/* Uppdate replicated column map. */
-				d = heap_getattr(tuple, Anum_repset_table_att_filter,
+				d = heap_getattr(tuple, Anum_repset_table_att_list,
 								 desc, &isnull);
 				if (!isnull)
 				{
@@ -463,7 +463,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 						int			attnum = get_att_num_by_name(desc, attname);
 
 						MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
-						entry->att_filter = bms_add_member(entry->att_filter,
+						entry->att_list = bms_add_member(entry->att_list,
 								attnum - FirstLowInvalidHeapAttributeNumber);
 						MemoryContextSwitchTo(olctx);
 					}
@@ -979,7 +979,7 @@ drop_node_replication_sets(Oid nodeid)
  * Insert new replication set / table mapping.
  */
 void
-replication_set_add_table(Oid setid, Oid reloid, List *att_filter,
+replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 						  Node *row_filter)
 {
 	RangeVar   *rv;
@@ -1028,11 +1028,11 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_filter,
 	values[Anum_repset_table_setid - 1] = ObjectIdGetDatum(repset->id);
 	values[Anum_repset_table_reloid - 1] = ObjectIdGetDatum(reloid);
 
-	if (list_length(att_filter))
-		values[Anum_repset_table_att_filter - 1] =
-			PointerGetDatum(strlist_to_textarray(att_filter));
+	if (list_length(att_list))
+		values[Anum_repset_table_att_list - 1] =
+			PointerGetDatum(strlist_to_textarray(att_list));
 	else
-		nulls[Anum_repset_table_att_filter - 1] = true;
+		nulls[Anum_repset_table_att_list - 1] = true;
 
 	if (row_filter)
 		values[Anum_repset_table_row_filter - 1] =

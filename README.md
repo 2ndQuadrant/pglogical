@@ -350,7 +350,7 @@ The following functions are provided for managing the replication sets:
   Parameters:
   - `set_name` - name of the existing replication set
 
-- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, att_filter text[], row_filter text)`
+- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, att_list text[], row_filter text)`
   Adds a table to replication set.
 
   Parameters:
@@ -358,7 +358,7 @@ The following functions are provided for managing the replication sets:
   - `relation` - name or OID of the table to be added to the set
   - `synchronize_data` - if true, the table data is synchronized on all
     subscribers which are subscribed to given replication set, default false
-  - `att_filter` - list of columns to replicate, normally when all columns
+  - `att_list` - list of columns to replicate, normally when all columns
     should be replicated replicated this will be set to NULL which is the
     default
   - `row_filter` - row filtering expression, default NULL (no filtering),
