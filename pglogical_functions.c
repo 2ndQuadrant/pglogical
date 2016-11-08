@@ -495,13 +495,13 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 
 	/* Create synchronization status for the subscription. */
 	if (sync_structure && sync_data)
-		sync.kind = 'f';
+		sync.kind = SYNC_KIND_FULL;
 	else if (sync_structure)
-		sync.kind = 's';
+		sync.kind = SYNC_KIND_STRUCTURE;
 	else if (sync_data)
-		sync.kind = 'd';
+		sync.kind = SYNC_KIND_DATA;
 	else
-		sync.kind = 'i';
+		sync.kind = SYNC_KIND_INIT;
 
 	sync.subid = sub.id;
 	sync.nspname = NULL;
