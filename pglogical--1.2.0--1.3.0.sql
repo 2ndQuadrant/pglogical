@@ -79,3 +79,7 @@ CREATE FUNCTION pglogical.table_data_filtered(reltyp anyelement, relation regcla
 RETURNS SETOF anyelement CALLED ON NULL INPUT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_table_data_filtered';
 
 DROP INDEX local_node_onlyone;
+
+-- Everyone needs to be able to see the pglogical schema so they can
+-- fire our truncate triggers. See GH #57
+GRANT USAGE ON SCHEMA pglogical TO public;
