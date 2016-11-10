@@ -78,7 +78,7 @@ The overall flow of client/server interaction is:
     * Connection options must include `replication=database` and `dbname=[...]` parameters
     * The PostgreSQL client library can be `libpq` or anything else that supports the replication sub-protocol
     * The same mechanisms are used for authentication and protocol encryption as for a normal non-replication connection
-* [Client issues `IDENTIFY_SYSTEM`
+* Client issues `IDENTIFY_SYSTEM`
     * Server responds with a single row containing system identity info
 * Client issues `CREATE_REPLICATION_SLOT slotname LOGICAL 'pglogical'` if it's setting up for the first time
     * Server responds with success info and a snapshot identifier
