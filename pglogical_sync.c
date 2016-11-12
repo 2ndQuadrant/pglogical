@@ -775,16 +775,16 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					StartTransactionCommand();
 					foreach (lc, tables)
 					{
-						RangeVar	   *rv = lfirst(lc);
+						PGLogicalRemoteRel	   *remoterel = lfirst(lc);
 						PGLogicalSyncStatus	   *oldsync;
 
 						oldsync = get_table_sync_status(sub->id,
-														rv->schemaname,
-														rv->relname, true);
+														remoterel->nspname,
+														remoterel->relname, true);
 						if (oldsync)
 						{
-							set_table_sync_status(sub->id, rv->schemaname,
-												  rv->relname,
+							set_table_sync_status(sub->id, remoterel->nspname,
+												  remoterel->relname,
 												  SYNC_STATUS_READY);
 						}
 						else
@@ -793,8 +793,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 							newsync.kind = SYNC_KIND_FULL;
 							newsync.subid = sub->id;
-							newsync.nspname = rv->schemaname;
-							newsync.relname = rv->relname;
+							newsync.nspname = remoterel->nspname;
+							newsync.relname = remoterel->relname;
 							newsync.status = SYNC_STATUS_READY;
 							create_local_sync_status(&newsync);
 						}
