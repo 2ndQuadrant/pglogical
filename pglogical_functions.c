@@ -219,7 +219,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalNode  *node;
 
-	node = get_node_by_name(node_name, !ifexists);
+	node = get_node_by_name(node_name, ifexists);
 
 	if (node != NULL)
 	{
@@ -522,7 +522,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 	bool		ifexists = PG_GETARG_BOOL(1);
 	PGLogicalSubscription  *sub;
 
-	sub = get_subscription_by_name(sub_name, !ifexists);
+	sub = get_subscription_by_name(sub_name, ifexists);
 
 	if (sub != NULL)
 	{
@@ -1173,7 +1173,7 @@ pglogical_drop_replication_set(PG_FUNCTION_ARGS)
 
 	node = check_local_node(true);
 
-	repset = get_replication_set_by_name(node->node->id, set_name, !ifexists);
+	repset = get_replication_set_by_name(node->node->id, set_name, ifexists);
 
 	if (repset != NULL)
 		drop_replication_set(repset->id);
