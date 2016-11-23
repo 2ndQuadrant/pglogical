@@ -380,7 +380,20 @@ get_tuple_origin(HeapTuple local_tuple, TransactionId *xmin,
 	else
 	{
 		*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
-		return TransactionIdGetCommitTsData(*xmin, local_ts, local_origin);
+		if (TransactionIdIsValid(xmin) && !TransactionIdIsNormal(xmin))
+		{
+			/*
+			 * Pg emits an ERROR if you try to pass FrozenTransactionId (2)
+			 * or BootstrapTransactionId (1) to TransactionIdGetCommitTsData,
+			 * per RT#46983 . This seems like an oversight in the core function,
+			 * but we can work around it here by setting it to the same thing
+			 * we'd get if the xid's commit timestamp was trimmed already.
+			 */
+			*local_origin = InvalidRepOriginId;
+			*local_ts = 0;
+		}
+		else
+			return TransactionIdGetCommitTsData(*xmin, local_ts, local_origin);
 	}
 }
 
