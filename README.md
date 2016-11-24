@@ -379,7 +379,7 @@ The following functions are provided for managing the replication sets:
   - `relation` - name or OID of the table to be removed from the set
 
 - `pglogical.replication_set_add_sequence(set_name name, relation regclass, synchronize_data boolean)`
-  Adds a table to replication set.
+  Adds a sequence to the specified replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
