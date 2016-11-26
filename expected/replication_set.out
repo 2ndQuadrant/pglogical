@@ -158,7 +158,7 @@ NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to table normalschema.test_normalschema
 NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to "strange.schema-IS".test_strangeschema membership in replication set repset_replicate_insupd
 NOTICE:  drop cascades to 2 other objects
  replicate_ddl_command 
 -----------------------

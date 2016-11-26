@@ -1404,19 +1404,19 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TYPE public.tst_comp_basic_t;
 	DROP TYPE public.tst_enum_t;
 $$);
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.tst_one_array membership in replication set default
+NOTICE:  drop cascades to public.tst_arrays membership in replication set default
+NOTICE:  drop cascades to public.tst_one_enum membership in replication set default
+NOTICE:  drop cascades to public.tst_enums membership in replication set default
+NOTICE:  drop cascades to public.tst_one_comp membership in replication set default
+NOTICE:  drop cascades to public.tst_comps membership in replication set default
+NOTICE:  drop cascades to public.tst_comp_enum membership in replication set default
+NOTICE:  drop cascades to public.tst_comp_enum_array membership in replication set default
+NOTICE:  drop cascades to public.tst_comp_one_enum_array membership in replication set default
+NOTICE:  drop cascades to public.tst_comp_enum_what membership in replication set default
+NOTICE:  drop cascades to public.tst_comp_mix_array membership in replication set default
+NOTICE:  drop cascades to public.tst_range membership in replication set default
+NOTICE:  drop cascades to public.tst_range_array membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

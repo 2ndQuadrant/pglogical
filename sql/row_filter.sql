@@ -35,6 +35,9 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
 -- use this filter for rest of the test
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
 
+-- fail, the membership in repset depends on data column
+ALTER TABLE basic_dml DROP COLUMN data;
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn

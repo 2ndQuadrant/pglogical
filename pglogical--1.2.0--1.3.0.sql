@@ -83,3 +83,15 @@ DROP INDEX local_node_onlyone;
 -- Everyone needs to be able to see the pglogical schema so they can
 -- fire our truncate triggers. See GH #57
 GRANT USAGE ON SCHEMA pglogical TO public;
+
+CREATE TABLE pglogical.depend (
+    classid oid NOT NULL,
+    objid oid NOT NULL,
+    objsubid integer NOT NULL,
+
+    refclassid oid NOT NULL,
+    refobjid oid NOT NULL,
+    refobjsubid integer NOT NULL,
+
+	deptype "char" NOT NULL
+) WITH (user_catalog_table=true);

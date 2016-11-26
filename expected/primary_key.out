@@ -296,7 +296,7 @@ SELECT * FROM pk_users;
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.pk_users CASCADE;
 $$);
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.pk_users membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

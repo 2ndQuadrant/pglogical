@@ -66,6 +66,7 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
+#include "pglogical_dependency.h"
 #include "pglogical_node.h"
 #include "pglogical_executor.h"
 #include "pglogical_queue.h"
@@ -1797,7 +1798,6 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 					i;
 	DropStmt	   *stmt;
 	StringInfoData	logdetail;
-	int				numDependentObjects = 0;
 	PGLogicalLocalNode *node;
 
 	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
@@ -1816,89 +1816,68 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 
 	SPI_connect();
 
-	res = SPI_execute("SELECT objid, schema_name, object_name, object_type "
+	res = SPI_execute("SELECT classid, objid, objsubid, object_identity, "
+					  "object_type, schema_name, object_name "
 					  "FROM pg_event_trigger_dropped_objects() "
-					  "WHERE object_type IN ('table', 'sequence')",
+					  "WHERE object_type IN ('table', 'sequence', 'table column')",
 					  false, 0);
 	if (res != SPI_OK_SELECT)
 		elog(ERROR, "SPI query failed: %d", res);
 
 	for (i = 0; i < SPI_processed; i++)
 	{
-		Oid		reloid;
-		char   *schema_name;
-		char   *object_name;
+		ObjectAddress	object;
+		char   *object_identity;
 		char   *object_type;
 		bool	isnull;
-		List   *repsets;
-		bool	istable;
+		DropBehavior behavior;
 
-		reloid = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
-									 SPI_tuptable->tupdesc, 1, &isnull);
+		object.classId = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
+											 SPI_tuptable->tupdesc, 1, &isnull);
 		Assert(!isnull);
-		schema_name = SPI_getvalue(SPI_tuptable->vals[i],
-								   SPI_tuptable->tupdesc, 2);
-		object_name = SPI_getvalue(SPI_tuptable->vals[i],
-								   SPI_tuptable->tupdesc, 3);
+		object.objectId = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
+											  SPI_tuptable->tupdesc, 2, &isnull);
+		Assert(!isnull);
+		object.objectSubId = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
+												 SPI_tuptable->tupdesc, 3, &isnull);
+		Assert(!isnull);
+		object_identity = SPI_getvalue(SPI_tuptable->vals[i],
+									   SPI_tuptable->tupdesc, 4);
+
+		/*
+		 * Push this object info to our description cache since it does not
+		 * exist in the database anymore.
+		 */
+		pglogical_pushObjectDescription(&object, object_identity);
+
 		object_type = SPI_getvalue(SPI_tuptable->vals[i],
-								   SPI_tuptable->tupdesc, 4);
+								   SPI_tuptable->tupdesc, 5);
 
-		istable = (strcmp(object_type, "table") == 0);
-
-		if (istable)
-			repsets = get_table_replication_sets(node->node->id, reloid);
+		if (SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
+			behavior = DROP_CASCADE;
 		else
-			repsets = get_seq_replication_sets(node->node->id, reloid);
+			behavior = stmt->behavior;
 
-		if (list_length(repsets))
+		pglogical_tryDropDependencies(&object, behavior);
+
+		if (strcmp(object_type, "table") == 0)
 		{
-			ListCell	   *lc;
+			char   *schema_name;
+			char   *object_name;
 
-			foreach (lc, repsets)
-			{
-				PGLogicalRepSet	   *repset = (PGLogicalRepSet *) lfirst(lc);
+			schema_name = SPI_getvalue(SPI_tuptable->vals[i],
+									   SPI_tuptable->tupdesc, 6);
 
-				if (numDependentObjects++)
-					appendStringInfoString(&logdetail, "\n");
-				appendStringInfo(&logdetail, "%s %s in replication set %s",
-								 object_type,
-								 quote_qualified_identifier(schema_name,
-															object_name),
-								 repset->name);
+			object_name = SPI_getvalue(SPI_tuptable->vals[i],
+									   SPI_tuptable->tupdesc, 7);
 
-				/* We always drop on replica. */
-				if (stmt->behavior == DROP_CASCADE ||
-					SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
-				{
-					if (istable)
-						replication_set_remove_table(repset->id, reloid, true);
-					else
-						replication_set_remove_seq(repset->id, reloid, true);
-				}
-			}
+			drop_table_sync_status(schema_name, object_name);
 		}
-
-		drop_table_sync_status(schema_name, object_name);
 	}
+
+	pglogical_clearObjectDescriptions();
 
 	SPI_finish();
-
-	if (numDependentObjects)
-	{
-		if (stmt->behavior != DROP_CASCADE &&
-			SessionReplicationRole != SESSION_REPLICATION_ROLE_REPLICA)
-			ereport(ERROR,
-					(errcode(ERRCODE_DEPENDENT_OBJECTS_STILL_EXIST),
-					 errmsg("cannot drop desired object(s) because other objects depend on them"),
-					 errdetail("%s", logdetail.data),
-					 errhint("Use DROP ... CASCADE to drop the dependent objects too.")));
-		else
-			ereport(NOTICE,
-					(errmsg_plural("drop cascades to %d other object",
-								   "drop cascades to %d other objects",
-								   numDependentObjects, numDependentObjects),
-					 errdetail("%s", logdetail.data)));
-	}
 
 	PG_RETURN_VOID();
 }

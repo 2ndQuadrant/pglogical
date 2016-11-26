@@ -99,7 +99,7 @@ DROP TABLE test_trg_hist CASCADE;
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_trg_data CASCADE;
 $$);
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.test_trg_data membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

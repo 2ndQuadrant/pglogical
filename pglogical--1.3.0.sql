@@ -109,6 +109,18 @@ CREATE TABLE pglogical.sequence_state (
 	last_value bigint NOT NULL
 ) WITH (user_catalog_table=true);
 
+CREATE TABLE pglogical.depend (
+    classid oid NOT NULL,
+    objid oid NOT NULL,
+    objsubid integer NOT NULL,
+
+    refclassid oid NOT NULL,
+    refobjid oid NOT NULL,
+    refobjsubid integer NOT NULL,
+
+	deptype "char" NOT NULL
+) WITH (user_catalog_table=true);
+
 CREATE VIEW pglogical.TABLES AS
     WITH set_relations AS (
         SELECT s.set_name, r.set_reloid

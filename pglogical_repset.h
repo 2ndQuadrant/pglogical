@@ -80,7 +80,10 @@ extern List *get_seq_replication_sets(Oid nodeid, Oid seqoid);
 
 extern PGLogicalRepSet *replication_set_from_tuple(HeapTuple tuple);
 
-extern Oid get_replication_set_table_oid(void);
+extern Oid get_replication_set_rel_oid(void);
+extern Oid get_replication_set_table_rel_oid(void);
+extern Oid get_replication_set_seq_rel_oid(void);
+
 extern char *stringlist_to_identifierstr(List *repsets);
 extern int get_att_num_by_name(TupleDesc desc, const char *attname);
 

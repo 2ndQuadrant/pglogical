@@ -58,7 +58,7 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;
 $$);
 NOTICE:  drop cascades to materialized view public.test_mv
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.test_tbl membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

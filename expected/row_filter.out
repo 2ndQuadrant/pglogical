@@ -50,6 +50,11 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, 
  t
 (1 row)
 
+-- fail, the membership in repset depends on data column
+ALTER TABLE basic_dml DROP COLUMN data;
+ERROR:  cannot drop public.basic_dml.data because other objects depend on it
+DETAIL:  table basic_dml membership in replication set default depends on public.basic_dml.data
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
@@ -222,7 +227,7 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
 $$);
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.basic_dml membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

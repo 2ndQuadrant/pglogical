@@ -206,7 +206,7 @@ pglogical_row_filter_hook(struct PGLogicalRowFilterArgs *rowfilter_args)
 
 		return false;
 	}
-	else if (RelationGetRelid(rowfilter_args->changed_rel) == get_replication_set_table_oid())
+	else if (RelationGetRelid(rowfilter_args->changed_rel) == get_replication_set_rel_oid())
 	{
 		/*
 		 * Special case - replication set table.

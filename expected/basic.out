@@ -190,7 +190,7 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
 $$);
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.basic_dml membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

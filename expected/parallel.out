@@ -180,7 +180,7 @@ SELECT pglogical.replicate_ddl_command($$
     DROP TABLE public.basic_dml1 CASCADE;
     DROP TABLE public.basic_dml2 CASCADE;
 $$);
-NOTICE:  drop cascades to 1 other object
+NOTICE:  drop cascades to public.basic_dml1 membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

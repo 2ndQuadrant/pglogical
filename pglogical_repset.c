@@ -23,6 +23,7 @@
 #include "access/sysattr.h"
 #include "access/xact.h"
 
+#include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/objectaddress.h"
@@ -42,6 +43,7 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
+#include "pglogical_dependency.h"
 #include "pglogical_node.h"
 #include "pglogical_queue.h"
 #include "pglogical_repset.h"
@@ -127,7 +129,7 @@ get_replication_set(Oid setid)
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
-		elog(ERROR, "replication set %d not found", setid);
+		elog(ERROR, "replication set %u not found", setid);
 
 	repset = replication_set_from_tuple(tuple);
 
@@ -816,9 +818,13 @@ replication_set_remove_tables(Oid setid, Oid nodeid)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
+	ObjectAddress	myself;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
+
+	myself.classId = get_replication_set_table_rel_oid();
+	myself.objectId = setid;
 
 	/* Search for the record. */
 	ScanKeyInit(&key[0],
@@ -836,6 +842,10 @@ replication_set_remove_tables(Oid setid, Oid nodeid)
 		/* Remove the tuple. */
 		simple_heap_delete(rel, &tuple->t_self);
 		CacheInvalidateRelcacheByRelid(reloid);
+
+		/* Dependency cleanup. */
+		myself.objectSubId = reloid;
+		pglogical_tryDropDependencies(&myself, DROP_CASCADE);
 	}
 
 	/* Cleanup. */
@@ -854,6 +864,7 @@ replication_set_remove_seqs(Oid setid, Oid nodeid)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[1];
+	ObjectAddress	myself;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -866,20 +877,27 @@ replication_set_remove_seqs(Oid setid, Oid nodeid)
 
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 
+	myself.classId = get_replication_set_seq_rel_oid();
+	myself.objectId = setid;
+
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		RepSetTableTuple   *t = (RepSetTableTuple *) GETSTRUCT(tuple);
-		Oid					reloid = t->reloid;
+		RepSetSeqTuple	   *t = (RepSetSeqTuple *) GETSTRUCT(tuple);
+		Oid					seqoid = t->seqoid;
 
 		/* Remove the tuple. */
 		simple_heap_delete(rel, &tuple->t_self);
 
 		/* Make sure the sequence_has_replication_sets sees the changes. */
 		CommandCounterIncrement();
-		if (!sequence_has_replication_sets(nodeid, reloid))
-			pglogical_drop_sequence_state_record(reloid);
+		if (!sequence_has_replication_sets(nodeid, seqoid))
+			pglogical_drop_sequence_state_record(seqoid);
 
-		CacheInvalidateRelcacheByRelid(reloid);
+		CacheInvalidateRelcacheByRelid(seqoid);
+
+		/* Dependency cleanup. */
+		myself.objectSubId = seqoid;
+		pglogical_tryDropDependencies(&myself, DROP_CASCADE);
 	}
 
 	/* Cleanup. */
@@ -990,6 +1008,8 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 	Datum		values[Natts_repset_table];
 	bool		nulls[Natts_repset_table];
 	PGLogicalRepSet *repset = get_replication_set(setid);
+	ObjectAddress	referenced;
+	ObjectAddress	myself;
 
 	/* Open the relation. */
 	targetrel = heap_open(reloid, ShareRowExclusiveLock);
@@ -1051,6 +1071,25 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 	/* Cleanup. */
 	CacheInvalidateRelcacheByRelid(reloid);
 	heap_freetuple(tup);
+
+	myself.classId = get_replication_set_table_rel_oid();
+	myself.objectId = setid;
+	myself.objectSubId = reloid;
+
+	referenced.classId = RelationRelationId;
+	referenced.objectId = reloid;
+	referenced.objectSubId = 0;
+
+	pglogical_recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+
+	/* Make sure we record dependencies for the row_filter as well. */
+	if (row_filter)
+	{
+		pglogical_recordDependencyOnSingleRelExpr(&myself, row_filter,
+												  reloid, DEPENDENCY_NORMAL,
+												  DEPENDENCY_NORMAL);
+	}
+
 	heap_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
@@ -1070,6 +1109,8 @@ replication_set_add_seq(Oid setid, Oid seqoid)
 	Datum		values[Natts_repset_table];
 	bool		nulls[Natts_repset_table];
 	PGLogicalRepSet *repset = get_replication_set(setid);
+	ObjectAddress	referenced;
+	ObjectAddress	myself;
 
 	/* Open the relation. */
 	targetrel = heap_open(seqoid, ShareRowExclusiveLock);
@@ -1107,6 +1148,17 @@ replication_set_add_seq(Oid setid, Oid seqoid)
 	/* Cleanup. */
 	CacheInvalidateRelcacheByRelid(seqoid);
 	heap_freetuple(tup);
+
+	myself.classId = get_replication_set_seq_rel_oid();
+	myself.objectId = setid;
+	myself.objectSubId = seqoid;
+
+	referenced.classId = RelationRelationId;
+	referenced.objectId = seqoid;
+	referenced.objectSubId = 0;
+
+	pglogical_recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+
 	heap_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
@@ -1202,6 +1254,7 @@ replication_set_remove_table(Oid setid, Oid reloid, bool from_drop)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[2];
+	ObjectAddress	myself;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -1226,12 +1279,18 @@ replication_set_remove_table(Oid setid, Oid reloid, bool from_drop)
 	if (HeapTupleIsValid(tuple))
 		simple_heap_delete(rel, &tuple->t_self);
 	else if (!from_drop)
-		elog(ERROR, "replication set table mapping %d:%d not found",
+		elog(ERROR, "replication set table mapping %u:%u not found",
 			 setid, reloid);
 
 	/* We can only invalidate the relcache when relation still exists. */
 	if (!from_drop)
 		CacheInvalidateRelcacheByRelid(reloid);
+
+	/* Dependency cleanup. */
+	myself.classId = get_replication_set_table_rel_oid();
+	myself.objectId = setid;
+	myself.objectSubId = reloid;
+	pglogical_tryDropDependencies(&myself, DROP_CASCADE);
 
 	/* Make sure the has_relation_replication_sets sees the changes. */
 	CommandCounterIncrement();
@@ -1252,6 +1311,7 @@ replication_set_remove_seq(Oid setid, Oid seqoid, bool from_drop)
 	SysScanDesc		scan;
 	HeapTuple		tuple;
 	ScanKeyData		key[2];
+	ObjectAddress	myself;
 	PGLogicalRepSet *repset = get_replication_set(setid);
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
@@ -1277,12 +1337,18 @@ replication_set_remove_seq(Oid setid, Oid seqoid, bool from_drop)
 	if (HeapTupleIsValid(tuple))
 		simple_heap_delete(rel, &tuple->t_self);
 	else if (!from_drop)
-		elog(ERROR, "replication set sequence mapping %d:%d not found",
+		elog(ERROR, "replication set sequence mapping %u:%u not found",
 			 setid, seqoid);
 
 	/* We can only invalidate the relcache when relation still exists. */
 	if (!from_drop)
 		CacheInvalidateRelcacheByRelid(seqoid);
+
+	/* Dependency cleanup. */
+	myself.classId = get_replication_set_seq_rel_oid();
+	myself.objectId = setid;
+	myself.objectSubId = seqoid;
+	pglogical_tryDropDependencies(&myself, DROP_CASCADE);
 
 	/* Make sure the has_relation_replication_sets sees the changes. */
 	CommandCounterIncrement();
@@ -1316,14 +1382,42 @@ replication_set_from_tuple(HeapTuple tuple)
  * Get (cached) oid of the replicatin set table.
  */
 Oid
-get_replication_set_table_oid(void)
+get_replication_set_rel_oid(void)
 {
-	static Oid	repsettableoid = InvalidOid;
+	static Oid	repsetreloid = InvalidOid;
 
-	if (repsettableoid == InvalidOid)
-		repsettableoid = get_pglogical_table_oid(CATALOG_REPSET);
+	if (repsetreloid == InvalidOid)
+		repsetreloid = get_pglogical_table_oid(CATALOG_REPSET);
 
-	return repsettableoid;
+	return repsetreloid;
+}
+
+/*
+ * Get (cached) oid of the replicatin set table mapping table.
+ */
+Oid
+get_replication_set_table_rel_oid(void)
+{
+	static Oid	repsettablereloid = InvalidOid;
+
+	if (repsettablereloid == InvalidOid)
+		repsettablereloid = get_pglogical_table_oid(CATALOG_REPSET_TABLE);
+
+	return repsettablereloid;
+}
+
+/*
+ * Get (cached) oid of the replicatin set sequence mapping table.
+ */
+Oid
+get_replication_set_seq_rel_oid(void)
+{
+	static Oid	repsetseqreloid = InvalidOid;
+
+	if (repsetseqreloid == InvalidOid)
+		repsetseqreloid = get_pglogical_table_oid(CATALOG_REPSET_SEQ);
+
+	return repsetseqreloid;
 }
 
 
