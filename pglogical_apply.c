@@ -560,6 +560,7 @@ handle_insert(StringInfo s)
 					PopActiveSnapshot();
 					finish_apply_exec_state(aestate);
 					pglogical_relation_close(rel, NoLock);
+					return;
 				}
 
 			}
