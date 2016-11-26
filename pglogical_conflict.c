@@ -380,7 +380,7 @@ get_tuple_origin(HeapTuple local_tuple, TransactionId *xmin,
 	else
 	{
 		*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
-		if (TransactionIdIsValid(xmin) && !TransactionIdIsNormal(xmin))
+		if (TransactionIdIsValid(*xmin) && !TransactionIdIsNormal(*xmin))
 		{
 			/*
 			 * Pg emits an ERROR if you try to pass FrozenTransactionId (2)
@@ -391,6 +391,7 @@ get_tuple_origin(HeapTuple local_tuple, TransactionId *xmin,
 			 */
 			*local_origin = InvalidRepOriginId;
 			*local_ts = 0;
+			return false;
 		}
 		else
 			return TransactionIdGetCommitTsData(*xmin, local_ts, local_origin);
