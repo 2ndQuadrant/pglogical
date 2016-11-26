@@ -245,4 +245,4 @@ LANGUAGE c AS 'MODULE_PATHNAME';
 CREATE FUNCTION pglogical_min_proto_version() RETURNS integer
 LANGUAGE c AS 'MODULE_PATHNAME';
 
-
+GRANT USAGE ON SCHEMA pglogical TO public;
