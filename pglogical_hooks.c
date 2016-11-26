@@ -46,7 +46,7 @@
 #include "fmgr.h"
 #include "miscadmin.h"
 
-PGDLLEXPORT extern Datum pglogical_hooks_setupn(PG_FUNCTION_ARGS);
+PGDLLEXPORT extern Datum pglogical_hooks_setup(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(pglogical_hooks_setup);
 
 void pglogical_startup_hook(struct PGLogicalStartupHookArgs *startup_args);
