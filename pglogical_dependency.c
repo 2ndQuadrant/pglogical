@@ -31,7 +31,6 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_collation_fn.h"
 #include "catalog/pg_constraint.h"
-#include "catalog/pg_constraint_fn.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_conversion_fn.h"
 #include "catalog/pg_database.h"
@@ -40,18 +39,15 @@
 #include "catalog/pg_extension.h"
 #include "catalog/pg_foreign_data_wrapper.h"
 #include "catalog/pg_foreign_server.h"
-#include "catalog/pg_init_privs.h"
 #include "catalog/pg_language.h"
 #include "catalog/pg_largeobject.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_operator.h"
 #include "catalog/pg_opfamily.h"
-#include "catalog/pg_policy.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_rewrite.h"
 #include "catalog/pg_tablespace.h"
-#include "catalog/pg_transform.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
@@ -63,7 +59,6 @@
 #include "commands/defrem.h"
 #include "commands/event_trigger.h"
 #include "commands/extension.h"
-#include "commands/policy.h"
 #include "commands/proclang.h"
 #include "commands/schemacmds.h"
 #include "commands/seclabel.h"
@@ -207,8 +202,8 @@ static const Oid object_classes[] = {
 	DefaultAclRelationId,		/* OCLASS_DEFACL */
 	ExtensionRelationId,		/* OCLASS_EXTENSION */
 	EventTriggerRelationId,		/* OCLASS_EVENT_TRIGGER */
-	PolicyRelationId,			/* OCLASS_POLICY */
-	TransformRelationId			/* OCLASS_TRANSFORM */
+//	PolicyRelationId,			/* OCLASS_POLICY */
+//	TransformRelationId			/* OCLASS_TRANSFORM */
 };
 
 typedef struct ObjectDescription {
@@ -469,7 +464,9 @@ findDependentObjects(const ObjectAddress *object,
 		{
 			case DEPENDENCY_NORMAL:
 			case DEPENDENCY_AUTO:
+#if PG_VERSION_NUM >= 90600
 			case DEPENDENCY_AUTO_EXTENSION:
+#endif
 				/* no problem */
 				break;
 			case DEPENDENCY_INTERNAL:
@@ -669,9 +666,11 @@ findDependentObjects(const ObjectAddress *object,
 				subflags = DEPFLAG_NORMAL;
 				break;
 			case DEPENDENCY_AUTO:
+#if PG_VERSION_NUM >= 90600
 			case DEPENDENCY_AUTO_EXTENSION:
 				subflags = DEPFLAG_AUTO;
 				break;
+#endif
 			case DEPENDENCY_INTERNAL:
 				subflags = DEPFLAG_INTERNAL;
 				break;
@@ -1186,6 +1185,7 @@ find_expr_references_walker(Node *node,
 										   context->addrs);
 					break;
 
+#if PG_VERSION_NUM >= 90500
 				case REGNAMESPACEOID:
 					objoid = DatumGetObjectId(con->constvalue);
 					if (SearchSysCacheExists1(NAMESPACEOID,
@@ -1203,6 +1203,7 @@ find_expr_references_walker(Node *node,
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							 errmsg("constant of the type \"regrole\" cannot be used here")));
 					break;
+#endif
 			}
 		}
 		return false;
@@ -1359,6 +1360,7 @@ find_expr_references_walker(Node *node,
 		add_object_address(OCLASS_TYPE, cd->resulttype, 0,
 						   context->addrs);
 	}
+#if PG_VERSION_NUM >= 90500
 	else if (IsA(node, OnConflictExpr))
 	{
 		OnConflictExpr *onconflict = (OnConflictExpr *) node;
@@ -1368,6 +1370,7 @@ find_expr_references_walker(Node *node,
 							   context->addrs);
 		/* fall through to examine arguments */
 	}
+#endif
 	else if (IsA(node, SortGroupClause))
 	{
 		SortGroupClause *sgc = (SortGroupClause *) node;
@@ -1502,6 +1505,7 @@ find_expr_references_walker(Node *node,
 								   context->addrs);
 		}
 	}
+#if PG_VERSION_NUM >= 90500
 	else if (IsA(node, TableSampleClause))
 	{
 		TableSampleClause *tsc = (TableSampleClause *) node;
@@ -1510,6 +1514,7 @@ find_expr_references_walker(Node *node,
 						   context->addrs);
 		/* fall through to examine arguments */
 	}
+#endif
 
 	return expression_tree_walker(node, find_expr_references_walker,
 								  (void *) context);
@@ -1615,12 +1620,6 @@ add_object_address(ObjectClass oclass, Oid objectId, int32 subId,
 				   ObjectAddresses *addrs)
 {
 	ObjectAddress *item;
-
-	/*
-	 * Make sure object_classes is kept up to date with the ObjectClass enum.
-	 */
-	StaticAssertStmt(lengthof(object_classes) == LAST_OCLASS + 1,
-					 "object_classes[] must cover all ObjectClasses");
 
 	/* enlarge array if needed */
 	if (addrs->numrefs >= addrs->maxrefs)
