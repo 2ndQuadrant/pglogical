@@ -477,19 +477,19 @@ side.
 On the provider the row filtering can be done by specifying `row_filter`
 parameter for the `pglogical.replication_set_add_table` function. The
 `row_filter` is normal PostgreSQL expression which has the same limitations
-on what's allowed as the `CHECK` constaint.
+on what's allowed as the `CHECK` constraint.
 
 Simple `row_filter` would look something like `row_filter := 'id > 0'` which
 would ensure that only rows where values of `id` column is bigger than zero
 will be replicated.
 
 It's allowed to use volatile function inside `row_filter` but caution must
-be excercised with regard to writes as any expression which will do writes
+be exercised with regard to writes as any expression which will do writes
 will throw error and stop replication.
 
 It's also worth noting that the `row_filter` is running inside the replication
 session so session specific expressions such as `CURRENT_USER` will have
-values of the replication session and not the session wich did the writes.
+values of the replication session and not the session which did the writes.
 
 #### Row Filtering on Subscriber
 
@@ -498,7 +498,7 @@ On the subscriber the row based filtering can be implemented using standard
 
 It is required to mark any such triggers as either `ENABLE REPLICA` or
 `ENABLE ALWAYS` otherwise they will not be executed by the replication
-proccess.
+process.
 
 ## Conflicts
 
@@ -598,7 +598,7 @@ nodes and all slots are caught up before making schema changes.
 
 ### FOREIGN KEYS
 
-Foreign keys constaints are not enforced for the replication process - what
+Foreign keys constraints are not enforced for the replication process - what
 succeeds on provider side gets applied to subscriber even if the `FOREIGN KEY`
 would be violated.
 
