@@ -363,6 +363,10 @@ The following functions are provided for managing the replication sets:
     default
   - `row_filter` - row filtering expression, default NULL (no filtering),
     see [Row Filtering](#row-filtering) for more info
+  **WARNING: Use caution when synchronizing data with a valid row filter.**
+Using `synchronize_data=true` with a valid `row_filter` is like a one-time operation for a table.
+Executing it again with modified `row_filter` won't synchronize data to subscriber. Subscribers
+may need to call `pglogical.alter_subscription_resynchronize_table()` to fix it.
 
 - `pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize_data boolean)`
   Adds all tables in given schemas. Only existing tables are added, table that
