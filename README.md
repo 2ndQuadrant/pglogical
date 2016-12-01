@@ -362,7 +362,7 @@ The following functions are provided for managing the replication sets:
     should be replicated replicated this will be set to NULL which is the
     default
   - `row_filter` - row filtering expression, default NULL (no filtering),
-    see [Row Filtering](#row-filtering) for more info
+    see [Row Filtering](#row-filtering) for more info.
   **WARNING: Use caution when synchronizing data with a valid row filter.**
 Using `synchronize_data=true` with a valid `row_filter` is like a one-time operation for a table.
 Executing it again with modified `row_filter` won't synchronize data to subscriber. Subscribers
