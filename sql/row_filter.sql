@@ -32,6 +32,10 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
 -- fail -- not coercable to bool
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'data');
 
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id between 2 AND 4$rf$);
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := NULL);
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
 -- use this filter for rest of the test
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
 

@@ -43,6 +43,30 @@ ERROR:  column "foobar" does not exist
 -- fail -- not coercable to bool
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'data');
 ERROR:  argument of row_filter must be type boolean, not type text
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id between 2 AND 4$rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := NULL);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
 -- use this filter for rest of the test
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
  replication_set_add_table 
