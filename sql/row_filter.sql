@@ -81,14 +81,33 @@ UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval 
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
 DELETE FROM basic_dml WHERE id = 3;
 INSERT INTO basic_dml VALUES (3, 99, 'bazbaz', '2 years 1 hour'::interval);
-UPDATE basic_dml SET data = 'baz' WHERE id = 3;
+INSERT INTO basic_dml VALUES (7, 100, 'bazbaz', '2 years 1 hour'::interval);
+UPDATE basic_dml SET data = 'baz' WHERE id in (3,7);
+-- This update would be filtered at subscriber
+SELECT * from basic_dml ORDER BY id;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+
 \c :subscriber_dsn
 SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
 
--- delete one row
 \c :provider_dsn
-DELETE FROM basic_dml WHERE id = 2;
+UPDATE basic_dml SET data = 'bar' WHERE id = 3;
+-- This update would again start to be received at subscriber
+DELETE FROM basic_dml WHERE data = 'baz';
+-- Delete reaches the subscriber for a filtered row
+INSERT INTO basic_dml VALUES (6, 100, 'baz', '2 years 1 hour'::interval);
+-- insert would be filtered
+SELECT * from basic_dml ORDER BY id;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+
+\c :subscriber_dsn
+SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
+
+\c :provider_dsn
+UPDATE basic_dml SET data = 'bar' WHERE id = 6;
+UPDATE basic_dml SET data = 'abcd' WHERE id = 6;
+-- These updates would continue to be missed on subscriber
+-- as it does not have the primary key
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
