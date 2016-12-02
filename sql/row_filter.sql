@@ -20,6 +20,20 @@ $$);
 5003,4,ddd,4 days
 \.
 
+-- create some functions:
+CREATE FUNCTION funcn_add(integer, integer) RETURNS integer
+    AS 'select $1 + $2;'
+    LANGUAGE SQL
+    IMMUTABLE
+    RETURNS NULL ON NULL INPUT;
+
+create function funcn_nochange(text) returns text
+  as 'select $1 limit 1' language sql stable;
+
+create or replace function funcn_get_curr_decade() returns integer as
+$$ (SELECT EXTRACT(DECADE FROM NOW()):: integer); $$
+language sql volatile;
+
 -- we allow volatile functions, it's user's responsibility to not do writes
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'current_user = data');
 SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
@@ -35,6 +49,12 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id between 2 AND 4$rf$);
 SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := NULL);
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id > funcn_add(1,2) $rf$);
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$data = funcn_nochange('baz') $rf$);
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$ other > funcn_get_curr_decade()  $rf$);
 SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
 -- use this filter for rest of the test
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
@@ -144,6 +164,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 \set VERBOSITY terse
+DROP FUNCTION funcn_add(integer, integer);
+DROP FUNCTION funcn_nochange(text);
+DROP FUNCTION funcn_get_curr_decade();
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
 $$);

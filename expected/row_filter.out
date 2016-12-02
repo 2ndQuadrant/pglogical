@@ -17,6 +17,17 @@ $$);
 
 -- used to check if initial copy does row filtering
 \COPY basic_dml FROM STDIN WITH CSV
+-- create some functions:
+CREATE FUNCTION funcn_add(integer, integer) RETURNS integer
+    AS 'select $1 + $2;'
+    LANGUAGE SQL
+    IMMUTABLE
+    RETURNS NULL ON NULL INPUT;
+create function funcn_nochange(text) returns text
+  as 'select $1 limit 1' language sql stable;
+create or replace function funcn_get_curr_decade() returns integer as
+$$ (SELECT EXTRACT(DECADE FROM NOW()):: integer); $$
+language sql volatile;
 -- we allow volatile functions, it's user's responsibility to not do writes
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := 'current_user = data');
  replication_set_add_table 
@@ -56,6 +67,42 @@ SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
 (1 row)
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := NULL);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$id > funcn_add(1,2) $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$data = funcn_nochange('baz') $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, row_filter := $rf$ other > funcn_get_curr_decade()  $rf$);
  replication_set_add_table 
 ---------------------------
  t
@@ -299,6 +346,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 \set VERBOSITY terse
+DROP FUNCTION funcn_add(integer, integer);
+DROP FUNCTION funcn_nochange(text);
+DROP FUNCTION funcn_get_curr_decade();
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
 $$);
