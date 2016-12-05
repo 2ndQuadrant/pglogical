@@ -95,11 +95,106 @@ SELECT * FROM test_trg_hist;
 
 DROP TABLE test_trg_hist CASCADE;
 \c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+        CREATE TABLE public.basic_dml (
+                id serial primary key,
+                other integer,
+                data text,
+                something interval
+        );
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+-- create row filter trigger
+CREATE FUNCTION filter_basic_dml_fn() RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP in ('UPDATE', 'INSERT')) THEN
+-- treating 'DELETE' as pass-through
+        IF (NEW.id > 1 AND NEW.data IS DISTINCT FROM 'baz' AND NEW.data IS DISTINCT FROM 'bbb') THEN
+            RETURN NEW;
+        ELSE
+            RETURN NULL;
+        END IF;
+    ELSE
+        RAISE WARNING 'Unknown action';
+        RETURN NULL;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER filter_basic_dml_trg
+BEFORE INSERT OR UPDATE ON basic_dml
+FOR EACH ROW EXECUTE PROCEDURE filter_basic_dml_fn();
+\c :provider_dsn
+-- insert into table at provider
+\COPY basic_dml FROM STDIN WITH CSV
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+-- rows received at suscriber as trigger is not enabled yet.
+SELECT * from basic_dml ORDER BY id;
+  id  | other | data | something 
+------+-------+------+-----------
+ 5000 |     1 | aaa  | @ 1 hour
+ 5001 |     2 | bbb  | @ 2 years
+ 5002 |     3 | ccc  | @ 3 mins
+ 5003 |     4 | ddd  | @ 4 days
+(4 rows)
+
+-- Now enable trigger:
+ALTER TABLE basic_dml ENABLE REPLICA TRIGGER filter_basic_dml_trg;
+\c :provider_dsn
+TRUNCATE basic_dml;
+-- check basic insert replication
+INSERT INTO basic_dml(other, data, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval),
+       (3, 'baz', '2 years 1 hour'::interval),
+       (2, 'qux', '8 months 2 days'::interval),
+       (1, NULL, NULL);
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+-- rows filtered at suscriber as trigger is enabled.
+SELECT * from basic_dml ORDER BY id;
+ id | other | data |    something    
+----+-------+------+-----------------
+  2 |     4 | bar  | @ 84 days
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(3 rows)
+
+\c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_trg_data CASCADE;
+	DROP TABLE public.basic_dml CASCADE;
 $$);
 NOTICE:  drop cascades to public.test_trg_data membership in replication set default
+NOTICE:  drop cascades to public.basic_dml membership in replication set default
  replicate_ddl_command 
 -----------------------
  t
