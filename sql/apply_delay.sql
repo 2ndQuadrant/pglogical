@@ -18,7 +18,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}',
 	synchronize_structure := false,
 	synchronize_data := false,
-	apply_delay := int2interval(10) -- 10 seconds
+	apply_delay := int2interval(1) -- 1 second
 );
 
 DO $$
@@ -53,8 +53,11 @@ SELECT pglogical.replicate_ddl_command($$
         something interval
     );
 $$);
+-- clear old applies, from any previous tests etc.
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 INSERT INTO timestamps VALUES ('ts1', CURRENT_TIMESTAMP);
+
 SELECT * FROM pglogical.replication_set_add_table('delay', 'basic_dml1');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);

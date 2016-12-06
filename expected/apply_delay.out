@@ -18,7 +18,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}',
 	synchronize_structure := false,
 	synchronize_data := false,
-	apply_delay := int2interval(10) -- 10 seconds
+	apply_delay := int2interval(1) -- 1 second
 );
  create_subscription 
 ---------------------
@@ -80,6 +80,13 @@ $$);
  t
 (1 row)
 
+-- clear old applies, from any previous tests etc.
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
 INSERT INTO timestamps VALUES ('ts1', CURRENT_TIMESTAMP);
 SELECT * FROM pglogical.replication_set_add_table('delay', 'basic_dml1');
  replication_set_add_table 
@@ -111,14 +118,14 @@ SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
        EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))) :: integer as ddl_replicate_time;
  ddl_replicate_time 
 --------------------
-                 18
+                  1
 (1 row)
 
 SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
        EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))) :: integer as inserts_replicate_time;
  inserts_replicate_time 
 ------------------------
-                     10
+                      1
 (1 row)
 
 \c :subscriber_dsn
