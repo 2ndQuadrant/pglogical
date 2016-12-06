@@ -1,0 +1,157 @@
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+SELECT * FROM pglogical.create_replication_set('delay');
+ create_replication_set 
+------------------------
+             3064111751
+(1 row)
+
+\c :subscriber_dsn
+CREATE or REPLACE function int2interval (x integer) returns interval as
+$$ select $1*'1 sec'::interval $$
+language sql;
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription_delay',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
+	replication_sets := '{delay}',
+	forward_origins := '{}',
+	synchronize_structure := false,
+	synchronize_data := false,
+	apply_delay := int2interval(10) -- 10 seconds
+);
+ create_subscription 
+---------------------
+          1550781037
+(1 row)
+
+DO $$
+BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
+-----------+------------+--------------+--------------+-------------
+ i         | 1550781037 |              |              | r
+ f         | 3848008564 |              |              | r
+(2 rows)
+
+SELECT * FROM pglogical.show_subscription_status();
+    subscription_name    |   status    | provider_node |         provider_dsn         |                 slot_name                  |                 replication_sets                  | forward_origins 
+-------------------------+-------------+---------------+------------------------------+--------------------------------------------+---------------------------------------------------+-----------------
+ test_subscription       | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sube55bf37 | {default_insert_only,ddl_sql,repset_test,default} | 
+ test_subscription_delay | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sub5c6f0a6 | {delay}                                           | 
+(2 rows)
+
+-- Make sure we see the slot and active connection
+\c :provider_dsn
+SELECT plugin, slot_type, database, active FROM pg_replication_slots;
+      plugin      | slot_type |  database  | active 
+------------------+-----------+------------+--------
+ pglogical_output | logical   | regression | t
+ pglogical_output | logical   | regression | t
+(2 rows)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     2
+(1 row)
+
+CREATE TABLE public.timestamps (
+        id text primary key,
+        ts timestamptz
+);
+SELECT pglogical.replicate_ddl_command($$
+    CREATE TABLE public.basic_dml1 (
+        id serial primary key,
+        other integer,
+        data text,
+        something interval
+    );
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+INSERT INTO timestamps VALUES ('ts1', CURRENT_TIMESTAMP);
+SELECT * FROM pglogical.replication_set_add_table('delay', 'basic_dml1');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+INSERT INTO timestamps VALUES ('ts2', CURRENT_TIMESTAMP);
+INSERT INTO basic_dml1(other, data, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval),
+       (3, 'baz', '2 years 1 hour'::interval),
+       (2, 'qux', '8 months 2 days'::interval),
+       (1, NULL, NULL);
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+INSERT INTO timestamps VALUES ('ts3', CURRENT_TIMESTAMP);
+SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))) :: integer as ddl_replicate_time;
+ ddl_replicate_time 
+--------------------
+                 18
+(1 row)
+
+SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))) :: integer as inserts_replicate_time;
+ inserts_replicate_time 
+------------------------
+                     10
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM basic_dml1;
+ id | other | data |    something     
+----+-------+------+------------------
+  1 |     5 | foo  | @ 1 min
+  2 |     4 | bar  | @ 84 days
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(5 rows)
+
+SELECT pglogical.drop_subscription('test_subscription_delay');
+ drop_subscription 
+-------------------
+                 1
+(1 row)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT * FROM pglogical.drop_replication_set('delay');
+ drop_replication_set 
+----------------------
+ t
+(1 row)
+
+DROP TABLE public.timestamps CASCADE;
+SELECT pglogical.replicate_ddl_command($$
+    DROP TABLE public.basic_dml1 CASCADE;
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+

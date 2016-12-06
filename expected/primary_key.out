@@ -64,7 +64,7 @@ SELECT * FROM pk_users;
 
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress1' WHERE id=1;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
  
@@ -107,14 +107,8 @@ NOTICE:  ALTER TABLE / ADD CONSTRAINT USING INDEX will rename index "another_id_
 Indexes:
     "pk_users_pkey" PRIMARY KEY, btree (another_id)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
- pg_xlog_wait_remote_apply 
----------------------------
- 
-(1 row)
-
 UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
  
@@ -144,7 +138,7 @@ SELECT * FROM pk_users;
 
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress3' WHERE another_id=12;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
  
@@ -162,7 +156,7 @@ SELECT * FROM pk_users;
 
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress4' WHERE a_id=2;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
  
@@ -276,7 +270,7 @@ BEGIN
 END;
 $$;
 UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
  

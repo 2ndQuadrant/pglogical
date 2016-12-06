@@ -37,7 +37,7 @@ SELECT * FROM pk_users;
 
 UPDATE pk_users SET address='UpdatedAddress1' WHERE id=1;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
@@ -55,10 +55,8 @@ ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_another_id_key;
 $$);
 
 \d+ pk_users;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
-
 UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 \d+ pk_users;
@@ -67,7 +65,7 @@ SELECT * FROM pk_users;
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress3' WHERE another_id=12;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
@@ -76,7 +74,7 @@ SELECT * FROM pk_users;
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress4' WHERE a_id=2;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
@@ -135,7 +133,7 @@ BEGIN
 END;
 $$;
 UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT * FROM pk_users;
