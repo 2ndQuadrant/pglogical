@@ -350,7 +350,7 @@ The following functions are provided for managing the replication sets:
   Parameters:
   - `set_name` - name of the existing replication set
 
-- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, att_list text[], row_filter text)`
+- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, columns text[], row_filter text)`
   Adds a table to replication set.
 
   Parameters:
@@ -358,8 +358,8 @@ The following functions are provided for managing the replication sets:
   - `relation` - name or OID of the table to be added to the set
   - `synchronize_data` - if true, the table data is synchronized on all
     subscribers which are subscribed to given replication set, default false
-  - `att_list` - list of columns to replicate, normally when all columns
-    should be replicated replicated this will be set to NULL which is the
+  - `columns` - list of columns to replicate. Normally when all columns
+    should be replicated, this will be set to NULL which is the
     default
   - `row_filter` - row filtering expression, default NULL (no filtering),
     see [Row Filtering](#row-filtering) for more info.
@@ -394,7 +394,7 @@ may need to call `pglogical.alter_subscription_resynchronize_table()` to fix it.
   Parameters:
   - `set_name` - name of the existing replication set
   - `relation` - name or OID of the sequence to be added to the set
-  - `synchronize_data` - if true, the the sequence value will be synchronized immediately, default false
+  - `synchronize_data` - if true, the sequence value will be synchronized immediately, default false
 
 - `pglogical.replication_set_add_all_sequences(set_name name, schema_names text[], synchronize_data boolean)`
   Adds all sequences from the given schemas. Only existing sequences are added, any sequences that
@@ -404,7 +404,7 @@ may need to call `pglogical.alter_subscription_resynchronize_table()` to fix it.
   - `set_name` - name of the existing replication set
   - `schema_names` - array of names name of existing schemas from which tables
     should be added
-  - `synchronize_data` - if true, the the sequence value will be synchronized immediately, default false
+  - `synchronize_data` - if true, the sequence value will be synchronized immediately, default false
 
 - `pglogical.replication_set_remove_sequence(set_name name, relation regclass)`
   Remove a sequence from a replication set.
@@ -521,7 +521,7 @@ The configuration of the conflicts resolver is done via the
 - `keep_local` - keep the local version of the data and ignore the conflicting
   change that is coming from the remote node
 - `last_update_wins` - the version of data with newest commit timestamp will be
-  be kept (this can be either local or remote version)
+  kept (this can be either local or remote version)
 - `first_update_wins` - the version of the data with oldest timestamp will be
   kept (this can be either local or remote version)
 
@@ -562,7 +562,7 @@ If more than one upstream is configured or the downstream accepts local writes
 then only one `UNIQUE` index should be present on downstream replicated tables.
 Conflict resolution can only use one index at a time so conflicting rows may
 `ERROR` if a row satisfies the `PRIMARY KEY` but violates a `UNIQUE` constraint
-on on the downstream side. This will stop replication until the downstream table
+on the downstream side. This will stop replication until the downstream table
 is modified to remove the violation.
 
 It's fine to have extra unique constraints on an upstream if the downstream only
@@ -594,7 +594,7 @@ before making schema changes, or use the `pglogical.replicate_ddl_command`
 function to queue schema changes so they're replayed at a consistent point
 on the replica.
 
-Once multi-master replication support is added then then using
+Once multi-master replication support is added then using
 `pglogical.replicate_ddl_command` will not be enough, as the subscriber may be
 generating new xacts with the old structure after the schema change is
 committed on the publisher. Users will have to ensure writes are stopped on all
@@ -623,13 +623,13 @@ The state of sequences added to replication sets is replicated periodically
 and not in real-time. Dynamic buffer is used for the value being replicated so
 that the subscribers actually receive future state of the sequence. This
 minimizes the chance of subscriber's notion of sequence's last_value falling
-behind but does not completely eliminate the posibility.
+behind but does not completely eliminate the possibility.
 
 It might be desirable to call `synchronize_sequence` to ensure all subscribers
 have up to date information about given sequence after "big events" in the
 database such as data loading or during the online upgrade.
 
-It's generaly recommended to use `bigserial` and `bigint` types for sequences
+It's generally recommended to use `bigserial` and `bigint` types for sequences
 on multi-node systems as smaller sequences might reach end of the sequence
 space fast.
 
@@ -669,7 +669,7 @@ decoding plugin its self, such as:
 
 * Event triggers using DDL deparse to capture DDL changes as they happen and
   write them to a table to be replicated and applied on the other end; or
-* doing DDL management via tools that synchronise DDL on all nodes
+* doing DDL management via tools that synchronize DDL on all nodes
 
 ## How does pglogical differ from BDR?
 
