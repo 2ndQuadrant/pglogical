@@ -75,7 +75,27 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
 
 -- update multiple rows
 \c :provider_dsn
-UPDATE basic_dml SET other = id, data = data || id::text;
+SELECT * FROM basic_dml order by id;
+ id | other | data |    something     
+----+-------+------+------------------
+  1 |     5 | foo  | @ 1 min
+  2 |     4 | bar  | @ 84 days
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     4 |      | @ 3 days
+  5 |     1 |      | 
+(5 rows)
+
+UPDATE basic_dml SET data = data || other::text;
+SELECT * FROM basic_dml order by id;
+ id | other | data |    something     
+----+-------+------+------------------
+  1 |     5 | foo5 | @ 1 min
+  2 |     4 | bar4 | @ 84 days
+  3 |     3 | baz3 | @ 2 years 1 hour
+  4 |     4 |      | @ 3 days
+  5 |     1 |      | 
+(5 rows)
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
@@ -86,11 +106,40 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT id, data, something FROM basic_dml ORDER BY id;
  id | data |    something     
 ----+------+------------------
-  1 | foo1 | @ 1 min
-  2 | bar2 | @ 84 days
+  1 | foo5 | @ 1 min
+  2 | bar4 | @ 84 days
   3 | baz3 | @ 2 years 1 hour
   4 |      | @ 3 days
   5 |      | 
+(5 rows)
+
+\c :provider_dsn
+UPDATE basic_dml SET other = id, data = data || id::text;
+SELECT * FROM basic_dml order by id;
+ id | other | data  |    something     
+----+-------+-------+------------------
+  1 |     1 | foo51 | @ 1 min
+  2 |     2 | bar42 | @ 84 days
+  3 |     3 | baz33 | @ 2 years 1 hour
+  4 |     4 |       | @ 3 days
+  5 |     5 |       | 
+(5 rows)
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, data, something FROM basic_dml ORDER BY id;
+ id | data  |    something     
+----+-------+------------------
+  1 | foo51 | @ 1 min
+  2 | bar42 | @ 84 days
+  3 | baz33 | @ 2 years 1 hour
+  4 |       | @ 3 days
+  5 |       | 
 (5 rows)
 
 \c :provider_dsn
@@ -104,13 +153,13 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT id, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
- id | data |     something      | subonly | subonly_def 
-----+------+--------------------+---------+-------------
-  1 | foo1 | @ 50 secs          |         |          99
-  2 | bar2 | @ 84 days -10 secs |         |          99
-  3 | baz3 | @ 2 years 1 hour   |         |          99
-  4 |      | @ 3 days 10 secs   |         |          99
-  5 |      |                    |         |          99
+ id | data  |     something      | subonly | subonly_def 
+----+-------+--------------------+---------+-------------
+  1 | foo51 | @ 50 secs          |         |          99
+  2 | bar42 | @ 84 days -10 secs |         |          99
+  3 | baz33 | @ 2 years 1 hour   |         |          99
+  4 |       | @ 3 days 10 secs   |         |          99
+  5 |       |                    |         |          99
 (5 rows)
 
 -- delete one row
@@ -124,12 +173,12 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
- id | data |    something     
-----+------+------------------
-  1 | foo1 | @ 50 secs
-  3 | baz3 | @ 2 years 1 hour
-  4 |      | @ 3 days 10 secs
-  5 |      | 
+ id | data  |    something     
+----+-------+------------------
+  1 | foo51 | @ 50 secs
+  3 | baz33 | @ 2 years 1 hour
+  4 |       | @ 3 days 10 secs
+  5 |       | 
 (4 rows)
 
 -- delete multiple rows

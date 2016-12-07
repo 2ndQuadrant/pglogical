@@ -52,6 +52,12 @@ Indexes:
     "pk_users_pkey" PRIMARY KEY, btree (id)
     "pk_users_another_id_key" UNIQUE CONSTRAINT, btree (another_id)
 
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
 \c :subscriber_dsn
 SELECT * FROM pk_users;
  id | another_id | a_id | name  | address  

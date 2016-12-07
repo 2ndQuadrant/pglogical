@@ -46,7 +46,16 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
 
 -- update multiple rows
 \c :provider_dsn
+SELECT * FROM basic_dml order by id;
+UPDATE basic_dml SET data = data || other::text;
+SELECT * FROM basic_dml order by id;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+\c :subscriber_dsn
+SELECT id, data, something FROM basic_dml ORDER BY id;
+
+\c :provider_dsn
 UPDATE basic_dml SET other = id, data = data || id::text;
+SELECT * FROM basic_dml order by id;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;

@@ -28,6 +28,7 @@ INSERT INTO pk_users VALUES(4,14,2,'User4', 'Address4');
 SELECT * FROM pk_users;
 
 \d+ pk_users;
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
