@@ -55,8 +55,9 @@ PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat94))
 OBJS += $(srcdir)/compat94/pglogical_compat.o
 DATA += compat94/pglogical_origin.control compat94/pglogical_origin--1.0.0.sql
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
-		  toasted replication_set add_table matview primary_key foreign_key \
-		  functions copy triggers parallel drop
+                  toasted replication_set add_table matview primary_key foreign_key \
+                  functions copy triggers parallel row_filter \
+                  att_list apply_delay drop
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump

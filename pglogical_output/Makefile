@@ -6,7 +6,7 @@ OBJS = pglogical_output.o pglogical_hooks.o pglogical_config.o \
 	   pglogical_proto_json.o pglogical_relmetacache.o \
 	   pglogical_infofuncs.o
 
-REGRESS = prep params_native basic_native hooks_native basic_json hooks_json encoding_json extension cleanup
+REGRESS = prep params_native basic_native hooks_native basic_json hooks_json encoding_json cleanup
 
 EXTENSION = pglogical_output
 DATA = pglogical_output--1.1.0.sql
