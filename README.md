@@ -694,7 +694,7 @@ It omits some features found in BDR:
   See next point.
 
 * Global flush-to-consistent-state. Part of BDR's DDL locking is a step
-  where all nodes' queues are plugged by prevening new xacts from being
+  where all nodes' queues are plugged by preventing new xacts from being
   committed, then flushed to the peer nodes. This ensures there are no xacts in
   the queue that can't be applied once table structure has changed. pglogical
   doesn't do this so multi-master replication (where nodes replicate to each
