@@ -10,6 +10,9 @@ CREATE TABLE public.basic_dml (
 	something interval
 );
 
+-- fails as primary key is not included
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', columns := '{ data, something}');
+
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', columns := '{id, data, something}');
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
