@@ -64,8 +64,8 @@ SELECT * FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['def
 
 -- data should get replicated to subscriber
 SELECT id, data, something FROM basic_dml ORDER BY id;
- id | data | something 
-----+------+-----------
+ id | data |    something     
+----+------+------------------
   1 | foo  | @ 1 min
   2 | bar  | @ 84 days
   3 | baz  | @ 2 years 1 hour

@@ -449,11 +449,14 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 
 	/* Build COPY FROM query. */
 	resetStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s FROM stdin",
+	appendStringInfo(&query, "COPY %s.%s ",
 					 PQescapeIdentifier(origin_conn, remoterel->nspname,
 										strlen(remoterel->nspname)),
 					 PQescapeIdentifier(origin_conn, remoterel->relname,
 										strlen(remoterel->relname)));
+	if (list_length(attnamelist))
+		appendStringInfo(&query, "(%s) ", attlist.data);
+	appendStringInfoString(&query, "FROM stdin");
 
 	/* Execute COPY FROM. */
 	res = PQexec(target_conn, query.data);
