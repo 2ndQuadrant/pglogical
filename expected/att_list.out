@@ -236,6 +236,65 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
 (4 rows)
 
 \c :provider_dsn
+-- drop columns being filtered at provider
+-- even primary key can be dropped
+ALTER TABLE basic_dml DROP COLUMN id;
+ALTER TABLE basic_dml DROP COLUMN data;
+\c :subscriber_dsn
+SELECT id, data, something FROM basic_dml ORDER BY id;
+  id  | data | something 
+------+------+-----------
+ 9000 | aaa  | @ 1 hour
+ 9001 | bbb  | @ 2 years
+ 9002 | ccc  | @ 3 mins
+ 9003 | ddd  | @ 4 days
+(4 rows)
+
+\c :provider_dsn
+-- add column to table at provider
+ALTER TABLE basic_dml ADD COLUMN data1 text;
+INSERT INTO basic_dml(other, data1, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval);
+-- inserts after dropping primary key still reach the subscriber.
+UPDATE basic_dml set something = something - '10 seconds'::interval;
+DELETE FROM basic_dml WHERE other = 2;
+SELECT * FROM basic_dml ORDER BY other;
+ other |     something      | data1 
+-------+--------------------+-------
+     1 | @ 59 mins 50 secs  | 
+     3 | @ 2 mins 50 secs   | 
+     4 | @ 4 days -10 secs  | 
+     4 | @ 84 days -10 secs | bar
+     5 | @ 50 secs          | foo
+(5 rows)
+
+SELECT * FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
+ relid | nspname |  relname  |  att_list   | has_row_filter 
+-------+---------+-----------+-------------+----------------
+ 18269 | public  | basic_dml | {something} | f
+(1 row)
+
+\c :subscriber_dsn
+-- verify that columns are not automatically added for filtering unless told so.
+SELECT * FROM pglogical.show_subscription_table('test_subscription', 'basic_dml');
+ nspname |  relname  | status  
+---------+-----------+---------
+ public  | basic_dml | unknown
+(1 row)
+
+SELECT * FROM basic_dml ORDER BY id;
+  id  | data | something | subonly | subonly_def 
+------+------+-----------+---------+-------------
+    1 |      | @ 1 min   |         |          99
+    2 |      | @ 84 days |         |          99
+ 9000 | aaa  | @ 1 hour  |         |          99
+ 9001 | bbb  | @ 2 years |         |          99
+ 9002 | ccc  | @ 3 mins  |         |          99
+ 9003 | ddd  | @ 4 days  |         |          99
+(6 rows)
+
+\c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;

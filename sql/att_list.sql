@@ -104,6 +104,32 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
+-- drop columns being filtered at provider
+-- even primary key can be dropped
+ALTER TABLE basic_dml DROP COLUMN id;
+ALTER TABLE basic_dml DROP COLUMN data;
+
+\c :subscriber_dsn
+SELECT id, data, something FROM basic_dml ORDER BY id;
+
+\c :provider_dsn
+-- add column to table at provider
+ALTER TABLE basic_dml ADD COLUMN data1 text;
+INSERT INTO basic_dml(other, data1, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval);
+-- inserts after dropping primary key still reach the subscriber.
+UPDATE basic_dml set something = something - '10 seconds'::interval;
+DELETE FROM basic_dml WHERE other = 2;
+SELECT * FROM basic_dml ORDER BY other;
+SELECT * FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
+
+\c :subscriber_dsn
+-- verify that columns are not automatically added for filtering unless told so.
+SELECT * FROM pglogical.show_subscription_table('test_subscription', 'basic_dml');
+SELECT * FROM basic_dml ORDER BY id;
+
+\c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
