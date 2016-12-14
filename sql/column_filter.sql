@@ -27,7 +27,7 @@ CREATE TABLE public.basic_dml (
 	subonly integer,
 	subonly_def integer DEFAULT 99
 );
-SELECT * FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
 
 \c :provider_dsn
 -- At provider, add table to replication set, with filtered columns
@@ -37,7 +37,7 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
-SELECT * FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
 -- data should get replicated to subscriber
 SELECT id, data, something FROM basic_dml ORDER BY id;
 

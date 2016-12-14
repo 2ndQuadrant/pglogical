@@ -122,7 +122,7 @@ VALUES (5, 'foo', '1 minute'::interval),
 UPDATE basic_dml set something = something - '10 seconds'::interval;
 DELETE FROM basic_dml WHERE other = 2;
 SELECT * FROM basic_dml ORDER BY other;
-SELECT * FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
 
 \c :subscriber_dsn
 -- verify that columns are not automatically added for filtering unless told so.

@@ -269,10 +269,10 @@ SELECT * FROM basic_dml ORDER BY other;
      5 | @ 50 secs          | foo
 (5 rows)
 
-SELECT * FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
- relid | nspname |  relname  |  att_list   | has_row_filter 
--------+---------+-----------+-------------+----------------
- 18269 | public  | basic_dml | {something} | f
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml', ARRAY['default']);
+ nspname |  relname  |  att_list   | has_row_filter 
+---------+-----------+-------------+----------------
+ public  | basic_dml | {something} | f
 (1 row)
 
 \c :subscriber_dsn
