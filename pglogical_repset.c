@@ -366,7 +366,8 @@ get_table_replication_info(Oid nodeid, Relation table,
 	ScanKeyData		key[1];
 	SysScanDesc		scan;
 	HeapTuple		tuple;
-	TupleDesc		desc;
+	TupleDesc		table_desc,
+					repset_rel_desc;
 
 	if (RepSetTableHash == NULL)
 		repset_relcache_init();
@@ -416,7 +417,8 @@ get_table_replication_info(Oid nodeid, Relation table,
 							rv->schemaname, rv->relname)));
 	}
 	repset_rel = heap_open(repset_reloid, NoLock);
-	desc = RelationGetDescr(table);
+	repset_rel_desc = RelationGetDescr(repset_rel);
+	table_desc = RelationGetDescr(table);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_table_reloid,
@@ -449,20 +451,21 @@ get_table_replication_info(Oid nodeid, Relation table,
 
 				/* Uppdate replicated column map. */
 				d = heap_getattr(tuple, Anum_repset_table_att_list,
-								 desc, &isnull);
+								 repset_rel_desc, &isnull);
 				if (!isnull)
 				{
 					Datum	   *elems;
 					int			nelems, i;
 
-					deconstruct_array(DatumGetArrayTypeP(d),
+					deconstruct_array(DatumGetArrayTypePCopy(d),
 									  TEXTOID, -1, false, 'i',
 									  &elems, NULL, &nelems);
 
 					for (i = 0; i < nelems; i++)
 					{
 						const char *attname = TextDatumGetCString(elems[i]);
-						int			attnum = get_att_num_by_name(desc, attname);
+						int			attnum = get_att_num_by_name(table_desc,
+																 attname);
 
 						MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
 						entry->att_list = bms_add_member(entry->att_list,
@@ -473,7 +476,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 
 				/* Add row filter if any. */
 				d = heap_getattr(tuple, Anum_repset_table_row_filter,
-								 desc, &isnull);
+								 repset_rel_desc, &isnull);
 				if (!isnull)
 				{
 					MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
