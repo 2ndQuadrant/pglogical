@@ -85,8 +85,6 @@ typedef struct SubscriptionTuple
 	Oid			sub_target_if;
 	bool		sub_enabled;
 	NameData	slot_name;
-	text		sub_replication_sets[1];
-	text		sub_forward_origins[1];
 } SubscriptionTuple;
 
 #define Natts_subscription			10
