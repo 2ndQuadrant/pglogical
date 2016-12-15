@@ -163,10 +163,32 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.test_jsonb (
+		json_type text primary key,
+		test_json jsonb
+	);
+$$);
+
+INSERT INTO test_jsonb VALUES
+('scalar','"a scalar"'),
+('array','["zero", "one","two",null,"four","five", [1,2,3],{"f1":9}]'),
+('object','{"field1":"val1","field2":"val2","field3":null, "field4": 4, "field5": [1,2,3], "field6": {"f1":9}}');
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'test_jsonb', true, row_filter := $rf$test_json ->> 'field2' IS DISTINCT FROM 'val2' $rf$);
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+
+\c :subscriber_dsn
+
+SELECT * FROM test_jsonb ORDER BY json_type;
+
+\c :provider_dsn
 \set VERBOSITY terse
 DROP FUNCTION funcn_add(integer, integer);
 DROP FUNCTION funcn_nochange(text);
 DROP FUNCTION funcn_get_curr_decade();
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
+	DROP TABLE public.test_jsonb CASCADE;
 $$);
