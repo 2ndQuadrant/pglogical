@@ -203,7 +203,7 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 
 		if (status == BGWH_STARTED && pglogical_worker_running(worker))
 		{
-			elog(DEBUG2, "%s worker at slot %ld started with pid %d and attached to shmem",
+			elog(DEBUG2, "%s worker at slot %zu started with pid %d and attached to shmem",
 				 pglogical_worker_type_name(worker->worker_type), (worker - &PGLogicalCtx->workers[0]), pid);
 			break;
 		}
@@ -241,7 +241,7 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 				 * attaching to shmem so it didn't set crashed_at. Mark it
 				 * crashed so the slot can be re-used.
 				 */
-				elog(DEBUG2, "%s worker at slot %ld exited prematurely",
+				elog(DEBUG2, "%s worker at slot %zu exited prematurely",
 					 pglogical_worker_type_name(worker->worker_type), (worker - &PGLogicalCtx->workers[0]));
 				worker->crashed_at = GetCurrentTimestamp();
 			}
@@ -252,7 +252,7 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 				 * replaced. Either way, we don't care, we're only looking for crashes before
 				 * shmem attach.
 				 */
-				elog(DEBUG2, "%s worker at slot %ld exited before we noticed it started",
+				elog(DEBUG2, "%s worker at slot %zu exited before we noticed it started",
 					 pglogical_worker_type_name(worker->worker_type), (worker - &PGLogicalCtx->workers[0]));
 			}
 			break;
@@ -336,7 +336,7 @@ pglogical_worker_detach(bool crash)
 	Assert(MyPGLogicalWorker->generation == MyPGLogicalWorkerGeneration);
 	MyPGLogicalWorker->proc = NULL;
 
-	elog(LOG, "%s worker [%d] at slot %ld generation %hu %s",
+	elog(LOG, "%s worker [%d] at slot %zu generation %hu %s",
 		 pglogical_worker_type_name(MyPGLogicalWorker->worker_type),
 		 MyProcPid, MyPGLogicalWorker - &PGLogicalCtx->workers[0],
 		 MyPGLogicalWorkerGeneration,
@@ -506,7 +506,7 @@ pglogical_worker_kill(PGLogicalWorker *worker)
 	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
 	if (pglogical_worker_running(worker))
 	{
-		elog(DEBUG2, "killing pglogical %s worker [%d] at slot %ld",
+		elog(DEBUG2, "killing pglogical %s worker [%d] at slot %zu",
 			 pglogical_worker_type_name(worker->worker_type),
 			 worker->proc->pid, (worker - &PGLogicalCtx->workers[0]));
 		kill(worker->proc->pid, SIGTERM);
