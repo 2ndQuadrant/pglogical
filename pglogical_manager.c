@@ -156,7 +156,7 @@ manage_apply_workers(void)
 		/* Cleanup old info about crashed apply workers. */
 		if (worker && worker->crashed_at != 0)
 		{
-			elog(DEBUG2, "cleaning pglogical worker slot %ld",
+			elog(DEBUG2, "cleaning pglogical worker slot %zu",
 			     (worker - &PGLogicalCtx->workers[0]));
 			worker->worker_type = PGLOGICAL_WORKER_NONE;
 			worker->crashed_at = 0;
