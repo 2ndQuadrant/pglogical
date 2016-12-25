@@ -49,6 +49,8 @@
 
 #include "pglogical_fe.h"
 
+#define MAX_APPLY_DELAY 86400
+
 typedef struct RemoteInfo {
 	Oid			nodeid;
 	char	   *node_name;
@@ -98,7 +100,8 @@ static char *initialize_replication_slot(PGconn *conn, char *dbname,
 static void pglogical_subscribe(PGconn *conn, char *subscriber_name,
 								char *subscriber_dsn,
 								char *provider_connstr,
-								char *replication_sets);
+								char *replication_sets,
+								int apply_delay);
 
 static RemoteInfo *get_remote_info(PGconn* conn);
 
@@ -165,6 +168,7 @@ main(int argc, char **argv)
 			   *pg_hba_conf = NULL,
 			   *recovery_conf = NULL;
 	char	   *slot_name;
+	int			apply_delay = 0;
 	bool		use_existing_data_dir;
 	int			pg_ctl_ret,
 				logfd;
@@ -180,6 +184,7 @@ main(int argc, char **argv)
 		{"recovery-conf", required_argument, NULL, 6},
 		{"stop", no_argument, NULL, 's'},
 		{"drop-slot-if-exists", no_argument, NULL, 7},
+		{"apply-delay", required_argument, NULL, 8},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -251,6 +256,9 @@ main(int argc, char **argv)
 			case 7:
 				drop_slot_if_exists = true;
 				break;
+			case 8:
+				apply_delay = atoi(optarg);
+				break;
 			default:
 				fprintf(stderr, _("Unknown option\n"));
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
@@ -282,6 +290,12 @@ main(int argc, char **argv)
 		die(_("Provider connection must be specified.\n"));
 	if (!subscriber_connstr || !strlen(subscriber_connstr))
 		die(_("Subscriber connection must be specified.\n"));
+
+	if (apply_delay < 0)
+		die(_("Apply delay cannot be negative.\n"));
+
+	if (apply_delay > MAX_APPLY_DELAY)
+		die(_("Apply delay cannot be more than %d.\n"), MAX_APPLY_DELAY);
 
 	if (!replication_sets || !strlen(replication_sets))
 		replication_sets = "default,default_insert_only,ddl_sql";
@@ -422,7 +436,7 @@ main(int argc, char **argv)
 	print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s\n"), replication_sets);
 
 	pglogical_subscribe(subscriber_conn, subscriber_name, subscriber_connstr,
-						provider_connstr, replication_sets);
+						provider_connstr, replication_sets, apply_delay);
 
 	PQfinish(subscriber_conn);
 	subscriber_conn = NULL;
@@ -461,6 +475,7 @@ usage(void)
 	printf(_("  --subscriber-dsn=CONNSTR    connection string to the newly created subscriber\n"));
 	printf(_("  --provider-dsn=CONNSTR      connection string to the provider\n"));
 	printf(_("  --replication-sets=SETS     comma separated list of replication set names\n"));
+	printf(_("  --apply-delay=DELAY         apply delay in seconds (by default 0)\n"));
 	printf(_("  --drop-slot-if-exists       drop replication slot of conflicting name\n"));
 	printf(_("  -s, --stop                  stop the server once the initialization is done\n"));
 	printf(_("  -v                          increase logging verbosity\n"));
@@ -910,7 +925,8 @@ create_restore_point(PGconn *conn, char *restore_point_name)
 
 static void
 pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
-					char *provider_dsn, char *replication_sets)
+					char *provider_dsn, char *replication_sets,
+					int apply_delay)
 {
 	PQExpBufferData		query;
 	PQExpBufferData		repsets;
@@ -941,11 +957,13 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 					  "SELECT pglogical.create_subscription("
 					  "subscription_name := %s, provider_dsn := %s, "
 					  "replication_sets := %s, "
+					  "apply_delay := '%d seconds'::interval, "
 					  "synchronize_structure := false, "
 					  "synchronize_data := false);",
 					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
 					  PQescapeLiteral(conn, provider_dsn, strlen(provider_dsn)),
-					  PQescapeLiteral(conn, repsets.data, repsets.len));
+					  PQescapeLiteral(conn, repsets.data, repsets.len),
+					  apply_delay);
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
