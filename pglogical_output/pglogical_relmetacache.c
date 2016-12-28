@@ -120,7 +120,8 @@ pglogical_cache_relmeta(struct PGLogicalOutputData *data,
 										 HASH_ENTER, &found);
 	(void) MemoryContextSwitchTo(old_mctx);
 
-	if (!found)
+	/* If not found or not valid, it can't be cached. */
+	if (!found || !hentry->is_valid)
 	{
 		Assert(hentry->relid = RelationGetRelid(rel));
 		hentry->is_cached = false;
