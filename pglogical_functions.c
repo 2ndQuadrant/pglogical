@@ -1824,6 +1824,8 @@ pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 	if (res != SPI_OK_SELECT)
 		elog(ERROR, "SPI query failed: %d", res);
 
+	pglogical_initObjectDescriptions();
+
 	for (i = 0; i < SPI_processed; i++)
 	{
 		ObjectAddress	object;

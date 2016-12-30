@@ -71,6 +71,7 @@
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
@@ -245,6 +246,7 @@ static void deleteOneObjectDepencencyRecord(const ObjectAddress *object, Relatio
 static void deleteOneObject(const ObjectAddress *object, Relation *depRel);
 static void doDeletion(const ObjectAddress *object);
 
+static char *pglogical_getObjectDescription(const ObjectAddress *object);
 
 /*
  * Go through the objects given running the final actions on them, and execute
@@ -1969,7 +1971,7 @@ get_pglogical_depend_rel_oid(void)
  * cache, our own knowledge of pglogical objects and finally standard postgres
  * way.
  */
-char *
+static char *
 pglogical_getObjectDescription(const ObjectAddress *object)
 {
 	ListCell	   *lc;
@@ -2019,13 +2021,23 @@ pglogical_getObjectDescription(const ObjectAddress *object)
 }
 
 /*
+ * Cleanup the object description cache.
+ */
+void
+pglogical_initObjectDescriptions(void)
+{
+	object_descriptions = NIL;
+}
+
+/*
  * Add description for an object to our object description cache.
  */
 void
 pglogical_pushObjectDescription(const ObjectAddress *object, char *description)
 {
-	ObjectDescription   *desc = palloc(sizeof(ObjectDescription));
+	ObjectDescription  *desc;
 
+	desc = palloc(sizeof(ObjectDescription));
 	memcpy(&desc->object, object, sizeof(ObjectAddress));
 	desc->description = pstrdup(description);
 
