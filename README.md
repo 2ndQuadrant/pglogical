@@ -529,6 +529,11 @@ When `track_commit_timestamp` is disabled, the only allowed value is
 `apply_remote`. As `track_commit_timestamp` is not available in PostgreSQL 9.4
 `pglogical.conflict_resolution` can only be `apply_remote` (default)
 
+The resolved conflicts are logged using the log level set using
+`pglogical.conflict_log_level`. This parameter defaults to `LOG`. If set to
+lower level than `log_min_messages` the resolved conflicts won't appear in
+the server log.
+
 ## Limitations and restrictions
 
 ### Superuser is required
