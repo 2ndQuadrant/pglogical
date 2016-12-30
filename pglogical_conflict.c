@@ -40,7 +40,8 @@
 #include "pglogical_proto.h"
 #include "pglogical_conflict.h"
 
-int      pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
+int		pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
+int		pglogical_conflict_log_level = LOG;
 
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
@@ -507,7 +508,7 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 	{
 		case CONFLICT_INSERT_INSERT:
 		case CONFLICT_UPDATE_UPDATE:
-			ereport(LOG,
+			ereport(pglogical_conflict_log_level,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
 					 errmsg("CONFLICT: remote %s on relation %s. Resolution: %s.",
 							CONFLICT_INSERT_INSERT ? "INSERT" : "UPDATE",
@@ -517,7 +518,7 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 			break;
 		case CONFLICT_UPDATE_DELETE:
 		case CONFLICT_DELETE_DELETE:
-			ereport(LOG,
+			ereport(pglogical_conflict_log_level,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
 					 errmsg("CONFLICT: remote %s on relation %s (tuple not found). Resolution: %s.",
 							CONFLICT_UPDATE_DELETE ? "UPDATE" : "DELETE",
@@ -547,4 +548,3 @@ pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 
 	return true;
 }
-

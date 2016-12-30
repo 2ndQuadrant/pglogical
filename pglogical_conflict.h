@@ -38,6 +38,7 @@ typedef enum
 } PGLogicalResolveOption;
 
 extern int pglogical_conflict_resolver;
+extern int pglogical_conflict_log_level;
 
 typedef enum PGLogicalConflictType
 {

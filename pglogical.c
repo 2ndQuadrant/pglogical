@@ -64,6 +64,24 @@ static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{NULL, 0, false}
 };
 
+/* copied fom guc.c */
+static const struct config_enum_entry server_message_level_options[] = {
+	{"debug", DEBUG2, true},
+	{"debug5", DEBUG5, false},
+	{"debug4", DEBUG4, false},
+	{"debug3", DEBUG3, false},
+	{"debug2", DEBUG2, false},
+	{"debug1", DEBUG1, false},
+	{"info", INFO, false},
+	{"notice", NOTICE, false},
+	{"warning", WARNING, false},
+	{"error", ERROR, false},
+	{"log", LOG, false},
+	{"fatal", FATAL, false},
+	{"panic", PANIC, false},
+	{NULL, 0, false}
+};
+
 bool	pglogical_synchronous_commit = false;
 char   *pglogical_temp_directory;
 
@@ -693,6 +711,15 @@ _PG_init(void)
 							 PGC_SUSET, 0,
 							 pglogical_conflict_resolver_check_hook,
 							 NULL, NULL);
+
+	DefineCustomEnumVariable("pglogical.conflict_log_level",
+							 gettext_noop("Sets log level used for logging resolved conflicts."),
+							 NULL,
+							 &pglogical_conflict_log_level,
+							 LOG,
+							 server_message_level_options,
+							 PGC_SUSET, 0,
+							 NULL, NULL, NULL);
 
 	DefineCustomBoolVariable("pglogical.synchronous_commit",
 							 "pglogical specific synchronous commit value",
