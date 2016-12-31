@@ -208,6 +208,12 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     all changes no matter what is their origin, default is "{all}"
   - `apply_delay` - how much to delay replication, default is 0 seconds
 
+  The `subscription_name` is used as `application_name` by the replication
+  connection. This means that it's visible in the `pg_stat_replication`
+  monitoring view. It can also be used in `synchronous_standby_names` when
+  pglogical is used as part of
+  [synchronous replication](#synchronous-replication) setup.
+
 - `pglogical.drop_subscription(subscription_name name, ifexists bool)`
   Disconnects the subscription and removes it from the catalog.
 
@@ -503,6 +509,16 @@ On the subscriber the row based filtering can be implemented using standard
 It is required to mark any such triggers as either `ENABLE REPLICA` or
 `ENABLE ALWAYS` otherwise they will not be executed by the replication
 process.
+
+## Synchronous Replication
+
+Synchronous replication is supported using same standard mechanism provided
+by PostgreSQL for physical replication.
+
+The `synchronous_commit` and `synchronous_standby_names` settings will affect
+when `COMMIT` command reports success to client if pglogical subscription
+name is used in `synchronous_standby_names`. Refer to PostgreSQL
+documentation for more info about how to configure these two variables.
 
 ## Conflicts
 
