@@ -70,10 +70,10 @@ extern void replication_set_add_table(Oid setid, Oid reloid,
 extern void replication_set_add_seq(Oid setid, Oid seqoid);
 extern List *replication_set_get_tables(Oid setid);
 extern List *replication_set_get_seqs(Oid setid);
-extern void replication_set_remove_table(Oid setid, Oid reloid,
-										 bool from_drop);
-extern void replication_set_remove_seq(Oid setid, Oid reloid,
-									   bool from_drop);
+extern PGDLLEXPORT void replication_set_remove_table(Oid setid, Oid reloid,
+													 bool from_drop);
+extern PGDLLEXPORT void replication_set_remove_seq(Oid setid, Oid reloid,
+												   bool from_drop);
 
 extern List *get_table_replication_sets(Oid nodeid, Oid reloid);
 extern List *get_seq_replication_sets(Oid nodeid, Oid seqoid);

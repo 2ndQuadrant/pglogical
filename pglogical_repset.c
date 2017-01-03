@@ -88,8 +88,10 @@ typedef struct RepSetTableTuple
 {
 	Oid			setid;
 	Oid			reloid;
+#if 0 /* Only for info here. */
 	text		att_list[1];
 	text		row_filter;
+#endif
 } RepSetTableTuple;
 
 #define Natts_repset_table				4

@@ -112,7 +112,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 	 * Maintain a generation counter for worker registrations; see
 	 * wait_for_worker_startup(...). The counter wraps around.
 	 */
-	if (worker_shm->generation == UINT16_MAX)
+	if (worker_shm->generation == PG_UINT16_MAX)
 		next_generation = 0;
 	else
 		next_generation = worker_shm->generation + 1;
