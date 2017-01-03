@@ -2,8 +2,8 @@ SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
-ERROR:  cannot drop node "test_provider" because replication slot "pgl_postgres_test_provider_test_sube55bf37" on the node is still active
-HINT:  drop the subscriptions first
+ERROR:  cannot drop node "test_provider" because one or more replication slots for the node are still active
+HINT:  drop the subscriptions connected to the node first
 SELECT plugin, slot_type, active FROM pg_replication_slots;
       plugin      | slot_type | active 
 ------------------+-----------+--------

@@ -240,49 +240,40 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 		local_node = get_local_node(true, true);
 		if (local_node && local_node->node->id == node->id)
 		{
-			int		slotno;
+			int		res;
 
-			/* Also drop all the slots associated with the node. */
-			for (slotno = 0; slotno < max_replication_slots; slotno++)
+			/*
+			 * Also drop all the slots associated with the node.
+			 *
+			 * We do this via SPI mainly because ReplicationSlotCtl is not
+			 * accessible on Windows.
+			 */
+			SPI_connect();
+			PG_TRY();
 			{
-				ReplicationSlot *slot = &ReplicationSlotCtl->replication_slots[slotno];
-
-				LWLockAcquire(ReplicationSlotControlLock, LW_SHARED);
-				SpinLockAcquire(&slot->mutex);
-				/*
-				 * Check the slot is in use and it's slot belonging to current
-				 * pglogical node.
-				 */
-				if (!slot->in_use ||
-					slot->data.database != MyDatabaseId ||
-					namestrcmp(&slot->data.plugin, "pglogical_output") != 0 ||
-					strncmp(NameStr(slot->data.name), "pgl_", 4) != 0)
-				{
-					SpinLockRelease(&slot->mutex);
-					LWLockRelease(ReplicationSlotControlLock);
-					continue;
-				}
-
-#if PG_VERSION_NUM < 90500 && !defined(REPLICATIONSLOT_HAS_ACTIVE_PID)
-				if (slot->active)
-#else
-				if (slot->active_pid != 0)
-#endif
-				{
-					SpinLockRelease(&slot->mutex);
-					LWLockRelease(ReplicationSlotControlLock);
-					ereport(ERROR,
-							(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-							 errmsg("cannot drop node \"%s\" because replication slot \"%s\" on the node is still active",
-									node_name, NameStr(slot->data.name)),
-							 errhint("drop the subscriptions first")));
-				}
-				SpinLockRelease(&slot->mutex);
-				LWLockRelease(ReplicationSlotControlLock);
-
-				ReplicationSlotDrop(NameStr(slot->data.name));
+				res = SPI_execute("SELECT pg_catalog.pg_drop_replication_slot(slot_name)"
+								  "  FROM pg_catalog.pg_replication_slots"
+								  " WHERE plugin = 'pglogical_output'"
+								  "   AND database = current_database()"
+								  "   AND slot_name ~ 'pgl_.*'",
+								  false, 0);
 			}
+			PG_CATCH();
+			{
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("cannot drop node \"%s\" because one or more replication slots for the node are still active",
+								node_name),
+						 errhint("drop the subscriptions connected to the node first")));
+			}
+			PG_END_TRY();
 
+			if (res != SPI_OK_SELECT)
+				elog(ERROR, "SPI query failed: %d", res);
+
+			SPI_finish();
+
+			/* And drop the local node association as well. */
 			drop_local_node();
 		}
 

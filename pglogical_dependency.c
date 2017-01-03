@@ -510,10 +510,15 @@ findDependentObjects(const ObjectAddress *object,
 					 * extension's objects within the extension's scripts, as
 					 * well as corner cases such as dropping a transient
 					 * object created within such a script.
+					 *
+					 * Note that pglogical currently does not care about
+					 * extension dependencies and CurrentExtensionObject is
+					 * not PGDLLIMPORTed so we relax this and just skip any
+					 * extension dependencies.
 					 */
 					if (creating_extension &&
-						otherObject.classId == ExtensionRelationId &&
-						otherObject.objectId == CurrentExtensionObject)
+						otherObject.classId == ExtensionRelationId /*&&
+						otherObject.objectId == CurrentExtensionObject*/)
 						break;
 
 					/* No exception applies, so throw the error */
@@ -746,6 +751,17 @@ reportDependentObjects(const ObjectAddresses *targetObjects,
 	int			numReportedClient = 0;
 	int			numNotReportedClient = 0;
 	int			i;
+	int			my_client_min_messages;
+	int			my_log_min_messages;
+
+	/*
+	 * This is cludge for Windows (Postgres des not define the GUC variables
+	 * as PGDDLIMPORT)
+	 */
+	my_client_min_messages = atoi(GetConfigOptionByName("client_min_messages",
+														NULL, false));
+	my_log_min_messages = atoi(GetConfigOptionByName("log_min_messages",
+													 NULL, false));
 
 	/*
 	 * If no error is to be thrown, and the msglevel is too low to be shown to
@@ -757,8 +773,8 @@ reportDependentObjects(const ObjectAddresses *targetObjects,
 	 * operating environment.
 	 */
 	if (behavior == DROP_CASCADE &&
-		msglevel < client_min_messages &&
-		(msglevel < log_min_messages || log_min_messages == LOG))
+		msglevel < my_client_min_messages &&
+		(msglevel < my_log_min_messages || my_log_min_messages == LOG))
 		return;
 
 	/*

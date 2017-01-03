@@ -582,10 +582,10 @@ pglogical_subscription_changed(Oid subid)
 }
 
 static size_t
-worker_shmem_size(void)
+worker_shmem_size(int nworkers)
 {
 	return offsetof(PGLogicalContext, workers) +
-		sizeof(PGLogicalWorker) * max_worker_processes;
+		sizeof(PGLogicalWorker) * nworkers;
 }
 
 /*
@@ -595,19 +595,27 @@ static void
 pglogical_worker_shmem_startup(void)
 {
 	bool        found;
+	int			nworkers;
 
 	if (prev_shmem_startup_hook != NULL)
 		prev_shmem_startup_hook();
 
+	/*
+	 * This is cludge for Windows (Postgres des not define the GUC variable
+	 * as PGDDLIMPORT)
+	 */
+	nworkers = atoi(GetConfigOptionByName("max_worker_processes", NULL,
+										  false));
+
 	/* Init signaling context for supervisor proccess. */
-	PGLogicalCtx = ShmemInitStruct("pglogical_context", worker_shmem_size(),
-								   &found);
+	PGLogicalCtx = ShmemInitStruct("pglogical_context",
+								   worker_shmem_size(nworkers), &found);
 
 	if (!found)
 	{
 		PGLogicalCtx->lock = &(GetNamedLWLockTranche("pglogical"))->lock;
 		PGLogicalCtx->supervisor = NULL;
-		PGLogicalCtx->total_workers = max_worker_processes;
+		PGLogicalCtx->total_workers = nworkers;
 		memset(PGLogicalCtx->workers, 0,
 			   sizeof(PGLogicalWorker) * PGLogicalCtx->total_workers);
 	}
@@ -619,10 +627,19 @@ pglogical_worker_shmem_startup(void)
 void
 pglogical_worker_shmem_init(void)
 {
+	int			nworkers;
+
 	Assert(process_shared_preload_libraries_in_progress);
 
+	/*
+	 * This is cludge for Windows (Postgres des not define the GUC variable
+	 * as PGDDLIMPORT)
+	 */
+	nworkers = atoi(GetConfigOptionByName("max_worker_processes", NULL,
+										  false));
+
 	/* Allocate enough shmem for the worker limit ... */
-	RequestAddinShmemSpace(worker_shmem_size());
+	RequestAddinShmemSpace(worker_shmem_size(nworkers));
 
 	/*
 	 * We'll need to be able to take exclusive locks so only one per-db backend
