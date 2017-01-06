@@ -577,6 +577,9 @@ unique identifier.
 
 See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
 
+`REPLICA IDENTITY FULL` is not yet supported by pglogical.
+A `PRIMARY KEY` is required on tables that need to be added to the replication set.
+
 ### Only one unique index/constraint/PK
 
 If more than one upstream is configured or the downstream accepts local writes
