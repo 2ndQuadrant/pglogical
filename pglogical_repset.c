@@ -199,6 +199,7 @@ static void
 repset_relcache_init(void)
 {
 	HASHCTL		ctl;
+	int hashflags;
 
 	/* Make sure we've initialized CacheMemoryContext. */
 	if (CacheMemoryContext == NULL)
@@ -209,9 +210,23 @@ repset_relcache_init(void)
 	ctl.keysize = sizeof(Oid);
 	ctl.entrysize = sizeof(PGLogicalRepSetRelation);
 	ctl.hcxt = CacheMemoryContext;
+	hashflags = HASH_ELEM | HASH_CONTEXT;
+#if PG_VERSION_NUM < 90500
+	/*
+	 * Handle the old hash API in PostgreSQL 9.4.
+	 *
+	 * See postgres commit:
+	 *
+	 * 4a14f13a0ab Improve hash_create's API for selecting simple-binary-key hash functions.
+	 */
+	ctl.hash = oid_hash;
+	hashflags |= HASH_FUNCTION;
+#else
+	hashflags |= HASH_BLOBS;
+#endif
 
 	RepSetRelationHash = hash_create("pglogical repset relation cache", 128,
-									 &ctl, HASH_ELEM | HASH_CONTEXT);
+									 &ctl, hashflags);
 
 	/*
 	 * Watch for invalidation events fired when the relcache changes.
