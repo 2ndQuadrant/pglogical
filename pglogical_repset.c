@@ -210,8 +210,12 @@ repset_relcache_init(void)
 	ctl.entrysize = sizeof(PGLogicalRepSetRelation);
 	ctl.hcxt = CacheMemoryContext;
 
+  /* 
+   * Must pass HASH_BLOBS to use correct hashing function for Oid
+   * rather than default to hash_string
+   */
 	RepSetRelationHash = hash_create("pglogical repset relation cache", 128,
-									 &ctl, HASH_ELEM | HASH_CONTEXT);
+									 &ctl, HASH_ELEM | HASH_CONTEXT | HASH_BLOBS);
 
 	/*
 	 * Watch for invalidation events fired when the relcache changes.
