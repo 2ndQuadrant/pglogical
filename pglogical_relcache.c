@@ -237,6 +237,7 @@ static void
 pglogical_relcache_init(void)
 {
 	HASHCTL		ctl;
+	int			hashflags;
 
 	/* Make sure we've initialized CacheMemoryContext. */
 	if (CacheMemoryContext == NULL)
@@ -247,9 +248,23 @@ pglogical_relcache_init(void)
 	ctl.keysize = sizeof(uint32);
 	ctl.entrysize = sizeof(PGLogicalRelation);
 	ctl.hcxt = CacheMemoryContext;
+	hashflags = HASH_ELEM | HASH_CONTEXT;
+#if PG_VERSION_NUM < 90500
+	/*
+	 * Handle the old hash API in PostgreSQL 9.4.
+	 *
+	 * See postgres commit:
+	 *
+	 * 4a14f13a0ab Improve hash_create's API for selecting simple-binary-key hash functions.
+	 */
+	ctl.hash = uint32_hash;
+	hashflags |= HASH_FUNCTION;
+#else
+	hashflags |= HASH_BLOBS;
+#endif
 
 	PGLogicalRelationHash = hash_create("pglogical relation cache", 128, &ctl,
-										HASH_ELEM | HASH_CONTEXT);
+										hashflags);
 
 	/* Watch for invalidation events. */
 	CacheRegisterRelcacheCallback(pglogical_relcache_invalidate_callback,
