@@ -153,7 +153,9 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   Creates a node.
 
   Parameters:
-  - `node_name` - name of the new node, only one node is allowed per database
+  - `node_name` - name of the new node, only one node is allowed per database.
+   provider `node_name`s should be unique across your environment because multiple
+   subscriptions within one database are distinguished by unique provider `node_name`s.
   - `dsn` - connection string to the node, for nodes that are supposed to be
     providers, this should be reachable from outside
 
