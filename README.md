@@ -18,6 +18,7 @@ Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
 * Full database replication
 * Selective replication of sets of tables using replication sets
+* Selective replication of table rows at either publisher or subscriber side (row_filter)
 * Data gather/merge from multiple upstream servers
 
 Architectural details:
