@@ -13,6 +13,8 @@
 #ifndef PGLOGICAL_PROTO_H
 #define PGLOGICAL_PROTO_H
 
+#include "lib/stringinfo.h"
+
 #include "utils/timestamp.h"
 
 #include "pglogical_relcache.h"
