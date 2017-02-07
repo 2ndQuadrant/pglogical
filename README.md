@@ -19,6 +19,7 @@ Use cases supported are:
 * Full database replication
 * Selective replication of sets of tables using replication sets
 * Selective replication of table rows at either publisher or subscriber side (row_filter)
+* Selective replication of table columns at publisher side
 * Data gather/merge from multiple upstream servers
 
 Architectural details:
