@@ -1302,9 +1302,9 @@ fail:
 Datum
 pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 {
-	Name				repset_name = PG_GETARG_NAME(0);
-	Oid					reloid = PG_GETARG_OID(1);
-	bool				synchronize = PG_GETARG_BOOL(2);
+	Name				repset_name;
+	Oid					reloid;
+	bool				synchronize;
 	Node			   *row_filter = NULL;
 	List			   *att_list = NIL;
 	PGLogicalRepSet    *repset;
