@@ -409,8 +409,19 @@ get_local_node(bool for_update, bool missing_ok)
 	PGLogicalLocalNode *res;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_NODE, -1);
-	rel = heap_openrv(rv, for_update ?
-					  ShareUpdateExclusiveLock : RowExclusiveLock);
+	rel = heap_openrv_extended(rv, for_update ?
+							   ShareUpdateExclusiveLock : RowExclusiveLock,
+							   true);
+
+	if (!rel)
+	{
+		if (missing_ok)
+			return NULL;
+
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("local pglogical node not found")));
+	}
 
 	/* Find the local node tuple. */
 	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
@@ -429,7 +440,7 @@ get_local_node(bool for_update, bool missing_ok)
 
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("local node not found")));
+				 errmsg("local pglogical node not found")));
 	}
 
 	desc = RelationGetDescr(rel);

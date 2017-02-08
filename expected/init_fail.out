@@ -29,7 +29,7 @@ SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  local node not found
+ERROR:  local pglogical node not found
 -- succeed
 SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
  create_node 
@@ -49,7 +49,7 @@ SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  could fetch remote node info: ERROR:  local node not found
+ERROR:  could fetch remote node info: ERROR:  local pglogical node not found
 
 
 \c :provider_dsn
