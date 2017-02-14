@@ -8,16 +8,40 @@ SELECT plugin, slot_type, active FROM pg_replication_slots;
       plugin      | slot_type | active 
 ------------------+-----------+--------
  pglogical_output | logical   | t
-(1 row)
+ pglogical_output | logical   | t
+(2 rows)
 
 SELECT count(*) FROM pg_stat_replication;
  count 
 -------
-     1
+     2
+(1 row)
+
+\c :provider1_dsn
+SELECT * FROM pglogical.drop_node(node_name := 'test_provider1');
+ERROR:  cannot drop node "test_provider1" because one or more replication slots for the node are still active
+HINT:  drop the subscriptions connected to the node first
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+      plugin      | slot_type | active 
+------------------+-----------+--------
+ pglogical_output | logical   | t
+ pglogical_output | logical   | t
+(2 rows)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     2
 (1 row)
 
 \c :subscriber_dsn
 SELECT * FROM pglogical.drop_subscription('test_subscription');
+ drop_subscription 
+-------------------
+                 1
+(1 row)
+
+SELECT * FROM pglogical.drop_subscription('test_subscription1');
  drop_subscription 
 -------------------
                  1
@@ -29,8 +53,17 @@ SELECT * FROM pglogical.drop_node(node_name := 'test_subscriber');
  t
 (1 row)
 
+SELECT * FROM pglogical.drop_node(node_name := 'test_subscriber1');
+ERROR:  node test_subscriber1 not found
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
+ drop_node 
+-----------
+ t
+(1 row)
+
+\c :provider1_dsn
+SELECT * FROM pglogical.drop_node(node_name := 'test_provider1');
  drop_node 
 -----------
  t
