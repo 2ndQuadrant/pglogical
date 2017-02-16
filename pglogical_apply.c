@@ -87,14 +87,34 @@ PGLogicalSubscription	   *MySubscription = NULL;
 
 static PGconn	   *applyconn = NULL;
 
+typedef struct PGLogicalApplyFunctions
+{
+	pglogical_apply_begin_fn	on_begin;
+	pglogical_apply_commit_fn	on_commit;
+	pglogical_apply_insert_fn	do_insert;
+	pglogical_apply_update_fn	do_update;
+	pglogical_apply_delete_fn	do_delete;
+	pglogical_apply_can_mi_fn	can_multi_insert;
+	pglogical_apply_mi_add_tuple_fn	multi_insert_add_tuple;
+	pglogical_apply_mi_finish_fn	multi_insert_finish;
+} PGLogicalApplyFunctions;
+
 static PGLogicalApplyFunctions apply_api =
 {
 	.on_begin = pglogical_apply_heap_begin,
 	.on_commit = pglogical_apply_heap_commit,
 	.do_insert = pglogical_apply_heap_insert,
 	.do_update = pglogical_apply_heap_update,
-	.do_delete = pglogical_apply_heap_delete
+	.do_delete = pglogical_apply_heap_delete,
+	.can_multi_insert = NULL,
+	.multi_insert_add_tuple = NULL,
+	.multi_insert_finish = NULL
 };
+
+#define MIN_MULTI_INSERT_TUPLES 10
+static PGLogicalRelation   *last_insert_rel = NULL;
+static int					last_insert_rel_cnt = 0;
+static bool					use_multi_insert = false;
 
 typedef struct PGLFlushPosition
 {
@@ -112,6 +132,8 @@ typedef struct ApplyExecState
 	ResultRelInfo	   *resultRelInfo;
 	TupleTableSlot	   *slot;
 } ApplyExecState;
+
+static void multi_insert_finish(void);
 
 static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
 static void handle_startup_param(const char *key, const char *value);
@@ -207,6 +229,8 @@ handle_commit(StringInfo s)
 	if (IsTransactionState())
 	{
 		PGLFlushPosition *flushpos;
+
+		multi_insert_finish();
 
 		apply_api.on_commit();
 
@@ -336,6 +360,8 @@ handle_origin(StringInfo s)
 static void
 handle_relation(StringInfo s)
 {
+	multi_insert_finish();
+
 	(void) pglogical_read_rel(s);
 }
 
@@ -355,6 +381,35 @@ handle_insert(StringInfo s)
 		return;
 	}
 
+	/* Handle multi_insert capabilities. */
+	if (use_multi_insert)
+	{
+		if (rel != last_insert_rel)
+		{
+			multi_insert_finish();
+			last_insert_rel = rel;
+		}
+		else
+		{
+			apply_api.multi_insert_add_tuple(rel, &newtup);
+			pglogical_relation_close(rel, NoLock);
+			return;
+		}
+	}
+	else if (RelationGetRelid(rel->rel) != QueueRelid &&
+		apply_api.can_multi_insert &&
+		apply_api.can_multi_insert(rel))
+	{
+		if (rel != last_insert_rel)
+		{
+			last_insert_rel = rel;
+			last_insert_rel_cnt = 0;
+		}
+		else if (last_insert_rel_cnt++ > MIN_MULTI_INSERT_TUPLES)
+			use_multi_insert = true;
+	}
+
+	/* Normal insert. */
 	apply_api.do_insert(rel, &newtup);
 
 	/* if INSERT was into our queue, process the message. */
@@ -391,6 +446,17 @@ handle_insert(StringInfo s)
 	pglogical_relation_close(rel, NoLock);
 }
 
+static void
+multi_insert_finish(void)
+{
+	if (use_multi_insert)
+	{
+		apply_api.multi_insert_finish(last_insert_rel);
+		use_multi_insert = false;
+		last_insert_rel = NULL;
+		last_insert_rel_cnt = 0;
+	}
+}
 
 static void
 handle_update(StringInfo s)
@@ -401,6 +467,8 @@ handle_update(StringInfo s)
 	bool				hasoldtup;
 
 	ensure_transaction();
+
+	multi_insert_finish();
 
 	rel = pglogical_read_update(s, RowExclusiveLock, &hasoldtup, &oldtup,
 								&newtup);
@@ -424,6 +492,8 @@ handle_delete(StringInfo s)
 	PGLogicalRelation  *rel;
 
 	ensure_transaction();
+
+	multi_insert_finish();
 
 	rel = pglogical_read_delete(s, RowExclusiveLock, &oldtup);
 
@@ -1516,6 +1586,9 @@ pglogical_apply_main(Datum main_arg)
 		apply_api.do_insert = pglogical_apply_spi_insert;
 		apply_api.do_update = pglogical_apply_spi_update;
 		apply_api.do_delete = pglogical_apply_spi_delete;
+		apply_api.can_multi_insert = pglogical_apply_spi_can_mi;
+		apply_api.multi_insert_add_tuple = pglogical_apply_spi_mi_add_tuple;
+		apply_api.multi_insert_finish = pglogical_apply_spi_mi_finish;
 	}
 
 	/* Setup synchronous commit according to the user's wishes */

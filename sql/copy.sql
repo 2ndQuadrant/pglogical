@@ -32,6 +32,16 @@ COPY x (b, d) from stdin;
 3	test_3
 4	test_4
 5	test_5
+6	test_6
+7	test_7
+8	test_8
+9	test_9
+10	test_10
+11	test_11
+12	test_12
+13	test_13
+14	test_14
+15	test_15
 \.
 
 COPY x (a, b, c, d, e) from stdin;

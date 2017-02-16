@@ -33,21 +33,31 @@ COPY x (b, d) from stdin;
 COPY x (b, d) from stdin;
 COPY x (a, b, c, d, e) from stdin;
 SELECT * FROM x ORDER BY a;
-   a   | b  |   c   |   d    | e  
--------+----+-------+--------+----
-     1 |  1 | stuff | test_1 | 
-     2 |  2 | stuff | test_2 | 
-     3 |  3 | stuff | test_3 | 
-     4 |  4 | stuff | test_4 | 
-     5 |  5 | stuff | test_5 | 
-  9999 |    | \N    | NN     | 
- 10000 | 21 | 31    | 41     | 51
- 10001 | 22 | 32    | 42     | 52
- 10002 | 23 | 33    | 43     | 53
- 10003 | 24 | 34    | 44     | 54
- 10004 | 25 | 35    | 45     | 55
- 10005 | 26 | 36    | 46     | 56
-(12 rows)
+   a   | b  |   c   |    d    | e  
+-------+----+-------+---------+----
+     1 |  1 | stuff | test_1  | 
+     2 |  2 | stuff | test_2  | 
+     3 |  3 | stuff | test_3  | 
+     4 |  4 | stuff | test_4  | 
+     5 |  5 | stuff | test_5  | 
+     6 |  6 | stuff | test_6  | 
+     7 |  7 | stuff | test_7  | 
+     8 |  8 | stuff | test_8  | 
+     9 |  9 | stuff | test_9  | 
+    10 | 10 | stuff | test_10 | 
+    11 | 11 | stuff | test_11 | 
+    12 | 12 | stuff | test_12 | 
+    13 | 13 | stuff | test_13 | 
+    14 | 14 | stuff | test_14 | 
+    15 | 15 | stuff | test_15 | 
+  9999 |    | \N    | NN      | 
+ 10000 | 21 | 31    | 41      | 51
+ 10001 | 22 | 32    | 42      | 52
+ 10002 | 23 | 33    | 43      | 53
+ 10003 | 24 | 34    | 44      | 54
+ 10004 | 25 | 35    | 45      | 55
+ 10005 | 26 | 36    | 46      | 56
+(22 rows)
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
@@ -57,19 +67,29 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 SELECT * FROM x ORDER BY a;
-   a   | b  |   c   |   d    | e  
--------+----+-------+--------+----
-     1 |  1 | stuff | test_1 | 
-     2 |  2 | stuff | test_2 | 
-     3 |  3 | stuff | test_3 | 
-     4 |  4 | stuff | test_4 | 
-     5 |  5 | stuff | test_5 | 
-  9999 |    | \N    | NN     | 
- 10000 | 21 | 31    | 41     | 51
- 10001 | 22 | 32    | 42     | 52
- 10002 | 23 | 33    | 43     | 53
- 10003 | 24 | 34    | 44     | 54
- 10004 | 25 | 35    | 45     | 55
- 10005 | 26 | 36    | 46     | 56
-(12 rows)
+   a   | b  |   c   |    d    | e  
+-------+----+-------+---------+----
+     1 |  1 | stuff | test_1  | 
+     2 |  2 | stuff | test_2  | 
+     3 |  3 | stuff | test_3  | 
+     4 |  4 | stuff | test_4  | 
+     5 |  5 | stuff | test_5  | 
+     6 |  6 | stuff | test_6  | 
+     7 |  7 | stuff | test_7  | 
+     8 |  8 | stuff | test_8  | 
+     9 |  9 | stuff | test_9  | 
+    10 | 10 | stuff | test_10 | 
+    11 | 11 | stuff | test_11 | 
+    12 | 12 | stuff | test_12 | 
+    13 | 13 | stuff | test_13 | 
+    14 | 14 | stuff | test_14 | 
+    15 | 15 | stuff | test_15 | 
+  9999 |    | \N    | NN      | 
+ 10000 | 21 | 31    | 41      | 51
+ 10001 | 22 | 32    | 42      | 52
+ 10002 | 23 | 33    | 43      | 53
+ 10003 | 24 | 34    | 44      | 54
+ 10004 | 25 | 35    | 45      | 55
+ 10005 | 26 | 36    | 46      | 56
+(22 rows)
 

@@ -27,13 +27,9 @@ typedef void (*pglogical_apply_update_fn) (PGLogicalRelation *rel,
 typedef void (*pglogical_apply_delete_fn) (PGLogicalRelation *rel,
 									   PGLogicalTupleData *oldtup);
 
-typedef struct PGLogicalApplyFunctions
-{
-	pglogical_apply_begin_fn	on_begin;
-	pglogical_apply_commit_fn	on_commit;
-	pglogical_apply_insert_fn	do_insert;
-	pglogical_apply_update_fn	do_update;
-	pglogical_apply_delete_fn	do_delete;
-} PGLogicalApplyFunctions;
+typedef bool (*pglogical_apply_can_mi_fn) (PGLogicalRelation *rel);
+typedef void (*pglogical_apply_mi_add_tuple_fn) (PGLogicalRelation *rel,
+												 PGLogicalTupleData *tup);
+typedef void (*pglogical_apply_mi_finish_fn) (PGLogicalRelation *rel);
 
 #endif /* PGLOGICAL_APPLY_H */
