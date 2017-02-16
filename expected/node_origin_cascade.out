@@ -1,0 +1,199 @@
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :orig_provider_dsn
+SET client_min_messages = 'warning';
+GRANT ALL ON SCHEMA public TO nonsuper;
+CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
+AS $FUNC$
+BEGIN
+    WHILE EXISTS(SELECT true FROM pg_stat_get_wal_senders() s WHERE s.flush_location < i_pos AND (i_pid = 0 OR s.pid = i_pid)) LOOP
+		PERFORM pg_sleep(0.01);
+	END LOOP;
+END;$FUNC$ LANGUAGE plpgsql;
+SET client_min_messages = 'warning';
+DO $$
+BEGIN
+        IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
+                CREATE EXTENSION IF NOT EXISTS pglogical_origin;
+        END IF;
+END;$$;
+CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
+ALTER EXTENSION pglogical UPDATE;
+SELECT * FROM pglogical.create_node(node_name := 'test_orig_provider', dsn := (SELECT orig_provider_dsn FROM pglogical_regress_variables()) || ' user=super');
+ create_node 
+-------------
+  4029216451
+(1 row)
+
+\c :provider_dsn
+SET client_min_messages = 'warning';
+-- test_provider pglogical node already exists here.
+BEGIN;
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_orig_subscription',
+    provider_dsn := (SELECT orig_provider_dsn FROM pglogical_regress_variables()) || ' user=super',
+	synchronize_structure := false,
+	forward_origins := '{}');
+ create_subscription 
+---------------------
+          3575176667
+(1 row)
+
+COMMIT;
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
+   subscription_name    |   status    |   provider_node    |           replication_sets            | forward_origins 
+------------------------+-------------+--------------------+---------------------------------------+-----------------
+ test_orig_subscription | replicating | test_orig_provider | {default,default_insert_only,ddl_sql} | 
+(1 row)
+
+DO $$
+BEGIN
+    FOR i IN 1..300 LOOP
+        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
+-----------+------------+--------------+--------------+-------------
+ d         | 3575176667 |              |              | r
+(1 row)
+
+-- Make sure we see the slot and active connection
+\c :orig_provider_dsn
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+      plugin      | slot_type | active 
+------------------+-----------+--------
+ pglogical_output | logical   | t
+ pglogical_output | logical   | t
+ pglogical_output | logical   | t
+(3 rows)
+
+SELECT count(*) FROM pg_stat_replication;
+ count 
+-------
+     3
+(1 row)
+
+-- Table that replicates from top level provider to mid-level pglogical node.
+\c :orig_provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.top_level_tbl (
+		id serial primary key,
+		other integer,
+		data text,
+		something interval
+	);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'top_level_tbl');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO top_level_tbl(other, data, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval),
+       (3, 'baz', '2 years 1 hour'::interval),
+       (2, 'qux', '8 months 2 days'::interval),
+       (1, NULL, NULL);
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :provider_dsn
+SELECT id, other, data, something FROM top_level_tbl ORDER BY id;
+ id | other | data |    something     
+----+-------+------+------------------
+  1 |     5 | foo  | @ 1 min
+  2 |     4 | bar  | @ 84 days
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(5 rows)
+
+-- Table that replicates from top level provider to mid-level pglogical node.
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.mid_level_tbl (
+		id serial primary key,
+		other integer,
+		data text,
+		something interval
+	);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'mid_level_tbl');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO mid_level_tbl(other, data, something)
+VALUES (5, 'foo', '1 minute'::interval),
+       (4, 'bar', '12 weeks'::interval),
+       (3, 'baz', '2 years 1 hour'::interval),
+       (2, 'qux', '8 months 2 days'::interval),
+       (1, NULL, NULL);
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT id, other, data, something FROM mid_level_tbl ORDER BY id;
+ id | other | data |    something     
+----+-------+------+------------------
+  1 |     5 | foo  | @ 1 min
+  2 |     4 | bar  | @ 84 days
+  3 |     3 | baz  | @ 2 years 1 hour
+  4 |     2 | qux  | @ 8 mons 2 days
+  5 |     1 |      | 
+(5 rows)
+
+-- drop the tables
+\c :orig_provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.top_level_tbl CASCADE;
+$$);
+NOTICE:  drop cascades to public.top_level_tbl membership in replication set default
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.mid_level_tbl CASCADE;
+$$);
+NOTICE:  drop cascades to public.mid_level_tbl membership in replication set default
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+

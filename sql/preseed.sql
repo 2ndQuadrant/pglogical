@@ -1,11 +1,13 @@
 -- Indirection for connection strings
 CREATE OR REPLACE FUNCTION public.pglogical_regress_variables(
     OUT provider_dsn text,
+    OUT orig_provider_dsn text,
     OUT provider1_dsn text,
     OUT subscriber_dsn text
     ) RETURNS record LANGUAGE SQL AS $f$
 SELECT
     current_setting('pglogical.provider_dsn'),
+    current_setting('pglogical.orig_provider_dsn'),
     current_setting('pglogical.provider1_dsn'),
     current_setting('pglogical.subscriber_dsn')
 $f$;
@@ -42,24 +44,43 @@ INSERT INTO some_local_tbl3(key, data) VALUES('key3', 'data3');
  * to completely different database.
  */
 CREATE OR REPLACE FUNCTION public.pglogical_regress_variables(
+    OUT orig_provider_dsn text,
     OUT provider_dsn text,
     OUT provider1_dsn text,
     OUT subscriber_dsn text
     ) RETURNS record LANGUAGE SQL AS $f$
 SELECT
+    current_setting('pglogical.orig_provider_dsn'),
     current_setting('pglogical.provider_dsn'),
     current_setting('pglogical.provider1_dsn'),
     current_setting('pglogical.subscriber_dsn')
 $f$;
 CREATE DATABASE regression1;
+CREATE DATABASE sourcedb;
 
-\c :provider1_dsn
+\c :orig_provider_dsn
 CREATE OR REPLACE FUNCTION public.pglogical_regress_variables(
+    OUT orig_provider_dsn text,
     OUT provider_dsn text,
     OUT provider1_dsn text,
     OUT subscriber_dsn text
     ) RETURNS record LANGUAGE SQL AS $f$
 SELECT
+    current_setting('pglogical.orig_provider_dsn'),
+    current_setting('pglogical.provider_dsn'),
+    current_setting('pglogical.provider1_dsn'),
+    current_setting('pglogical.subscriber_dsn')
+$f$;
+
+\c :provider1_dsn
+CREATE OR REPLACE FUNCTION public.pglogical_regress_variables(
+    OUT orig_provider_dsn text,
+    OUT provider_dsn text,
+    OUT provider1_dsn text,
+    OUT subscriber_dsn text
+    ) RETURNS record LANGUAGE SQL AS $f$
+SELECT
+    current_setting('pglogical.orig_provider_dsn'),
     current_setting('pglogical.provider_dsn'),
     current_setting('pglogical.provider1_dsn'),
     current_setting('pglogical.subscriber_dsn')
@@ -67,11 +88,13 @@ $f$;
 
 \c :subscriber_dsn
 CREATE OR REPLACE FUNCTION public.pglogical_regress_variables(
+    OUT orig_provider_dsn text,
     OUT provider_dsn text,
     OUT provider1_dsn text,
     OUT subscriber_dsn text
     ) RETURNS record LANGUAGE SQL AS $f$
 SELECT
+    current_setting('pglogical.orig_provider_dsn'),
     current_setting('pglogical.provider_dsn'),
     current_setting('pglogical.provider1_dsn'),
     current_setting('pglogical.subscriber_dsn')
