@@ -37,6 +37,10 @@
 
 #include "optimizer/planner.h"
 
+#ifdef XCP
+#include "pgxc/pgxcnode.h"
+#endif
+
 #include "replication/origin.h"
 
 #include "rewrite/rewriteHandler.h"
@@ -1615,6 +1619,14 @@ pglogical_apply_main(Datum main_arg)
 	MySubscription = get_subscription(MyApplyWorker->subid);
 	MemoryContextSwitchTo(saved_ctx);
 	CommitTransactionCommand();
+
+#ifdef XCP
+	/*
+	 * When runnin under XL, initialise the XL executor so that the datanode
+	 * and coordinator information is initialised properly.
+	 */
+	InitMultinodeExecutor(false);
+#endif
 
 	elog(LOG, "starting apply for subscription %s", MySubscription->name);
 

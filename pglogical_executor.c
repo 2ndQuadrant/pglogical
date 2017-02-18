@@ -218,6 +218,9 @@ pglogical_ProcessUtility(Node *parsetree,
 						 ProcessUtilityContext context,
 						 ParamListInfo params,
 						 DestReceiver *dest,
+#ifdef XCP
+						 bool sentToRemote,
+#endif
 						 char *completionTag)
 {
 	if (nodeTag(parsetree) == T_TruncateStmt)
@@ -228,10 +231,18 @@ pglogical_ProcessUtility(Node *parsetree,
 
 	if (next_ProcessUtility_hook)
 		next_ProcessUtility_hook(parsetree, queryString, context, params,
-								 dest, completionTag);
+								 dest,
+#ifdef XCP
+								 sentToRemote,
+#endif
+								 completionTag);
 	else
 		standard_ProcessUtility(parsetree, queryString, context, params,
-								dest, completionTag);
+								dest,
+#ifdef XCP
+								sentToRemote,
+#endif
+								completionTag);
 
 	if (nodeTag(parsetree) == T_TruncateStmt)
 		pglogical_finish_truncate();
