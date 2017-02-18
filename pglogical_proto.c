@@ -400,14 +400,13 @@ pglogical_read_attrs(StringInfo in, char ***attrnames, int *nattrnames)
 	/* read the attributes */
 	for (i = 0; i < nattrs; i++)
 	{
-		uint8			flags;
 		uint16			len;
 
 		blocktype = pq_getmsgbyte(in);		/* column definition follows */
 		if (blocktype != 'C')
 			elog(ERROR, "expected COLUMN, got %c", blocktype);
-		flags = pq_getmsgbyte(in);
-//		Assert(flags == 0);
+		/* read flags (we ignore them so far) */
+		(void) pq_getmsgbyte(in);
 
 		blocktype = pq_getmsgbyte(in);		/* column name block follows */
 		if (blocktype != 'N')

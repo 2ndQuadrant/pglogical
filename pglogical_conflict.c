@@ -457,6 +457,7 @@ try_resolve_conflict(Relation rel, HeapTuple localtuple, HeapTuple remotetuple,
 	return apply;
 }
 
+#if 0
 static char *
 conflict_type_to_string(PGLogicalConflictType conflict_type)
 {
@@ -475,6 +476,7 @@ conflict_type_to_string(PGLogicalConflictType conflict_type)
 	/* Unreachable */
 	return NULL;
 }
+#endif
 
 static char *
 conflict_resolution_to_string(PGLogicalConflictResolution resolution)
