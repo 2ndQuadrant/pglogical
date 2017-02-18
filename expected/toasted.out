@@ -80,7 +80,7 @@ SELECT * FROM toasted ORDER BY id;
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.toasted CASCADE;
 $$);
-NOTICE:  drop cascades to public.toasted membership in replication set default
+NOTICE:  drop cascades to table public.toasted membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

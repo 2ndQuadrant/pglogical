@@ -72,7 +72,7 @@ DROP FUNCTION funcn_get_bernoulli_sample_count(integer, integer);
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tablesample CASCADE;
 $$);
-NOTICE:  drop cascades to public.test_tablesample membership in replication set default
+NOTICE:  drop cascades to table public.test_tablesample membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

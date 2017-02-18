@@ -378,11 +378,11 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.nullcheck_tbl CASCADE;
 	DROP TABLE public.not_nullcheck_tbl CASCADE;
 $$);
-NOTICE:  drop cascades to public.funct membership in replication set default_insert_only
-NOTICE:  drop cascades to public.funct2 membership in replication set default_insert_only
-NOTICE:  drop cascades to public.funct5 membership in replication set default_insert_only
-NOTICE:  drop cascades to public.nullcheck_tbl membership in replication set default
-NOTICE:  drop cascades to public.not_nullcheck_tbl membership in replication set default
+NOTICE:  drop cascades to table public.funct membership in replication set default_insert_only
+NOTICE:  drop cascades to table public.funct2 membership in replication set default_insert_only
+NOTICE:  drop cascades to table public.funct5 membership in replication set default_insert_only
+NOTICE:  drop cascades to table public.nullcheck_tbl membership in replication set default
+NOTICE:  drop cascades to table public.not_nullcheck_tbl membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

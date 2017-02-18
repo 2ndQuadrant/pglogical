@@ -1777,101 +1777,11 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 /*
  * pglogical_dependency_check_trigger
  *
- * This function, which is called as an event trigger handler, does
- * our custom dependency checking.
+ * No longer used, present for smoother upgrades.
  */
 Datum
 pglogical_dependency_check_trigger(PG_FUNCTION_ARGS)
 {
-	EventTriggerData   *trigdata = (EventTriggerData *) fcinfo->context;
-	const char	   *funcname = "dependency_check_trigger";
-	int				res,
-					i;
-	DropStmt	   *stmt;
-	StringInfoData	logdetail;
-	PGLogicalLocalNode *node;
-
-	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))
-		ereport(ERROR,
-				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("function \"%s\" was not called by event trigger manager",
-						funcname)));
-
-	/* No local node? */
-	node = get_local_node(false, true);
-	if (!node)
-		PG_RETURN_VOID();
-
-	stmt = (DropStmt *)trigdata->parsetree;
-	initStringInfo(&logdetail);
-
-	SPI_connect();
-
-	res = SPI_execute("SELECT classid, objid, objsubid, object_identity, "
-					  "object_type, schema_name, object_name "
-					  "FROM pg_event_trigger_dropped_objects() "
-					  "WHERE object_type IN ('table', 'sequence', 'table column')",
-					  false, 0);
-	if (res != SPI_OK_SELECT)
-		elog(ERROR, "SPI query failed: %d", res);
-
-	pglogical_initObjectDescriptions();
-
-	for (i = 0; i < SPI_processed; i++)
-	{
-		ObjectAddress	object;
-		char   *object_identity;
-		char   *object_type;
-		bool	isnull;
-		DropBehavior behavior;
-
-		object.classId = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
-											 SPI_tuptable->tupdesc, 1, &isnull);
-		Assert(!isnull);
-		object.objectId = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
-											  SPI_tuptable->tupdesc, 2, &isnull);
-		Assert(!isnull);
-		object.objectSubId = (Oid) SPI_getbinval(SPI_tuptable->vals[i],
-												 SPI_tuptable->tupdesc, 3, &isnull);
-		Assert(!isnull);
-		object_identity = SPI_getvalue(SPI_tuptable->vals[i],
-									   SPI_tuptable->tupdesc, 4);
-
-		/*
-		 * Push this object info to our description cache since it does not
-		 * exist in the database anymore.
-		 */
-		pglogical_pushObjectDescription(&object, object_identity);
-
-		object_type = SPI_getvalue(SPI_tuptable->vals[i],
-								   SPI_tuptable->tupdesc, 5);
-
-		if (SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
-			behavior = DROP_CASCADE;
-		else
-			behavior = stmt->behavior;
-
-		pglogical_tryDropDependencies(&object, behavior);
-
-		if (strcmp(object_type, "table") == 0)
-		{
-			char   *schema_name;
-			char   *object_name;
-
-			schema_name = SPI_getvalue(SPI_tuptable->vals[i],
-									   SPI_tuptable->tupdesc, 6);
-
-			object_name = SPI_getvalue(SPI_tuptable->vals[i],
-									   SPI_tuptable->tupdesc, 7);
-
-			drop_table_sync_status(schema_name, object_name);
-		}
-	}
-
-	pglogical_clearObjectDescriptions();
-
-	SPI_finish();
-
 	PG_RETURN_VOID();
 }
 

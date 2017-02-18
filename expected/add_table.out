@@ -444,10 +444,10 @@ NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to 2 other objects
-NOTICE:  drop cascades to "strange.schema-IS".test_strangeschema membership in replication set default
 NOTICE:  drop cascades to 2 other objects
-NOTICE:  drop cascades to "strange.schema-IS".test_diff_repset membership in replication set repset_test
+NOTICE:  drop cascades to table "strange.schema-IS".test_diff_repset membership in replication set repset_test
 NOTICE:  drop cascades to 2 other objects
+NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

@@ -19,6 +19,8 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 
+#include "catalog/dependency.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_type.h"
 
 #include "commands/trigger.h"
@@ -44,9 +46,13 @@
 #include "pglogical_executor.h"
 #include "pglogical_repset.h"
 #include "pglogical_queue.h"
+#include "pglogical_dependency.h"
 #include "pglogical.h"
 
 List *pglogical_truncated_tables = NIL;
+
+DropBehavior pglogical_lastDropBehavior = DROP_RESTRICT;
+static object_access_hook_type next_object_access_hook = NULL;
 
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
 
@@ -217,6 +223,9 @@ pglogical_ProcessUtility(Node *parsetree,
 	if (nodeTag(parsetree) == T_TruncateStmt)
 		pglogical_start_truncate();
 
+	if (nodeTag(parsetree) == T_DropStmt)
+		pglogical_lastDropBehavior = ((DropStmt *)parsetree)->behavior;
+
 	if (next_ProcessUtility_hook)
 		next_ProcessUtility_hook(parsetree, queryString, context, params,
 								 dest, completionTag);
@@ -228,9 +237,54 @@ pglogical_ProcessUtility(Node *parsetree,
 		pglogical_finish_truncate();
 }
 
+
+/*
+ * Handle object drop.
+ *
+ * Calls to dependency tracking code.
+ */
+static void
+pglogical_object_access(ObjectAccessType access,
+						Oid classId,
+						Oid objectId,
+						int subId,
+						void *arg)
+{
+	if (next_object_access_hook)
+		(*next_object_access_hook) (access, classId, objectId, subId, arg);
+
+	if (access == OAT_DROP)
+	{
+		ObjectAccessDrop   *drop_arg = (ObjectAccessDrop *) arg;
+		ObjectAddress		object;
+		DropBehavior		behavior;
+
+		/* No need to check for internal deletions. */
+		if ((drop_arg->dropflags & PERFORM_DELETION_INTERNAL) != 0)
+			return;
+
+		/* No local node? */
+		if (!get_local_node(false, true))
+			return;
+
+		ObjectAddressSubSet(object, classId, objectId, subId);
+
+		if (SessionReplicationRole == SESSION_REPLICATION_ROLE_REPLICA)
+			behavior = DROP_CASCADE;
+		else
+			behavior = pglogical_lastDropBehavior;
+
+		pglogical_checkDependency(&object, behavior);
+	}
+}
+
 void
 pglogical_executor_init(void)
 {
 	next_ProcessUtility_hook = ProcessUtility_hook;
 	ProcessUtility_hook = pglogical_ProcessUtility;
+
+	/* Object access hook */
+	next_object_access_hook = object_access_hook;
+	object_access_hook = pglogical_object_access;
 }

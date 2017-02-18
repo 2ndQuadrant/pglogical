@@ -76,6 +76,7 @@
 #include "utils/tqual.h"
 
 #include "pglogical_dependency.h"
+#include "pglogical_sync.h"
 #include "pglogical_repset.h"
 #include "pglogical.h"
 
@@ -206,13 +207,6 @@ static const Oid object_classes[] = {
 //	PolicyRelationId,			/* OCLASS_POLICY */
 //	TransformRelationId			/* OCLASS_TRANSFORM */
 };
-
-typedef struct ObjectDescription {
-	ObjectAddress	object;
-	char	   *description;
-} ObjectDescription;
-
-static List *object_descriptions = NIL;
 
 static void findDependentObjects(const ObjectAddress *object,
 					 int flags,
@@ -1990,18 +1984,7 @@ get_pglogical_depend_rel_oid(void)
 static char *
 pglogical_getObjectDescription(const ObjectAddress *object)
 {
-	ListCell	   *lc;
 	StringInfoData	objdesc;
-
-	foreach (lc, object_descriptions)
-	{
-		ObjectDescription   *desc = (ObjectDescription *) lfirst(lc);
-
-		if (desc->object.classId == object->classId &&
-			desc->object.objectId == object->objectId &&
-			desc->object.objectSubId == object->objectSubId)
-			return pstrdup(desc->description);
-	}
 
 	if (object->classId == get_replication_set_rel_oid())
 	{
@@ -2036,46 +2019,27 @@ pglogical_getObjectDescription(const ObjectAddress *object)
 	return getObjectDescription(object);
 }
 
-/*
- * Cleanup the object description cache.
- */
+
 void
-pglogical_initObjectDescriptions(void)
+pglogical_checkDependency(const ObjectAddress *object, DropBehavior behavior)
 {
-	object_descriptions = NIL;
-}
+	HeapTuple		tp;
+	Form_pg_class	reltup;
 
-/*
- * Add description for an object to our object description cache.
- */
-void
-pglogical_pushObjectDescription(const ObjectAddress *object, char *description)
-{
-	ObjectDescription  *desc;
+	if (object->classId != RelationRelationId)
+		return;
 
-	desc = palloc(sizeof(ObjectDescription));
-	memcpy(&desc->object, object, sizeof(ObjectAddress));
-	desc->description = pstrdup(description);
+	pglogical_tryDropDependencies(object, behavior);
 
-	object_descriptions = lappend(object_descriptions, desc);
-}
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(object->objectId));
+	if (!HeapTupleIsValid(tp))
+		return;
 
-/*
- * Cleanup the object description cache.
- */
-void
-pglogical_clearObjectDescriptions(void)
-{
-	ListCell	   *lc;
+	reltup = (Form_pg_class) GETSTRUCT(tp);
 
-	foreach (lc, object_descriptions)
-	{
-		ObjectDescription   *desc = (ObjectDescription *) lfirst(lc);
+	if (reltup->relkind == RELKIND_RELATION)
+		drop_table_sync_status(get_namespace_name(reltup->relnamespace),
+							   NameStr(reltup->relname));
 
-		pfree(desc->description);
-	}
-
-	list_free_deep(object_descriptions);
-
-	object_descriptions = NIL;
+	ReleaseSysCache(tp);
 }

@@ -216,11 +216,6 @@ RETURNS trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_queue_truncate';
 CREATE OR REPLACE FUNCTION pglogical.dependency_check_trigger()
 RETURNS event_trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_dependency_check_trigger';
 
-CREATE EVENT TRIGGER pglogical_dependency_check_trigger
-ON sql_drop
-EXECUTE PROCEDURE pglogical.dependency_check_trigger();
-ALTER EVENT TRIGGER pglogical_dependency_check_trigger ENABLE ALWAYS;
-
 CREATE FUNCTION pglogical.pglogical_hooks_setup(internal)
 RETURNS void
 STABLE LANGUAGE c AS 'MODULE_PATHNAME';
@@ -244,5 +239,3 @@ LANGUAGE c AS 'MODULE_PATHNAME';
 
 CREATE FUNCTION pglogical_min_proto_version() RETURNS integer
 LANGUAGE c AS 'MODULE_PATHNAME';
-
-GRANT USAGE ON SCHEMA pglogical TO public;

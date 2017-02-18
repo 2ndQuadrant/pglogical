@@ -193,8 +193,8 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_trg_data CASCADE;
 	DROP TABLE public.basic_dml CASCADE;
 $$);
-NOTICE:  drop cascades to public.test_trg_data membership in replication set default
-NOTICE:  drop cascades to public.basic_dml membership in replication set default
+NOTICE:  drop cascades to table public.test_trg_data membership in replication set default
+NOTICE:  drop cascades to table public.basic_dml membership in replication set default
  replicate_ddl_command 
 -----------------------
  t

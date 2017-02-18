@@ -78,10 +78,6 @@ RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_re
 CREATE FUNCTION pglogical.table_data_filtered(reltyp anyelement, relation regclass, repsets text[])
 RETURNS SETOF anyelement CALLED ON NULL INPUT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_table_data_filtered';
 
--- Everyone needs to be able to see the pglogical schema so they can
--- fire our truncate triggers. See GH #57
-GRANT USAGE ON SCHEMA pglogical TO public;
-
 CREATE TABLE pglogical.depend (
     classid oid NOT NULL,
     objid oid NOT NULL,
@@ -93,3 +89,8 @@ CREATE TABLE pglogical.depend (
 
 	deptype "char" NOT NULL
 ) WITH (user_catalog_table=true);
+
+DROP EVENT TRIGGER IF EXISTS pglogical_truncate_trigger_add;
+DROP EVENT TRIGGER IF EXISTS pglogical_dependency_check_trigger;
+DROP FUNCTION IF EXISTS pglogical.truncate_trigger_add();
+DROP FUNCTION IF EXISTS pglogical.dependency_check_trigger();

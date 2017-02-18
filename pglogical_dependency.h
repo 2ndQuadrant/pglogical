@@ -30,9 +30,7 @@ extern void pglogical_recordDependencyOnSingleRelExpr(const ObjectAddress *depen
 extern void pglogical_tryDropDependencies(const ObjectAddress *object,
 										  DropBehavior behavior);
 
-extern void pglogical_initObjectDescriptions(void);
-extern void pglogical_pushObjectDescription(const ObjectAddress *object,
-											char *description);
-extern void pglogical_clearObjectDescriptions(void);
+extern void pglogical_checkDependency(const ObjectAddress *object,
+									  DropBehavior behavior);
 
 #endif /* PGLOGICAL_DEPENDENCY_H */
