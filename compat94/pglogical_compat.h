@@ -33,4 +33,15 @@ extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)
 	GetConfigOptionByName(name, varname) \
 )
 
+/* missing macros in 9.4 */
+#define ObjectAddressSubSet(addr, class_id, object_id, object_sub_id) \
+	do { \
+		(addr).classId = (class_id); \
+		(addr).objectId = (object_id); \
+		(addr).objectSubId = (object_sub_id); \
+	} while (0)
+
+#define ObjectAddressSet(addr, class_id, object_id) \
+	ObjectAddressSubSet(addr, class_id, object_id, 0)
+
 #endif
