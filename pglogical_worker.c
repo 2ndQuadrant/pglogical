@@ -184,7 +184,6 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 	int			rc;
 	uint16		generation = worker->generation;
 
-	Assert(worker->worker_type != PGLOGICAL_WORKER_NONE);
 	Assert(handle != NULL);
 
 	for (;;)

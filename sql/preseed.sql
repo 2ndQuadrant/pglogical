@@ -1,13 +1,13 @@
 -- Indirection for connection strings
 CREATE OR REPLACE FUNCTION public.pglogical_regress_variables(
-    OUT provider_dsn text,
     OUT orig_provider_dsn text,
+    OUT provider_dsn text,
     OUT provider1_dsn text,
     OUT subscriber_dsn text
     ) RETURNS record LANGUAGE SQL AS $f$
 SELECT
-    current_setting('pglogical.provider_dsn'),
     current_setting('pglogical.orig_provider_dsn'),
+    current_setting('pglogical.provider_dsn'),
     current_setting('pglogical.provider1_dsn'),
     current_setting('pglogical.subscriber_dsn')
 $f$;
