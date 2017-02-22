@@ -705,48 +705,6 @@ Postgres-XL.
 The `pglogical.conflict_resolution` setting defaults can only be set to
 `error` on Postgres-XL.
 
-## How does pglogical differ from BDR?
-
-`pglogical` is based on technology developed for BDR and shares some code with
-BDR. It's designed to be more flexible than BDR and to apply better to
-single-master unidirectional replication, data-gather/merge, non-mesh
-multimaster topologies, etc.
-
-It omits some features found in BDR:
-
-* Mesh multi-master. Limited multi-master support with conflict resolution exists,
-  but mutual replication connections must be added individually.
-
-* Distributed sequences. Use different sequence offsets on each node instead.
-
-* DDL replication. Users must keep table definitions consistent themselves.
-  pglogical provides queue functions to help with this.
-
-* Global DDL locking. There's no DDL replication so no global locking is
-  required....only applies to tables but that introduces problems with mutual
-  multi-master replication.
-  See next point.
-
-* Global flush-to-consistent-state. Part of BDR's DDL locking is a step
-  where all nodes' queues are plugged by preventing new xacts from being
-  committed, then flushed to the peer nodes. This ensures there are no xacts in
-  the queue that can't be applied once table structure has changed. pglogical
-  doesn't do this so multi-master replication (where nodes replicate to each
-  other) is not yet supported.
-  See "limitations".
-
-See "limitations and restrictions" for more information.
-
-It also adds some features:
-
-* Flexible connections between nodes; topology is not restricted to
-  a mesh configuration like BDR's. Cascading logical replication is possible.
-
-* JSON output so queued transactions can be inspected
-
-... but its main purpose is to provide a cleaner, simpler base that doesn't
-require a patched PostgreSQL, with a pluggable and extensible design.
-
 ## Credits and Licence
 
 pglogical has been designed, developed and tested by the 2ndQuadrant team
