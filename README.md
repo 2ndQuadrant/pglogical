@@ -694,6 +694,17 @@ decoding plugin its self, such as:
   write them to a table to be replicated and applied on the other end; or
 * doing DDL management via tools that synchronize DDL on all nodes
 
+### Postgres-XL support
+
+Postgres-XL is only supported as subsriber (cannot be a provider). Also for
+workloads with many small transactions the performance of replication may
+suffer due to increased write latency. On the other hand large insert
+(or bulkcopy) transactions are heavily optimized to work very fast with
+Postgres-XL.
+
+The `pglogical.conflict_resolution` setting defaults can only be set to
+`error` on Postgres-XL.
+
 ## How does pglogical differ from BDR?
 
 `pglogical` is based on technology developed for BDR and shares some code with
