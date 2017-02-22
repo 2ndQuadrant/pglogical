@@ -707,7 +707,11 @@ _PG_init(void)
 							 gettext_noop("Sets method used for conflict resolution for resolvable conflicts."),
 							 NULL,
 							 &pglogical_conflict_resolver,
+#ifdef XCP
+							 PGLOGICAL_RESOLVE_ERROR,
+#else
 							 PGLOGICAL_RESOLVE_APPLY_REMOTE,
+#endif
 							 PGLogicalConflictResolvers,
 							 PGC_SUSET, 0,
 							 pglogical_conflict_resolver_check_hook,
@@ -734,7 +738,12 @@ _PG_init(void)
 							 "Use SPI instead of low-level API for applying changes",
 							 NULL,
 							 &pglogical_use_spi,
-							 false, PGC_POSTMASTER,
+#ifdef XCP
+							 true,
+#else
+							 false,
+#endif
+							 PGC_POSTMASTER,
 							 0,
 							 NULL, NULL, NULL);
 

@@ -1585,6 +1585,12 @@ pglogical_apply_main(Datum main_arg)
 	/* Load correct apply API. */
 	if (pglogical_use_spi)
 	{
+		if (pglogical_conflict_resolver != PGLOGICAL_RESOLVE_ERROR)
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("pglogical.use_spi can only be used when "
+							"pglogical.conflict_resolution is set to 'error'")));
+
 		apply_api.on_begin = pglogical_apply_spi_begin;
 		apply_api.on_commit = pglogical_apply_spi_commit;
 		apply_api.do_insert = pglogical_apply_spi_insert;
