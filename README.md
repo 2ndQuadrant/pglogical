@@ -206,8 +206,9 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     the subscriber, default true
   - `forward_origins` - array of origin names to forward, currently only
     supported values are empty array meaning don't forward any changes
-    that didn't originate on provider node, or "{all}" which means replicate
-    all changes no matter what is their origin, default is "{all}"
+    that didn't originate on provider node (this is useful for two-way
+    replication between the nodes), or "{all}" which means replicate all
+    changes no matter what is their origin, default is "{all}"
   - `apply_delay` - how much to delay replication, default is 0 seconds
 
   The `subscription_name` is used as `application_name` by the replication
