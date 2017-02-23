@@ -542,8 +542,8 @@ pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 	 * originated from.
 	 */
 	if (!track_commit_timestamp &&
-		(*newval != PGLOGICAL_RESOLVE_APPLY_REMOTE ||
-		 *newval != PGLOGICAL_RESOLVE_ERROR))
+		*newval != PGLOGICAL_RESOLVE_APPLY_REMOTE &&
+		*newval != PGLOGICAL_RESOLVE_ERROR)
 	{
 		GUC_check_errdetail("track_commit_timestamp is off");
 		return false;
