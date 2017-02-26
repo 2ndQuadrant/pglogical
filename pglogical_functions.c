@@ -1870,6 +1870,10 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	{
 		Form_pg_attribute att = reldesc->attrs[i];
 
+		/* Skip dropped columns. */
+		if (att->attisdropped)
+			continue;
+
 		/* Skip filtered columns if any. */
 		if (tableinfo->att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
