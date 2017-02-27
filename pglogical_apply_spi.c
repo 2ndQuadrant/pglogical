@@ -483,8 +483,8 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 static void
 pglogical_proccess_copy(pglogical_copyState *pglcstate)
 {
-	uint64 processed;
-	FILE *save_stdin;
+	uint64	processed;
+	int		save_stdin;
 
 	if (!pglcstate->copy_parsetree || !pglcstate->copy_buffered_tuples)
 		return;
@@ -519,8 +519,16 @@ pglogical_proccess_copy(pglogical_copyState *pglcstate)
 	 * for this relation. Before that we save the current 'stdin' stream and
 	 * restore it back when the COPY is done
 	 */
-	save_stdin = stdin;
-	stdin = pglcstate->copy_read_file;
+	save_stdin = dup(fileno(stdin));
+	if (save_stdin < 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not save stdin: %m")));
+
+	if (dup2(fileno(pglcstate->copy_read_file), fileno(stdin)) < 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not redirect stdin: %m")));
 
 	/* Initiate the actual COPY */
 	DoCopy((CopyStmt *) linitial(pglcstate->copy_parsetree),
@@ -530,9 +538,13 @@ pglogical_proccess_copy(pglogical_copyState *pglcstate)
 	 * Also close the read end of the pipe and restore 'stdin' to its original
 	 * value
 	 */
+	if (dup2(save_stdin, fileno(stdin)) < 0)
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not restore stdin: %m")));
+
 	fclose(pglcstate->copy_read_file);
 	pglcstate->copy_read_file = NULL;
-	stdin = save_stdin;
 
 	/* Ensure we processed correct number of tuples */
 	Assert(processed == pglcstate->copy_buffered_tuples);
