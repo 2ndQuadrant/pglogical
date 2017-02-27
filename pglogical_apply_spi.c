@@ -434,6 +434,7 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	 * going to read anything from the STDIN normally. So our highjacking of
 	 * the stream seems ok.
 	 */
+#ifndef WIN32
 	if (use_pipe)
 	{
 		if (pipe(fd))
@@ -460,6 +461,7 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	}
 	else
 	{
+#endif
 		if (pglcstate->copy_file == -1)
 			pglcstate->copy_file = OpenTemporaryFile(true);
 
@@ -468,7 +470,9 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 		pglcstate->copy_write_file = fopen(FilePathName(pglcstate->copy_file), "w");
 		pglcstate->copy_read_file = fopen(FilePathName(pglcstate->copy_file), "r");
 		pglcstate->copy_mechanism = 'f';
+#ifndef WIN32
 	}
+#endif
 
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 	pglcstate->copy_parsetree = pg_parse_query(pglcstate->copy_stmt->data);
