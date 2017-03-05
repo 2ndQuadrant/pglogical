@@ -94,17 +94,49 @@ pglogical_json_write_commit(StringInfo out, PGLogicalOutputData *data, ReorderBu
  * Write a tuple to the outputstream, in the most efficient format possible.
  */
 static void
-json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple)
+json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple,
+				 Bitmapset *att_list)
 {
-	TupleDesc	desc;
-	Datum		tupdatum,
-				json;
+	TupleDesc	tupdesc;
+	int			i;
+	bool		needsep = false;
+	Datum		values[MaxTupleAttributeNumber];
+	bool		isnull[MaxTupleAttributeNumber];
 
-	desc = RelationGetDescr(rel);
-	tupdatum = heap_copy_tuple_as_datum(tuple, desc);
-	json = DirectFunctionCall1(row_to_json, tupdatum);
+	tupdesc = RelationGetDescr(rel);
+	appendStringInfoChar(out, '{');
 
-	appendStringInfoString(out, TextDatumGetCString(json));
+	heap_deform_tuple(tuple, tupdesc, values, isnull);
+
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = tupdesc->attrs[i];
+		Datum		json;
+
+		/* skip dropped columns */
+		if (att->attisdropped)
+			continue;
+		if (att_list &&
+			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+						   att_list))
+			continue;
+
+		/*
+		 * Don't send unchanged toast column as we may not be able to fetch
+		 * them.
+		 */
+		if (att->attlen == -1 && VARATT_IS_EXTERNAL_ONDISK(values[i]))
+			continue;
+
+		if (needsep)
+			appendStringInfoChar(out, ',');
+		needsep = true;
+
+		json = DirectFunctionCall2(to_json, values[i], att->atttypid);
+		appendStringInfoString(out, TextDatumGetCString(json));
+	}
+
+	appendStringInfoChar(out, '}');
 }
 
 /*
@@ -114,7 +146,8 @@ json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple)
  */
 static void
 pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
-							HeapTuple oldtuple, HeapTuple newtuple)
+							HeapTuple oldtuple, HeapTuple newtuple,
+							Bitmapset *att_list)
 {
 	appendStringInfoChar(out, '{');
 	appendStringInfo(out, "\"action\":\"%s\",\"relation\":[\"%s\",\"%s\"]",
@@ -125,12 +158,12 @@ pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
 	if (oldtuple)
 	{
 		appendStringInfoString(out, ",\"oldtuple\":");
-		json_write_tuple(out, rel, oldtuple);
+		json_write_tuple(out, rel, oldtuple, att_list);
 	}
 	if (newtuple)
 	{
 		appendStringInfoString(out, ",\"newtuple\":");
-		json_write_tuple(out, rel, newtuple);
+		json_write_tuple(out, rel, newtuple, att_list);
 	}
 	appendStringInfoChar(out, '}');
 }
@@ -143,7 +176,7 @@ pglogical_json_write_insert(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple newtuple,
 							Bitmapset *att_list)
 {
-	pglogical_json_write_change(out, "I", rel, NULL, newtuple);
+	pglogical_json_write_change(out, "I", rel, NULL, newtuple, att_list);
 }
 
 /*
@@ -154,7 +187,7 @@ pglogical_json_write_update(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple,
 							HeapTuple newtuple, Bitmapset *att_list)
 {
-	pglogical_json_write_change(out, "U", rel, oldtuple, newtuple);
+	pglogical_json_write_change(out, "U", rel, oldtuple, newtuple, att_list);
 }
 
 /*
@@ -165,7 +198,7 @@ pglogical_json_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple,
 							Bitmapset *att_list)
 {
-	pglogical_json_write_change(out, "D", rel, oldtuple, NULL);
+	pglogical_json_write_change(out, "D", rel, oldtuple, NULL, att_list);
 }
 
 /*
