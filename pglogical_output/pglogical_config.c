@@ -21,8 +21,10 @@
 
 #include "miscadmin.h"
 
+#include "pglogical.h"
 #include "pglogical_config.h"
 #include "pglogical_output_internal.h"
+#include "pglogical_repset.h"
 
 typedef enum PGLogicalOutputParamType
 {
@@ -63,8 +65,10 @@ enum {
 	PARAM_BINARY_WANT_INTERNAL_BASETYPES,
 	PARAM_BINARY_WANT_BINARY_BASETYPES,
 	PARAM_BINARY_BASETYPES_MAJOR_VERSION,
+	PARAM_PGLOGICAL_FORWARD_ORIGINS,
+	PARAM_PGLOGICAL_REPLICATION_SET_NAMES,
+	PARAM_PGLOGICAL_REPLICATE_ONLY_TABLE,
 	PARAM_PG_VERSION,
-	PARAM_HOOKS_SETUP_FUNCTION,
 	PARAM_NO_TXINFO
 } OutputPluginParamKey;
 
@@ -89,8 +93,10 @@ static OutputPluginParam param_lookup[] = {
 	{"binary.want_internal_basetypes", PARAM_BINARY_WANT_INTERNAL_BASETYPES},
 	{"binary.want_binary_basetypes", PARAM_BINARY_WANT_BINARY_BASETYPES},
 	{"binary.basetypes_major_version", PARAM_BINARY_BASETYPES_MAJOR_VERSION},
+	{"pglogical.forward_origins", PARAM_PGLOGICAL_FORWARD_ORIGINS},
+	{"pglogical.replication_set_names", PARAM_PGLOGICAL_REPLICATION_SET_NAMES},
+	{"pglogical.replicate_only_table", PARAM_PGLOGICAL_REPLICATE_ONLY_TABLE},
 	{"pg_version", PARAM_PG_VERSION},
-	{"hooks.setup_function", PARAM_HOOKS_SETUP_FUNCTION},
 	{"no_txinfo", PARAM_NO_TXINFO},
 	{NULL, PARAM_UNRECOGNISED}
 };
@@ -218,10 +224,58 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 				data->client_binary_basetypes_major_version = DatumGetUInt32(val);
 				break;
 
-			case PARAM_HOOKS_SETUP_FUNCTION:
-				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_QUALIFIED_NAME);
-				data->hooks_setup_funcname = (List*) PointerGetDatum(val);
-				break;
+			case PARAM_PGLOGICAL_FORWARD_ORIGINS:
+				{
+					List		   *forward_origin_names;
+					ListCell	   *lc;
+					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
+
+					if (!SplitIdentifierString(DatumGetCString(val), ',', &forward_origin_names))
+						elog(ERROR, "Could not parse forward origin name list %s", DatumGetCString(val));
+
+					foreach (lc, forward_origin_names)
+					{
+						char	   *origin_name = (char *) lfirst(lc);
+
+						if (strcmp(origin_name, REPLICATION_ORIGIN_ALL) != 0)
+							elog(ERROR, "Only \"%s\" is allowed in forward origin name list at the moment, found \"%s\"",
+								 REPLICATION_ORIGIN_ALL, origin_name);
+					}
+
+					data->forward_origins = forward_origin_names;
+					break;
+				}
+
+			case PARAM_PGLOGICAL_REPLICATION_SET_NAMES:
+				{
+					PGLogicalLocalNode	   *node;
+					List *replication_set_names;
+					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
+
+					if (!SplitIdentifierString(strVal(elem->arg), ',', &replication_set_names))
+						elog(ERROR, "Could not parse replication set name list %s", strVal(elem->arg));
+
+					node = get_local_node(false, false);
+					data->replication_sets =
+						get_replication_sets(node->node->id,
+											 replication_set_names, false);
+
+					break;
+				}
+
+			case PARAM_PGLOGICAL_REPLICATE_ONLY_TABLE:
+				{
+			List *replicate_only_table;
+
+					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
+
+			if (!SplitIdentifierString(strVal(elem->arg), '.', &replicate_only_table))
+				elog(ERROR, "Could not parse replicate_only_table %s", strVal(elem->arg));
+
+			data->replicate_only_table = makeRangeVar(pstrdup(linitial(replicate_only_table)),
+													pstrdup(lsecond(replicate_only_table)), -1);
+					break;
+				}
 
 			case PARAM_NO_TXINFO:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
@@ -431,7 +485,6 @@ add_startup_msg_b(List *l, char *key, bool val)
 List *
 prepare_startup_message(PGLogicalOutputData *data)
 {
-	ListCell *lc;
 	List *l = NIL;
 
 	l = add_startup_msg_s(l, "max_proto_version", "1");
@@ -481,30 +534,6 @@ prepare_startup_message(PGLogicalOutputData *data)
 			PG_VERSION_NUM/100);
 
 	l = add_startup_msg_b(l, "no_txinfo", data->client_no_txinfo);
-
-
-	/*
-	 * Confirm that we've enabled any requested hook functions.
-	 */
-	l = add_startup_msg_b(l, "hooks.startup_hook_enabled",
-			data->hooks.startup_hook != NULL);
-	l = add_startup_msg_b(l, "hooks.shutdown_hook_enabled",
-			data->hooks.shutdown_hook != NULL);
-	l = add_startup_msg_b(l, "hooks.row_filter_enabled",
-			data->hooks.row_filter_hook != NULL);
-	l = add_startup_msg_b(l, "hooks.transaction_filter_enabled",
-			data->hooks.txn_filter_hook != NULL);
-
-	/*
-	 * Output any extra params supplied by a startup hook by appending
-	 * them verbatim to the params list.
-	 */
-	foreach(lc, data->extra_startup_params)
-	{
-		DefElem *param = (DefElem*)lfirst(lc);
-		Assert(IsA(param->arg, String) && strVal(param->arg) != NULL);
-		l = lappend(l, param);
-	}
 
 	return l;
 }

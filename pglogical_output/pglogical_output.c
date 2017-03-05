@@ -19,11 +19,18 @@
 #include "replication/origin.h"
 #endif
 
+#include "executor/executor.h"
+#include "catalog/namespace.h"
+#include "utils/rel.h"
+
 #include "pglogical_config.h"
+#include "pglogical_executor.h"
+#include "pglogical_node.h"
 #include "pglogical_output_internal.h"
 #include "pglogical_proto.h"
-#include "pglogical_hooks.h"
+#include "pglogical_queue.h"
 #include "pglogical_relmetacache.h"
+#include "pglogical_repset.h"
 
 PG_MODULE_MAGIC;
 
@@ -129,7 +136,8 @@ static void
 pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				  bool is_init)
 {
-	PGLogicalOutputData  *data = palloc0(sizeof(PGLogicalOutputData));
+	PGLogicalOutputData	   *data = palloc0(sizeof(PGLogicalOutputData));
+	PGLogicalLocalNode	   *node;
 
 	data->context = AllocSetContextCreate(ctx->context,
 										  "pglogical conversion context",
@@ -141,6 +149,9 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 
 
 	ctx->output_plugin_private = data;
+
+	node = get_local_node(false, false);
+	data->local_node_id	= node->node->id;
 
 	/*
 	 * This is replication start and not slot initialization.
@@ -301,20 +312,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		else
 			data->forward_changeset_origins = true;
 
-		if (data->hooks_setup_funcname != NIL)
-		{
-
-			data->hooks_session_mctxt =
-				AllocSetContextCreate(ctx->context,
-					"pglogical_output hooks context",
-					ALLOCSET_SMALL_MINSIZE,
-					ALLOCSET_SMALL_INITSIZE,
-					ALLOCSET_SMALL_MAXSIZE);
-
-			load_hooks(data);
-			call_startup_hook(data, ctx->output_plugin_options);
-		}
-
 		pglogical_init_relmetacache(ctx->context);
 	}
 }
@@ -387,18 +384,201 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	pglogical_prune_relmetacache();
 }
 
+static bool
+pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
+						ReorderBufferChange *change, Bitmapset **att_list)
+{
+	PGLogicalTableRepInfo *tblinfo;
+	ListCell	   *lc;
+
+	if (data->replicate_only_table)
+	{
+		/*
+		 * Special case - we are catching up just one table.
+		 * TODO: performance
+		 */
+		return strcmp(RelationGetRelationName(relation),
+					  data->replicate_only_table->relname) == 0 &&
+			RelationGetNamespace(relation) ==
+				get_namespace_oid(data->replicate_only_table->schemaname, true);
+	}
+	else if (RelationGetRelid(relation) == get_queue_table_oid())
+	{
+		/* Special case - queue table */
+		if (change->action == REORDER_BUFFER_CHANGE_INSERT)
+		{
+			HeapTuple		tup = &change->data.tp.newtuple->tuple;
+			QueuedMessage  *q = queued_message_from_tuple(tup);
+			ListCell	   *qlc;
+
+			/*
+			 * No replication set means global message, those are always
+			 * replicated.
+			 */
+			if (q->replication_sets == NULL)
+				return true;
+
+			foreach (qlc, q->replication_sets)
+			{
+				char	   *queue_set = (char *) lfirst(qlc);
+				ListCell   *plc;
+
+				foreach (plc, data->replication_sets)
+				{
+					PGLogicalRepSet	   *rs = lfirst(plc);
+
+					/* TODO: this is somewhat ugly. */
+					if (strcmp(queue_set, rs->name) == 0 &&
+						(q->message_type != QUEUE_COMMAND_TYPE_TRUNCATE ||
+						 rs->replicate_truncate))
+						return true;
+				}
+			}
+		}
+
+		return false;
+	}
+	else if (RelationGetRelid(relation) == get_replication_set_rel_oid())
+	{
+		/*
+		 * Special case - replication set table.
+		 *
+		 * We can use this to update our cached replication set info, without
+		 * having to deal with cache invalidation callbacks.
+		 */
+		HeapTuple			tup;
+		PGLogicalRepSet	   *replicated_set;
+		ListCell		   *plc;
+
+		if (change->action == REORDER_BUFFER_CHANGE_UPDATE)
+			 tup = &change->data.tp.newtuple->tuple;
+		else if (change->action == REORDER_BUFFER_CHANGE_DELETE)
+			 tup = &change->data.tp.oldtuple->tuple;
+		else
+			return false;
+
+		replicated_set = replication_set_from_tuple(tup);
+		foreach (plc, data->replication_sets)
+		{
+			PGLogicalRepSet	   *rs = lfirst(plc);
+
+			/* Check if the changed repset is used by us. */
+			if (rs->id == replicated_set->id)
+			{
+				/*
+				 * In case this was delete, somebody deleted one of our
+				 * rep sets, bail here and let reconnect logic handle any
+				 * potential issues.
+				 */
+				if (change->action == REORDER_BUFFER_CHANGE_DELETE)
+					elog(ERROR, "replication set \"%s\" used by this connection was deleted, existing",
+						 rs->name);
+
+				/* This was update of our repset, update the cache. */
+				rs->replicate_insert = replicated_set->replicate_insert;
+				rs->replicate_update = replicated_set->replicate_update;
+				rs->replicate_delete = replicated_set->replicate_delete;
+				rs->replicate_truncate = replicated_set->replicate_truncate;
+
+				return false;
+			}
+		}
+
+		return false;
+	}
+
+	/* Normal case - use replication set membership. */
+	tblinfo = get_table_replication_info(data->local_node_id, relation,
+										 data->replication_sets);
+
+	/* First try filter out by change type. */
+	switch (change->action)
+	{
+		case REORDER_BUFFER_CHANGE_INSERT:
+			if (!tblinfo->replicate_insert)
+				return false;
+			break;
+		case REORDER_BUFFER_CHANGE_UPDATE:
+			if (!tblinfo->replicate_update)
+				return false;
+			break;
+		case REORDER_BUFFER_CHANGE_DELETE:
+			if (!tblinfo->replicate_delete)
+				return false;
+			break;
+		default:
+			elog(ERROR, "Unhandled reorder buffer change type %d",
+				 change->action);
+			return false; /* shut compiler up */
+	}
+
+	/*
+	 * Proccess row filters.
+	 * XXX: we could probably cache some of the executor stuff.
+	 */
+	if (list_length(tblinfo->row_filter) > 0)
+	{
+		EState		   *estate;
+		ExprContext	   *econtext;
+		TupleDesc		tupdesc = RelationGetDescr(relation);
+		HeapTuple		oldtup = change->data.tp.oldtuple ?
+			&change->data.tp.oldtuple->tuple : NULL;
+		HeapTuple		newtup = change->data.tp.newtuple ?
+			&change->data.tp.newtuple->tuple : NULL;
+
+		/* Skip empty changes. */
+		if (!newtup && !oldtup)
+		{
+			elog(DEBUG1, "pglogical output got empty change");
+			return false;
+		}
+
+		estate = create_estate_for_relation(relation, false);
+		econtext = prepare_per_tuple_econtext(estate, tupdesc);
+
+		ExecStoreTuple(newtup ? newtup : oldtup, econtext->ecxt_scantuple,
+					   InvalidBuffer, false);
+
+		/* Next try the row_filters if there are any. */
+		foreach (lc, tblinfo->row_filter)
+		{
+			Node	   *row_filter = (Node *) lfirst(lc);
+			ExprState  *exprstate = pglogical_prepare_row_filter(row_filter);
+			Datum		res;
+			bool		isnull;
+
+			res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
+
+			/* NULL is same as false for our use. */
+			if (isnull)
+				return false;
+
+			if (!DatumGetBool(res))
+				return false;
+		}
+
+		ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
+		FreeExecutorState(estate);
+	}
+
+	/* Make sure caller is aware of any attribute filter. */
+	*att_list = tblinfo->att_list;
+
+	return true;
+}
+
 static void
 pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 				 Relation relation, ReorderBufferChange *change)
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext	old;
-	Bitmapset	   *att_list;
+	Bitmapset	   *att_list = NULL;
 	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
 
 
 	/* First check the table filter */
-	if (!call_row_filter_hook(data, txn, relation, change, &att_list))
+	if (!pglogical_change_filter(data, relation, change, &att_list))
 		return;
 
 	/* Avoid leaking memory by using and resetting our own context */
@@ -472,11 +652,21 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 						RepOriginId origin_id)
 {
 	PGLogicalOutputData *data = ctx->output_plugin_private;
+	bool ret;
 
-	if (!call_txn_filter_hook(data, origin_id))
-		return true;
+	if (origin_id == InvalidRepOriginId)
+	    /* Never filter out locally originated tx's */
+	    ret = true;
 
-	return false;
+	else
+		/*
+		 * Otherwise, ignore the origin passed in txnfilter_args->origin_id,
+		 * and just forward all or nothing based on the configuration option
+		 * 'forward_origins'.
+		 */
+		ret = list_length(data->forward_origins) > 0;
+
+	return ret;
 }
 #endif
 
@@ -508,10 +698,6 @@ send_startup_message(LogicalDecodingContext *ctx,
 
 static void pg_decode_shutdown(LogicalDecodingContext * ctx)
 {
-	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
-
-	call_shutdown_hook(data);
-
 	pglogical_destroy_relmetacache();
 
 	/*

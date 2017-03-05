@@ -14,8 +14,8 @@
 #define PGLOGICAL_OUTPUT_INTERNAL_H
 
 #include "nodes/pg_list.h"
+#include "nodes/primnodes.h"
 
-#include "pglogical_hooks.h"
 #include "pglogical_proto_internal.h"
 
 /* typedef appears in pglogical_output.h */
@@ -24,6 +24,9 @@ struct PGLogicalOutputData
 	MemoryContext context;
 
 	PGLogicalProtoAPI *api;
+
+	/* Cached node id */
+	Oid			local_node_id;
 
 	/* protocol */
 	bool		allow_internal_basetypes;
@@ -61,22 +64,11 @@ struct PGLogicalOutputData
 	bool		client_binary_intdatetimes;
 	bool		client_no_txinfo;
 
-	/* hooks */
-	List	   *hooks_setup_funcname;
-	PGLogicalHooks hooks;
-	/*
-	 * The hooks_session_mctxt has the same lifetime as the decoding
-	 * session's memory context. It's mainly there so that it's easier
-	 * to keep track of memory used by hooks when debugging.
-	 *
-	 * Individual hook callbacks are called in a shorter lived context. If
-	 * they want to allocate memory that persists longer than the callback
-	 * they must switch to the hooks memory context.
-	 */
-	MemoryContext hooks_session_mctxt;
-
-	/* DefElem<String> list populated by startup hook */
-	List	   *extra_startup_params;
+	/* List of origin names */
+    List	   *forward_origins;
+	/* List of PGLogicalRepSet */
+	List	   *replication_sets;
+	RangeVar   *replicate_only_table;
 };
 
 #endif   /* PGLOGICAL_OUTPUT_INTERNAL_H */
