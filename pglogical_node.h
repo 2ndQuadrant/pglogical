@@ -13,6 +13,8 @@
 #ifndef PGLOGICAL_NODE_H
 #define PGLOGICAL_NODE_H
 
+#include "datatype/timestamp.h"
+
 typedef struct PGLogicalNode
 {
 	Oid			id;
