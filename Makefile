@@ -161,3 +161,13 @@ check_prove:
 	$(prove_check)
 
 .PHONY: all check regresscheck
+
+define _pgl_create_recursive_target
+.PHONY: $(1)-$(2)-recurse
+$(1): $(1)-$(2)-recurse
+$(1)-$(2)-recurse: $(if $(filter check, $(3)), temp-install)
+	$(MKDIR_P) $(2)
+	$$(MAKE) -C $(2) -f $(abspath $(srcdir))/$(2)/Makefile VPATH=$(abspath $(srcdir))/$(2) $(3)
+endef
+
+$(foreach target,$(if $1,$1,$(standard_targets)),$(foreach subdir,$(if $2,$2,$(SUBDIRS)),$(eval $(call _pgl_create_recursive_target,$(target),$(subdir),$(if $3,$3,$(target))))))
