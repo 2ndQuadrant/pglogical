@@ -13,7 +13,7 @@
 #ifndef PGLOGICAL_RELCACHE_H
 #define PGLOGICAL_RELCACHE_H
 
-#include "storage/lockdefs.h"
+#include "storage/lock.h"
 
 typedef struct PGLogicalRemoteRel
 {

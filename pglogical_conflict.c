@@ -37,8 +37,8 @@
 #include "utils/syscache.h"
 #include "utils/tqual.h"
 
-#include "pglogical_proto_native.h"
 #include "pglogical_conflict.h"
+#include "pglogical_proto_native.h"
 
 int		pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
 int		pglogical_conflict_log_level = LOG;

@@ -24,9 +24,7 @@
 #include "pglogical_fe.h"
 #include "pglogical_node.h"
 
-#if PG_VERSION_NUM < 90600
 #include "pglogical_compat.h"
-#endif
 
 #define PGLOGICAL_VERSION "2.0.0"
 #define PGLOGICAL_VERSION_NUM 20000
