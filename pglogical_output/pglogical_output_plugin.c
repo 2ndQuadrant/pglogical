@@ -11,7 +11,7 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output.h"
+#include "pglogical_output_plugin.h"
 
 #include "mb/pg_wchar.h"
 #include "replication/logical.h"
@@ -21,18 +21,16 @@
 
 #include "executor/executor.h"
 #include "catalog/namespace.h"
+#include "utils/inval.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 
-#include "pglogical_config.h"
+#include "pglogical_output_config.h"
 #include "pglogical_executor.h"
 #include "pglogical_node.h"
-#include "pglogical_output_internal.h"
-#include "pglogical_proto.h"
+#include "pglogical_output_proto.h"
 #include "pglogical_queue.h"
-#include "pglogical_relmetacache.h"
 #include "pglogical_repset.h"
-
-PG_MODULE_MAGIC;
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
@@ -56,6 +54,26 @@ static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
 
 static bool startup_message_sent = false;
+
+typedef struct PGLRelMetaCacheEntry
+{
+	Oid relid;
+	/* Does the client have this relation cached? */
+	bool is_cached;
+	/* Entry is valid and not due to be purged */
+	bool is_valid;
+} PGLRelMetaCacheEntry;
+
+#define RELMETACACHE_INITIAL_SIZE 128
+static HTAB *RelMetaCache = NULL;
+static int InvalidRelMetaCacheCnt = 0;
+
+static void relmetacache_init(MemoryContext decoding_context);
+static PGLRelMetaCacheEntry *relmetacache_get_relation(PGLogicalOutputData *data,
+													   Relation rel);
+static void relmetacache_destroy(void);
+static void relmetacache_prune(void);
+
 
 /* specify output plugin callbacks */
 void
@@ -312,7 +330,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		else
 			data->forward_changeset_origins = true;
 
-		pglogical_init_relmetacache(ctx->context);
+		relmetacache_init(ctx->context);
 	}
 }
 
@@ -381,7 +399,7 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * metadata entries since nothing will be referencing them
 	 * at the moment.
 	 */
-	pglogical_prune_relmetacache();
+	relmetacache_prune();
 }
 
 static bool
@@ -574,7 +592,6 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	PGLogicalOutputData *data = ctx->output_plugin_private;
 	MemoryContext	old;
 	Bitmapset	   *att_list = NULL;
-	struct PGLRelMetaCacheEntry *cached_relmeta = NULL;
 
 
 	/* First check the table filter */
@@ -591,13 +608,18 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 *
 	 * TODO: track hit/miss stats
 	 */
-	if (data->api->write_rel != NULL &&
-			!pglogical_cache_relmeta(data, relation, &cached_relmeta))
+	if (data->api->write_rel != NULL)
 	{
-		OutputPluginPrepareWrite(ctx, false);
-		data->api->write_rel(ctx->out, data, relation, cached_relmeta,
-							 att_list);
-		OutputPluginWrite(ctx, false);
+		PGLRelMetaCacheEntry *cached_relmeta;
+		cached_relmeta = relmetacache_get_relation(data, relation);
+
+		if (!cached_relmeta->is_cached)
+		{
+			OutputPluginPrepareWrite(ctx, false);
+			data->api->write_rel(ctx->out, data, relation, att_list);
+			OutputPluginWrite(ctx, false);
+			cached_relmeta->is_cached = true;
+		}
 	}
 
 	/* Send the data */
@@ -696,12 +718,194 @@ send_startup_message(LogicalDecodingContext *ctx,
 	startup_message_sent = true;
 }
 
-static void pg_decode_shutdown(LogicalDecodingContext * ctx)
+
+/*
+ * Shutdown callback.
+ */
+static void
+pg_decode_shutdown(LogicalDecodingContext * ctx)
 {
-	pglogical_destroy_relmetacache();
+	relmetacache_destroy();
 
 	/*
-	 * no need to delete data->context or data->hooks_session_mctxt as they're
-	 * children of ctx->context which will expire on return.
+	 * no need to delete data->context as it's child of ctx->context which
+	 * will expire on return.
 	 */
+}
+
+
+/*
+ * Relation metadata invalidation, for when a relcache invalidation
+ * means that we need to resend table metadata to the client.
+ */
+static void
+relmetacache_invalidation_cb(Datum arg, Oid relid)
+ {
+	struct PGLRelMetaCacheEntry *hentry;
+	Assert (RelMetaCache != NULL);
+
+	/*
+	 * Nobody keeps pointers to entries in this hash table around outside
+	 * logical decoding callback calls - but invalidation events can come in
+	 * *during* a callback if we access the relcache in the callback. Because
+	 * of that we must mark the cache entry as invalid but not remove it from
+	 * the hash while it could still be referenced, then prune it at a later
+	 * safe point.
+	 *
+	 * Getting invalidations for relations that aren't in the table is
+	 * entirely normal, since there's no way to unregister for an
+	 * invalidation event. So we don't care if it's found or not.
+	 */
+	hentry = (struct PGLRelMetaCacheEntry *)
+		hash_search(RelMetaCache, &relid, HASH_FIND, NULL);
+
+	if (hentry != NULL)
+	{
+		hentry->is_valid = false;
+		InvalidRelMetaCacheCnt++;
+	}
+}
+
+/*
+ * Initialize the relation metadata cache for a decoding session.
+ *
+ * The hash table is destoyed at the end of a decoding session. While
+ * relcache invalidations still exist and will still be invoked, they
+ * will just see the null hash table global and take no action.
+ */
+static void
+relmetacache_init(MemoryContext decoding_context)
+{
+	HASHCTL	ctl;
+	int		hash_flags;
+
+	InvalidRelMetaCacheCnt = 0;
+
+	if (RelMetaCache == NULL)
+	{
+		MemoryContext old_ctxt;
+
+		/* Make a new hash table for the cache */
+		hash_flags = HASH_ELEM | HASH_CONTEXT;
+
+		MemSet(&ctl, 0, sizeof(ctl));
+		ctl.keysize = sizeof(Oid);
+		ctl.entrysize = sizeof(struct PGLRelMetaCacheEntry);
+		ctl.hcxt = TopMemoryContext;
+
+#if PG_VERSION_NUM >= 90500
+		hash_flags |= HASH_BLOBS;
+#else
+		ctl.hash = tag_hash;
+		hash_flags |= HASH_FUNCTION;
+#endif
+
+		old_ctxt = MemoryContextSwitchTo(TopMemoryContext);
+		RelMetaCache = hash_create("pglogical relation metadata cache",
+								   RELMETACACHE_INITIAL_SIZE,
+								   &ctl, hash_flags);
+		(void) MemoryContextSwitchTo(old_ctxt);
+
+		Assert(RelMetaCache != NULL);
+
+		CacheRegisterRelcacheCallback(relmetacache_invalidation_cb, (Datum)0);
+	}
+}
+
+
+/*
+ * Look up an entry, creating it if not found.
+ *
+ * Newly created entries are returned as is_cached=false. The API
+ * hook can set is_cached to skip subsequent updates if it sent a
+ * complete response that the client will cache.
+ *
+ * Returns true on a cache hit, false on a miss.
+ */
+static PGLRelMetaCacheEntry *
+relmetacache_get_relation(struct PGLogicalOutputData *data,
+						  Relation rel)
+{
+	struct PGLRelMetaCacheEntry *hentry;
+	bool found;
+	MemoryContext old_mctx;
+
+	/* Find cached function info, creating if not found */
+	old_mctx = MemoryContextSwitchTo(TopMemoryContext);
+	hentry = (struct PGLRelMetaCacheEntry*) hash_search(RelMetaCache,
+										 (void *)(&RelationGetRelid(rel)),
+										 HASH_ENTER, &found);
+	(void) MemoryContextSwitchTo(old_mctx);
+
+	/* If not found or not valid, it can't be cached. */
+	if (!found || !hentry->is_valid)
+	{
+		Assert(hentry->relid = RelationGetRelid(rel));
+		hentry->is_cached = false;
+		/* Only used for lazy purging of invalidations */
+		hentry->is_valid = true;
+	}
+
+	Assert(hentry != NULL);
+
+	return hentry;
+}
+
+
+/*
+ * Flush the relation metadata cache at the end of a decoding session.
+ */
+static void
+relmetacache_destroy(void)
+{
+	HASH_SEQ_STATUS status;
+	struct PGLRelMetaCacheEntry *hentry;
+
+	if (RelMetaCache != NULL)
+	{
+		hash_seq_init(&status, RelMetaCache);
+
+		while ((hentry = (struct PGLRelMetaCacheEntry*) hash_seq_search(&status)) != NULL)
+		{
+			if (hash_search(RelMetaCache,
+							(void *) &hentry->relid,
+							HASH_REMOVE, NULL) == NULL)
+				elog(ERROR, "hash table corrupted");
+		}
+	}
+}
+
+/*
+ * Prune !is_valid entries from the relation metadata cache
+ *
+ * This must only be called when there couldn't be any references to
+ * possibly-invalid entries.
+ */
+static void
+relmetacache_prune(void)
+{
+	HASH_SEQ_STATUS status;
+	struct PGLRelMetaCacheEntry *hentry;
+
+	/*
+	 * Since the pruning can be expensive, do it only if ig we invalidated
+	 * at least half of initial cache size.
+	 */
+	if (InvalidRelMetaCacheCnt < RELMETACACHE_INITIAL_SIZE/2)
+		return;
+
+	hash_seq_init(&status, RelMetaCache);
+
+	while ((hentry = (struct PGLRelMetaCacheEntry*) hash_seq_search(&status)) != NULL)
+	{
+		if (!hentry->is_valid)
+		{
+			if (hash_search(RelMetaCache,
+							(void *) &hentry->relid,
+							HASH_REMOVE, NULL) == NULL)
+				elog(ERROR, "hash table corrupted");
+		}
+	}
+
+	InvalidRelMetaCacheCnt = 0;
 }

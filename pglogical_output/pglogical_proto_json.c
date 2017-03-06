@@ -11,7 +11,7 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output.h"
+#include "pglogical_output_plugin.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
@@ -38,7 +38,6 @@
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
 
-#include "pglogical_output_internal.h"
 #include "pglogical_proto_json.h"
 
 /*

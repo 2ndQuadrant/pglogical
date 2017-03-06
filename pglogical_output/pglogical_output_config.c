@@ -1,17 +1,16 @@
 /*-------------------------------------------------------------------------
  *
- * pglogical_config.c
- *		  Logical Replication output plugin
+ * pglogical_output_config.c
+ *		  Logical Replication output plugin configuration handling
  *
  * Copyright (c) 2012-2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pglogical_config.c
+ *		  pglogical_output_config.c
  *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output.h"
 
 #include "catalog/catversion.h"
 #include "mb/pg_wchar.h"
@@ -22,8 +21,8 @@
 #include "miscadmin.h"
 
 #include "pglogical.h"
-#include "pglogical_config.h"
-#include "pglogical_output_internal.h"
+#include "pglogical_output_config.h"
+#include "pglogical_output_proto.h"
 #include "pglogical_repset.h"
 
 typedef enum PGLogicalOutputParamType
@@ -68,6 +67,7 @@ enum {
 	PARAM_PGLOGICAL_FORWARD_ORIGINS,
 	PARAM_PGLOGICAL_REPLICATION_SET_NAMES,
 	PARAM_PGLOGICAL_REPLICATE_ONLY_TABLE,
+	PARAM_HOOKS_SETUP_FUNCTION,
 	PARAM_PG_VERSION,
 	PARAM_NO_TXINFO
 } OutputPluginParamKey;
@@ -96,6 +96,7 @@ static OutputPluginParam param_lookup[] = {
 	{"pglogical.forward_origins", PARAM_PGLOGICAL_FORWARD_ORIGINS},
 	{"pglogical.replication_set_names", PARAM_PGLOGICAL_REPLICATION_SET_NAMES},
 	{"pglogical.replicate_only_table", PARAM_PGLOGICAL_REPLICATE_ONLY_TABLE},
+	{"hooks.setup_function", PARAM_HOOKS_SETUP_FUNCTION},
 	{"pg_version", PARAM_PG_VERSION},
 	{"no_txinfo", PARAM_NO_TXINFO},
 	{NULL, PARAM_UNRECOGNISED}
@@ -265,21 +266,25 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_PGLOGICAL_REPLICATE_ONLY_TABLE:
 				{
-			List *replicate_only_table;
+					List *replicate_only_table;
 
 					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
 
-			if (!SplitIdentifierString(strVal(elem->arg), '.', &replicate_only_table))
-				elog(ERROR, "Could not parse replicate_only_table %s", strVal(elem->arg));
+					if (!SplitIdentifierString(strVal(elem->arg), '.', &replicate_only_table))
+						elog(ERROR, "Could not parse replicate_only_table %s", strVal(elem->arg));
 
-			data->replicate_only_table = makeRangeVar(pstrdup(linitial(replicate_only_table)),
-													pstrdup(lsecond(replicate_only_table)), -1);
+					data->replicate_only_table = makeRangeVar(pstrdup(linitial(replicate_only_table)),
+															  pstrdup(lsecond(replicate_only_table)), -1);
 					break;
 				}
 
 			case PARAM_NO_TXINFO:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
 				data->client_no_txinfo = DatumGetBool(val);
+				break;
+
+			/* Backwards compat. */
+			case PARAM_HOOKS_SETUP_FUNCTION:
 				break;
 
 			case PARAM_UNRECOGNISED:
@@ -508,10 +513,10 @@ prepare_startup_message(PGLogicalOutputData *data)
 	l = add_startup_msg_i(l, "walsender_pid", MyProcPid);
 
 	/* and ourselves */
-	l = add_startup_msg_s(l, "pglogical_output_version",
-			PGLOGICAL_OUTPUT_VERSION);
-	l = add_startup_msg_i(l, "pglogical_output_version",
-			PGLOGICAL_OUTPUT_VERSION_NUM);
+	l = add_startup_msg_s(l, "pglogical_version",
+			PGLOGICAL_VERSION);
+	l = add_startup_msg_i(l, "pglogical_version_num",
+			PGLOGICAL_VERSION_NUM);
 
 	/* binary options enabled */
 	l = add_startup_msg_b(l, "binary.internal_basetypes",

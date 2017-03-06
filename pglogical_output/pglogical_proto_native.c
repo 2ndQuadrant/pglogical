@@ -11,7 +11,7 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output.h"
+#include "pglogical_output_plugin.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
@@ -22,8 +22,7 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
-#include "pglogical_output_internal.h"
-#include "pglogical_relmetacache.h"
+#include "pglogical_output_proto.h"
 #include "pglogical_proto_native.h"
 
 #define IS_REPLICA_IDENTITY 1
@@ -43,16 +42,13 @@ static char decide_datum_transfer(Form_pg_attribute att,
  */
 void
 pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
-		PGLRelMetaCacheEntry *cache_entry, Bitmapset *att_list)
+					Bitmapset *att_list)
 {
 	char	   *nspname;
 	uint8		nspnamelen;
 	const char *relname;
 	uint8		relnamelen;
 	uint8		flags = 0;
-
-	/* must never be called with an already-cached rel */
-	Assert(cache_entry == NULL || !cache_entry->is_cached);
 
 	pq_sendbyte(out, 'R');		/* sending RELATION */
 
@@ -79,18 +75,6 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 
 	/* send the attribute info */
 	pglogical_write_attrs(out, rel, att_list);
-
-	/*
-	 * Since we've sent the whole relation metadata not just the columns for
-	 * the coming row(s), we can omit sending it again. The client will cache
-	 * it. If the relation changes the cached flag is cleared by
-	 * pglogical_output and we'll be called again next time it's touched.
-	 *
-	 * We don't care about the cache size here, the size management is done
-	 * in the generic cache code.
-	 */
-	if (cache_entry != NULL)
-		cache_entry->is_cached = true;
 
 	pfree(nspname);
 }

@@ -1,8 +1,8 @@
-#ifndef PG_LOGICAL_CONFIG_H
-#define PG_LOGICAL_CONFIG_H
+#ifndef PG_LOGICAL_OUTPUT_CONFIG_H
+#define PG_LOGICAL_OUTPUT_CONFIG_H
 
 #include "nodes/pg_list.h"
-#include "pglogical_output.h"
+#include "pglogical_output_plugin.h"
 
 inline static bool
 server_float4_byval(void)

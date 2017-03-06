@@ -1,29 +1,30 @@
 /*-------------------------------------------------------------------------
  *
- * pglogical_output_internal.h
- *		pglogical output internal definitions
+ * pglogical_output_plugin.h
+ *		pglogical output plugin
  *
- * Copyright (c) 2016, PostgreSQL Global Development Group
+ * Copyright (c) 2015, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  pglogical_output_internal.h
+ *		pglogical_output_plugin.h
  *
  *-------------------------------------------------------------------------
  */
-#ifndef PGLOGICAL_OUTPUT_INTERNAL_H
-#define PGLOGICAL_OUTPUT_INTERNAL_H
+#ifndef PG_LOGICAL_OUTPUT_PLUGIN_H
+#define PG_LOGICAL_OUTPUT_PLUGIN_H
 
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 
-#include "pglogical_proto_internal.h"
+/* summon cross-PG-version compatibility voodoo */
+#include "pglogical_output/compat.h"
 
-/* typedef appears in pglogical_output.h */
-struct PGLogicalOutputData
+/* typedef appears in pglogical_output_plugin.h */
+typedef struct PGLogicalOutputData
 {
 	MemoryContext context;
 
-	PGLogicalProtoAPI *api;
+	struct PGLogicalProtoAPI *api;
 
 	/* Cached node id */
 	Oid			local_node_id;
@@ -69,6 +70,6 @@ struct PGLogicalOutputData
 	/* List of PGLogicalRepSet */
 	List	   *replication_sets;
 	RangeVar   *replicate_only_table;
-};
+} PGLogicalOutputData;
 
-#endif   /* PGLOGICAL_OUTPUT_INTERNAL_H */
+#endif /* PG_LOGICAL_OUTPUT_PLUGIN_H */

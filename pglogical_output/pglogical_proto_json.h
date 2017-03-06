@@ -13,12 +13,12 @@
 #ifndef PG_LOGICAL_PROTO_JSON_H
 #define PG_LOGICAL_PROTO_JSON_H
 
-#include "pglogical_output.h"
+#include "pglogical_output_plugin.h"
 
 #include "lib/stringinfo.h"
 #include "nodes/pg_list.h"
 
-#include "pglogical_proto_internal.h"
+#include "pglogical_output_proto.h"
 
 extern void pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data,
 								 ReorderBufferTXN *txn);
