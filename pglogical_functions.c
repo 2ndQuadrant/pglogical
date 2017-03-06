@@ -253,7 +253,7 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 			{
 				res = SPI_execute("SELECT pg_catalog.pg_drop_replication_slot(slot_name)"
 								  "  FROM pg_catalog.pg_replication_slots"
-								  " WHERE plugin = 'pglogical_output'"
+								  " WHERE (plugin = 'pglogical_output' OR plugin = 'pglogical')"
 								  "   AND database = current_database()"
 								  "   AND slot_name ~ 'pgl_.*'",
 								  false, 0);
@@ -2141,9 +2141,17 @@ pglogical_min_proto_version(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(PGLOGICAL_MIN_PROTO_VERSION_NUM);
 }
 
-/* Dummy function for backward comptibility. */
+/* Dummy functions for backward comptibility. */
 Datum
 pglogical_truncate_trigger_add(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_VOID();
+}
+
+PGDLLEXPORT extern Datum pglogical_hooks_setup(PG_FUNCTION_ARGS);
+PG_FUNCTION_INFO_V1(pglogical_hooks_setup);
+Datum
+pglogical_hooks_setup(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_VOID();
 }

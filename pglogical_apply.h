@@ -14,7 +14,7 @@
 #define PGLOGICAL_APPLY_H
 
 #include "pglogical_relcache.h"
-#include "pglogical_proto.h"
+#include "pglogical_proto_native.h"
 
 typedef void (*pglogical_apply_begin_fn) (void);
 typedef void (*pglogical_apply_commit_fn) (void);

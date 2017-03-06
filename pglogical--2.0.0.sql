@@ -216,10 +216,6 @@ RETURNS trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_queue_truncate';
 CREATE OR REPLACE FUNCTION pglogical.dependency_check_trigger()
 RETURNS event_trigger LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_dependency_check_trigger';
 
-CREATE FUNCTION pglogical.pglogical_hooks_setup(internal)
-RETURNS void
-STABLE LANGUAGE c AS 'MODULE_PATHNAME';
-
 CREATE FUNCTION pglogical.pglogical_node_info(OUT node_id oid, OUT node_name text, OUT sysid text, OUT dbname text, OUT replication_sets text)
 RETURNS record
 STABLE STRICT LANGUAGE c AS 'MODULE_PATHNAME';

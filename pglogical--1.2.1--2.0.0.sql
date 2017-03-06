@@ -94,3 +94,4 @@ DROP EVENT TRIGGER IF EXISTS pglogical_truncate_trigger_add;
 DROP EVENT TRIGGER IF EXISTS pglogical_dependency_check_trigger;
 DROP FUNCTION IF EXISTS pglogical.truncate_trigger_add();
 DROP FUNCTION IF EXISTS pglogical.dependency_check_trigger();
+DROP FUNCTION IF EXISTS pglogical_hooks_setup(internal);

@@ -19,7 +19,7 @@
 
 #include "utils/guc.h"
 
-#include "pglogical_proto.h"
+#include "pglogical_proto_native.h"
 
 typedef enum PGLogicalConflictResolution
 {

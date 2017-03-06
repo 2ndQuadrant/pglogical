@@ -249,16 +249,14 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_PGLOGICAL_REPLICATION_SET_NAMES:
 				{
-					PGLogicalLocalNode	   *node;
 					List *replication_set_names;
 					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
 
 					if (!SplitIdentifierString(strVal(elem->arg), ',', &replication_set_names))
 						elog(ERROR, "Could not parse replication set name list %s", strVal(elem->arg));
 
-					node = get_local_node(false, false);
 					data->replication_sets =
-						get_replication_sets(node->node->id,
+						get_replication_sets(data->local_node_id,
 											 replication_set_names, false);
 
 					break;

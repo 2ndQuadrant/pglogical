@@ -17,7 +17,11 @@
 #include "nodes/primnodes.h"
 
 /* summon cross-PG-version compatibility voodoo */
-#include "pglogical_output/compat.h"
+#include "pglogical_compat.h"
+
+#if PG_VERSION_NUM >= 90500
+#define HAVE_REPLICATION_ORIGINS
+#endif
 
 /* typedef appears in pglogical_output_plugin.h */
 typedef struct PGLogicalOutputData

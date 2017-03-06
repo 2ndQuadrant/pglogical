@@ -4,7 +4,7 @@ MODULE_big = pglogical
 EXTENSION = pglogical
 PGFILEDESC = "pglogical - logical replication"
 
-SUBDIRS = pglogical_output
+MODULES = pglogical_output
 
 DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--1.0.1--1.1.0.sql \
@@ -14,15 +14,14 @@ DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--2.0.0.sql
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
-	   pglogical_node.o pglogical_proto.o pglogical_relcache.o \
-	   pglogical.o pglogical_repset.o pglogical_rpc.o \
-	   pglogical_functions.o pglogical_queue.o pglogical_fe.o \
-	   pglogical_worker.o pglogical_hooks.o pglogical_sync.o \
-	   pglogical_sequences.o pglogical_executor.o pglogical_dependency.o \
-	   pglogical_apply_heap.o pglogical_apply_spi.o
-
-# 9.4 needs SCRIPTS set to do anything, even if SCRIPTS_built is set
-SCRIPTS = pglogical_create_subscriber
+	   pglogical.o pglogical_node.o pglogical_relcache.o \
+	   pglogical_repset.o pglogical_rpc.o pglogical_functions.o \
+	   pglogical_queue.o pglogical_fe.o pglogical_worker.o \
+	   pglogical_sync.o pglogical_sequences.o pglogical_executor.o \
+	   pglogical_dependency.o pglogical_apply_heap.o pglogical_apply_spi.o \
+	   pglogical_output_config.o pglogical_output_plugin.o \
+	   pglogical_output_proto.o pglogical_proto_json.o \
+	   pglogical_proto_native.o
 
 SCRIPTS_built = pglogical_create_subscriber
 
@@ -47,19 +46,21 @@ NO_TEMP_INSTALL = yes
 
 PG_CONFIG ?= pg_config
 
-PG_CPPFLAGS += -I$(libpq_srcdir) $(addprefix -I,$(realpath $(srcdir)/pglogical_output/))
-SHLIB_LINK += $(libpq)
-
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
 
+PG_CPPFLAGS += -I$(libpq_srcdir) -I$(realpath $(srcdir)/compat$(PGVER))
+SHLIB_LINK += $(libpq)
+
+OBJS += $(srcdir)/compat$(PGVER)/pglogical_compat.o
+
 ifeq ($(PGVER),94)
-PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat94))
-OBJS += $(srcdir)/compat94/pglogical_compat.o
 DATA += compat94/pglogical_origin.control compat94/pglogical_origin--1.0.0.sql
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
-                  toasted replication_set add_table matview primary_key foreign_key \
-                  functions copy triggers parallel row_filter \
-                  att_list apply_delay drop
+		  toasted replication_set add_table matview primary_key \
+		  interfaces foreign_key functions copy triggers parallel row_filter \
+		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
+		  node_origin_cascade drop
+
 REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
@@ -69,10 +70,6 @@ DATA += pglogical_origin.control pglogical_origin--1.0.0.sql
 requires =
 endif
 
-ifeq ($(PGVER),95)
-PG_CPPFLAGS += $(addprefix -I,$(realpath $(srcdir)/compat95))
-OBJS += $(srcdir)/compat95/pglogical_compat.o
-endif
 
 PGXS = $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
@@ -98,11 +95,11 @@ else
 # manually, with the config overrides needed.
 #
 # We compromise by using the install we're building against, installing
-# pglogical_output (from a submodule) and pglogical into it, then making
-# a temp instance. This means that 'check' affects the target DB
-# install. Nobody with any sense runs 'make check' under a user with
-# write permissions to their production PostgreSQL install (right?)
-# but this is still not ideal.
+# glogical into it, then making a temp instance. This means that 'check'
+# affects the target DB install. Nobody with any sense runs 'make check'
+# under a user with write permissions to their production PostgreSQL
+# install (right?)
+# But this is still not ideal.
 regresscheck:
 	$(MKDIR_P) regression_output
 	$(pg_regress_check) \
@@ -121,7 +118,7 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 
 
 pglogical.control: pglogical.control.in pglogical.h
-	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > pglogical.control
+	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > $(realpath $(srcdir))/pglogical.control
 
 all: pglogical.control
 
@@ -164,5 +161,3 @@ check_prove:
 	$(prove_check)
 
 .PHONY: all check regresscheck
-
-$(recurse)

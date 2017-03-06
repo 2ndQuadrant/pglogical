@@ -14,6 +14,14 @@
 #define PG_UINT32_MAX	(0xFFFFFFFF)
 #endif
 
+#ifndef PG_INT32_MAX
+#define PG_INT32_MAX	(0x7FFFFFFF)
+#endif
+
+#ifndef PG_INT32_MIN
+#define PG_INT32_MIN	(-0x7FFFFFFF-1)
+#endif
+
 #ifndef PG_UINT16_MAX
 #define PG_UINT16_MAX	(0xFFFF)
 #endif

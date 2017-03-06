@@ -58,7 +58,7 @@
 #include "pglogical_conflict.h"
 #include "pglogical_executor.h"
 #include "pglogical_node.h"
-#include "pglogical_proto.h"
+#include "pglogical_proto_native.h"
 #include "pglogical_queue.h"
 #include "pglogical_relcache.h"
 #include "pglogical_repset.h"

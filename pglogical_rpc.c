@@ -191,9 +191,10 @@ pglogical_remote_slot_active(PGconn *conn, const char *slot_name)
 	if (PQgetisnull(res, 0, 0))
 		elog(ERROR, "Unexpectedly null field %s", PQfname(res, 0));
 
-	if (strcmp("pglogical_output", PQgetvalue(res, 0, 0)) != 0)
+	if (strcmp("pglogical_output", PQgetvalue(res, 0, 0)) != 0 &&
+		strcmp("pglogical", PQgetvalue(res, 0, 0)) != 0)
 		ereport(ERROR,
-				(errmsg("slot %s is not pglogical_output slot", slot_name)));
+				(errmsg("slot %s is not pglogical slot", slot_name)));
 
 	ret = (strcmp(PQgetvalue(res, 0, 1), "t") == 0);
 
@@ -240,9 +241,10 @@ pglogical_drop_remote_slot(PGconn *conn, const char *slot_name)
 	if (PQgetisnull(res, 0, 0))
 		elog(ERROR, "Unexpectedly null field %s", PQfname(res, 0));
 
-	if (strcmp("pglogical_output", PQgetvalue(res, 0, 0)) != 0)
+	if (strcmp("pglogical_output", PQgetvalue(res, 0, 0)) != 0 &&
+		strcmp("pglogical", PQgetvalue(res, 0, 0)) != 0)
 		ereport(ERROR,
-				(errmsg("slot %s is not pglogical_output slot", slot_name)));
+				(errmsg("slot %s is not pglogical slot", slot_name)));
 
 	PQclear(res);
 

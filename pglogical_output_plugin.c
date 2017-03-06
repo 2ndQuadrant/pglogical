@@ -19,6 +19,7 @@
 #include "replication/origin.h"
 #endif
 
+#include "access/xact.h"
 #include "executor/executor.h"
 #include "catalog/namespace.h"
 #include "utils/inval.h"
@@ -155,7 +156,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				  bool is_init)
 {
 	PGLogicalOutputData	   *data = palloc0(sizeof(PGLogicalOutputData));
-	PGLogicalLocalNode	   *node;
 
 	data->context = AllocSetContextCreate(ctx->context,
 										  "pglogical conversion context",
@@ -168,9 +168,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 
 	ctx->output_plugin_private = data;
 
-	node = get_local_node(false, false);
-	data->local_node_id	= node->node->id;
-
 	/*
 	 * This is replication start and not slot initialization.
 	 *
@@ -179,6 +176,17 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	if (!is_init)
 	{
 		int		params_format;
+		bool	started_tx = false;
+		PGLogicalLocalNode *node;
+		MemoryContext oldctx;
+
+		if (!IsTransactionState())
+		{
+			StartTransactionCommand();
+			started_tx = true;
+		}
+		node = get_local_node(false, false);
+		data->local_node_id	= node->node->id;
 
 		 /*
 		 * Ideally we'd send the startup message immediately. That way
@@ -206,7 +214,9 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		startup_message_sent = false;
 
 		/* Now parse the rest of the params and ERROR if we see any we don't recognise */
+		oldctx = MemoryContextSwitchTo(ctx->context);
 		params_format = process_parameters(ctx->output_plugin_options, data);
+		MemoryContextSwitchTo(oldctx);
 
 		if (params_format != 1)
 			ereport(ERROR,
@@ -235,13 +245,16 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		if (data->client_protocol_format != NULL
 				&& strcmp(data->client_protocol_format, "json") == 0)
 		{
+			oldctx = MemoryContextSwitchTo(ctx->context);
 			data->api = pglogical_init_api(PGLogicalProtoJson);
 			opt->output_type = OUTPUT_PLUGIN_TEXTUAL_OUTPUT;
+			MemoryContextSwitchTo(oldctx);
 		}
 		else if ((data->client_protocol_format != NULL
 			     && strcmp(data->client_protocol_format, "native") == 0)
 				 || data->client_protocol_format == NULL)
 		{
+			oldctx = MemoryContextSwitchTo(ctx->context);
 			data->api = pglogical_init_api(PGLogicalProtoNative);
 			opt->output_type = OUTPUT_PLUGIN_BINARY_OUTPUT;
 
@@ -250,6 +263,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				elog(WARNING, "no_txinfo option ignored for protocols other than json");
 				data->client_no_txinfo = false;
 			}
+			MemoryContextSwitchTo(oldctx);
 		}
 		else
 		{
@@ -329,6 +343,9 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			data->forward_changeset_origins = false;
 		else
 			data->forward_changeset_origins = true;
+
+		if (started_tx)
+			CommitTransactionCommand();
 
 		relmetacache_init(ctx->context);
 	}
@@ -593,7 +610,6 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContext	old;
 	Bitmapset	   *att_list = NULL;
 
-
 	/* First check the table filter */
 	if (!pglogical_change_filter(data, relation, change, &att_list))
 		return;
@@ -678,7 +694,7 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 
 	if (origin_id == InvalidRepOriginId)
 	    /* Never filter out locally originated tx's */
-	    ret = true;
+	    ret = false;
 
 	else
 		/*
@@ -686,7 +702,7 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 		 * and just forward all or nothing based on the configuration option
 		 * 'forward_origins'.
 		 */
-		ret = list_length(data->forward_origins) > 0;
+		ret = list_length(data->forward_origins) == 0;
 
 	return ret;
 }

@@ -531,6 +531,7 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 #endif
 					 );
 
+	/* We don't care about this anymore but pglogical 1.x expects this. */
 	appendStringInfoString(&command,
 						   ", \"hooks.setup_function\" 'pglogical.pglogical_hooks_setup'");
 

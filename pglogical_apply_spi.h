@@ -14,7 +14,7 @@
 #define PGLOGICAL_APPLY_SPI_H
 
 #include "pglogical_relcache.h"
-#include "pglogical_proto.h"
+#include "pglogical_proto_native.h"
 
 extern void pglogical_apply_spi_begin(void);
 extern void pglogical_apply_spi_commit(void);

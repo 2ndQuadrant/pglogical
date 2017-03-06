@@ -1,4 +1,0 @@
-default_version = '1.1.0'
-comment = 'dummy extension for backwards compatibility'
-module_pathname = 'pglogical_output'
-superuser = false

@@ -62,7 +62,6 @@
 #include "pglogical_conflict.h"
 #include "pglogical_executor.h"
 #include "pglogical_node.h"
-#include "pglogical_proto.h"
 #include "pglogical_queue.h"
 #include "pglogical_relcache.h"
 #include "pglogical_repset.h"
@@ -589,33 +588,6 @@ handle_startup_param(const char *key, const char *value)
 		bool fwd = parse_bool_param(key, value);
 		/* FIXME: Store this somewhere */
 		elog(DEBUG1, "changeset origin forwarding enabled: %s", fwd ? "t" : "f");
-	}
-
-	if (strcmp(key, "hooks.startup_hook_enabled") == 0)
-	{
-		if (!parse_bool_param(key, value))
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("pglogical requested a startup hook, but it was not activated"),
-					 errdetail("hooks.startup_hook_enabled='f' returned by upstream")));
-	}
-
-	if (strcmp(key, "hooks.row_filter_enabled") == 0)
-	{
-		if (!parse_bool_param(key, value))
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("pglogical requested a row filter hook, but it was not activated"),
-					 errdetail("hooks.startup_hook_enabled='f' returned by upstream")));
-	}
-
-	if (strcmp(key, "hooks.transaction_filter_enabled") == 0)
-	{
-		if (!parse_bool_param(key, value))
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("pglogical requested a transaction filter hook, but it was not activated"),
-					 errdetail("hooks.startup_hook_enabled='f' returned by upstream")));
 	}
 
 	/*
