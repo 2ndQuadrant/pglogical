@@ -71,6 +71,7 @@ static char		   *data_dir = NULL;
 static char			pid_file[MAXPGPATH];
 static time_t		start_time;
 static VerbosityLevelEnum	verbosity = VERBOSITY_NORMAL;
+static char *restore_point_name = "pglogical_create_subscription";
 
 /* defined as static so that die() can close them */
 static PGconn		*subscriber_conn = NULL;
@@ -117,7 +118,8 @@ static char *read_sysid(const char *data_dir);
 static void WriteRecoveryConf(PQExpBuffer contents);
 static void CopyConfFile(char *fromfile, char *tofile);
 
-char *get_connstr(char *connstr, char *dbname);
+static char *get_connstr_dbname(char *connstr);
+static char *get_connstr(char *connstr, char *dbname);
 static char *PQconninfoParamsToConnstr(const char *const * keywords, const char *const * values);
 static void appendPQExpBufferConnstrValue(PQExpBuffer buf, const char *str);
 
@@ -127,6 +129,7 @@ static void copy_file(char *fromfile, char *tofile);
 static char *find_other_exec_or_die(const char *argv0, const char *target);
 static bool postmaster_is_alive(pid_t pid);
 static long get_pgpid(void);
+static char **get_database_list(char *databases, int *n_databases);
 
 static PGconn *
 connectdb(const char *connstr)
@@ -161,15 +164,21 @@ main(int argc, char **argv)
 	bool		drop_slot_if_exists = false;
 	int			optindex;
 	char	   *subscriber_name = NULL;
-	char	   *subscriber_connstr = NULL;
-	char	   *provider_connstr = NULL;
+	char	   *base_sub_connstr = NULL;
+	char	   *base_prov_connstr = NULL;
 	char	   *replication_sets = NULL;
+	char       *databases = NULL;
 	char	   *postgresql_conf = NULL,
 			   *pg_hba_conf = NULL,
 			   *recovery_conf = NULL;
-	char	   *slot_name;
 	int			apply_delay = 0;
-	bool		use_existing_data_dir;
+	char	  **slot_names;
+	char       *sub_connstr;
+	char       *prov_connstr;
+	char      **database_list = { NULL };
+	int         n_databases = 1;
+	int         dbnum;
+	bool		use_existing_data_dir = false;
 	int			pg_ctl_ret,
 				logfd;
 
@@ -185,6 +194,7 @@ main(int argc, char **argv)
 		{"stop", no_argument, NULL, 's'},
 		{"drop-slot-if-exists", no_argument, NULL, 7},
 		{"apply-delay", required_argument, NULL, 8},
+		{"databases", required_argument, NULL, 9},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -218,10 +228,10 @@ main(int argc, char **argv)
 				subscriber_name = pg_strdup(optarg);
 				break;
 			case 1:
-				provider_connstr = pg_strdup(optarg);
+				base_prov_connstr = pg_strdup(optarg);
 				break;
 			case 2:
-				subscriber_connstr = pg_strdup(optarg);
+				base_sub_connstr = pg_strdup(optarg);
 				break;
 			case 3:
 				replication_sets = validate_replication_set_input(pg_strdup(optarg));
@@ -258,6 +268,8 @@ main(int argc, char **argv)
 				break;
 			case 8:
 				apply_delay = atoi(optarg);
+			case 9:
+				databases = pg_strdup(optarg);
 				break;
 			default:
 				fprintf(stderr, _("Unknown option\n"));
@@ -283,13 +295,10 @@ main(int argc, char **argv)
 		exit(1);
 	}
 
-	provider_connstr = get_connstr(provider_connstr, NULL);
-	subscriber_connstr = get_connstr(subscriber_connstr, NULL);
-
-	if (!provider_connstr || !strlen(provider_connstr))
-		die(_("Provider connection must be specified.\n"));
-	if (!subscriber_connstr || !strlen(subscriber_connstr))
-		die(_("Subscriber connection must be specified.\n"));
+	if (!base_prov_connstr || !strlen(base_prov_connstr))
+		die(_("Provider connection string must be specified.\n"));
+	if (!base_sub_connstr || !strlen(base_sub_connstr))
+		die(_("Subscriber connection string must be specified.\n"));
 
 	if (apply_delay < 0)
 		die(_("Apply delay cannot be negative.\n"));
@@ -300,56 +309,113 @@ main(int argc, char **argv)
 	if (!replication_sets || !strlen(replication_sets))
 		replication_sets = "default,default_insert_only,ddl_sql";
 
+	/* Parse database list or connection string. */
+	if (databases != NULL)
+	{
+		database_list = get_database_list(databases, &n_databases);
+	}
+	else
+	{
+		char *dbname = get_connstr_dbname(base_prov_connstr);
+
+		if (!dbname)
+			die(_("Either provider connection string must contain database "
+				  "name or --databases option must be specified.\n"));
+
+		n_databases = 1;
+		database_list = palloc(n_databases * sizeof(char *));
+		database_list[0] = dbname;
+	}
+
+	slot_names = palloc(n_databases * sizeof(char *));
+
+	/*
+	 * Check connection strings for validity before doing anything
+	 * expensive.
+	 */
+	for (dbnum = 0; dbnum < n_databases; dbnum++)
+	{
+		char *db = database_list[dbnum];
+
+		prov_connstr = get_connstr(base_prov_connstr, db);
+		if (!prov_connstr || !strlen(prov_connstr))
+			die(_("Provider connection string is not valid.\n"));
+
+		sub_connstr = get_connstr(base_sub_connstr, db);
+		if (!sub_connstr || !strlen(sub_connstr))
+			die(_("Subscriber connection string is not valid.\n"));
+	}
+
+	/*
+	 * Create log file where new postgres instance will log to while being
+	 * initialized.
+	 */
 	logfd = open("pglogical_create_subscriber_postgres.log", O_CREAT | O_RDWR,
 				 S_IRUSR | S_IWUSR);
 	if (logfd == -1)
 	{
 		die(_("Creating pglogical_create_subscriber_postgres.log failed: %s"),
-				strerror(errno));
+			strerror(errno));
 	}
 	/* Safe to close() unchecked, we didn't write */
 	(void) close(logfd);
 
+	/* Let's start the real work... */
 	print_msg(VERBOSITY_NORMAL, _("%s: starting ...\n"), progname);
 
-	/* Read the remote server indetification. */
-	print_msg(VERBOSITY_NORMAL,
-			  _("Getting remote server identification ...\n"));
-	provider_conn = connectdb(provider_connstr);
-	remote_info = get_remote_info(provider_conn);
+	for (dbnum = 0; dbnum < n_databases; dbnum++)
+	{
+		char *db = database_list[dbnum];
 
-	use_existing_data_dir = check_data_dir(data_dir, remote_info);
+		prov_connstr = get_connstr(base_prov_connstr, db);
+		if (!prov_connstr || !strlen(prov_connstr))
+			die(_("Provider connection string is not valid.\n"));
 
-	if (use_existing_data_dir &&
-		strcmp(remote_info->sysid, read_sysid(data_dir)) != 0)
-		die(_("Subscriber data directory is not basebackup of remote node.\n"));
+		/* Read the remote server indetification. */
+		print_msg(VERBOSITY_NORMAL,
+				  _("Getting information for database %s ...\n"), db);
+		provider_conn = connectdb(prov_connstr);
+		remote_info = get_remote_info(provider_conn);
 
-	/*
-	 * Start the cloning process
-	 */
+		/* only need to do this piece once */
 
-	/*
-	 * Create replication slots on remote node.
-	 */
-	print_msg(VERBOSITY_NORMAL,
-			  _("Creating replication slot ...\n"));
-	slot_name = initialize_replication_slot(provider_conn,
-											remote_info->dbname,
-											remote_info->node_name,
-											subscriber_name,
-											drop_slot_if_exists);
+		if (dbnum == 0)
+		{
+			use_existing_data_dir = check_data_dir(data_dir, remote_info);
+
+			if (use_existing_data_dir &&
+				strcmp(remote_info->sysid, read_sysid(data_dir)) != 0)
+				die(_("Subscriber data directory is not basebackup of remote node.\n"));
+		}
+
+		/*
+		 * Create replication slots on remote node.
+		 */
+		print_msg(VERBOSITY_NORMAL,
+				  _("Creating replication slot in database %s ...\n"), db);
+		slot_names[dbnum] = initialize_replication_slot(provider_conn,
+														remote_info->dbname,
+														remote_info->node_name,
+														subscriber_name,
+														drop_slot_if_exists);
+		PQfinish(provider_conn);
+		provider_conn = NULL;
+	}
 
 	/*
 	 * Create basebackup or use existing one
 	 */
+	prov_connstr = get_connstr(base_prov_connstr, database_list[0]);
+	sub_connstr = get_connstr(base_sub_connstr, database_list[0]);
+
 	initialize_data_dir(data_dir,
-						use_existing_data_dir ? NULL : provider_connstr,
+						use_existing_data_dir ? NULL : prov_connstr,
 						postgresql_conf, pg_hba_conf);
 	snprintf(pid_file, MAXPGPATH, "%s/postmaster.pid", data_dir);
 
 	print_msg(VERBOSITY_NORMAL, _("Creating restore point on remote node ...\n"));
-	remote_lsn = create_restore_point(provider_conn, slot_name);
-
+	provider_conn = connectdb(prov_connstr);
+	remote_lsn = create_restore_point(provider_conn, restore_point_name);
 	PQfinish(provider_conn);
 	provider_conn = NULL;
 
@@ -366,9 +432,9 @@ main(int argc, char **argv)
 	{
 		appendPQExpBuffer(recoveryconfcontents, "standby_mode = 'on'\n");
 		appendPQExpBuffer(recoveryconfcontents, "primary_conninfo = '%s'\n",
-								escape_single_quotes_ascii(provider_connstr));
+								escape_single_quotes_ascii(prov_connstr));
 	}
-	appendPQExpBuffer(recoveryconfcontents, "recovery_target_name = '%s'\n", slot_name);
+	appendPQExpBuffer(recoveryconfcontents, "recovery_target_name = '%s'\n", restore_point_name);
 	appendPQExpBuffer(recoveryconfcontents, "recovery_target_inclusive = true\n");
 	appendPQExpBuffer(recoveryconfcontents, "recovery_target_action = promote\n");
 	WriteRecoveryConf(recoveryconfcontents);
@@ -381,7 +447,7 @@ main(int argc, char **argv)
 	if (pg_ctl_ret != 0)
 		die(_("Postgres startup for restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
 
-	wait_primary_connection(subscriber_connstr);
+	wait_primary_connection(sub_connstr);
 
 	/*
 	 * Clean any per-node data that were copied by pg_basebackup.
@@ -389,10 +455,21 @@ main(int argc, char **argv)
 	print_msg(VERBOSITY_VERBOSE,
 			  _("Removing old pglogical configuration ...\n"));
 
-	subscriber_conn = connectdb(subscriber_connstr);
-	remove_unwanted_data(subscriber_conn);
-	PQfinish(subscriber_conn);
-	subscriber_conn = NULL;
+
+	for (dbnum = 0; dbnum < n_databases; dbnum++)
+	{
+		char *db = database_list[dbnum];
+
+		sub_connstr = get_connstr(base_sub_connstr, db);
+
+		if (!sub_connstr || !strlen(sub_connstr))
+			die(_("Subscriber connection string is not valid.\n"));
+
+		subscriber_conn = connectdb(sub_connstr);
+		remove_unwanted_data(subscriber_conn);
+		PQfinish(subscriber_conn);
+		subscriber_conn = NULL;
+	}
 
 	/* Stop Postgres so we can reset system id and start it with pglogical loaded. */
 	pg_ctl_ret = run_pg_ctl("stop");
@@ -411,35 +488,43 @@ main(int argc, char **argv)
 	pg_ctl_ret = run_pg_ctl("start");
 	if (pg_ctl_ret != 0)
 		die(_("Postgres restart with pglogical enabled failed with %d."), pg_ctl_ret);
-	wait_postmaster_connection(subscriber_connstr);
+	wait_postmaster_connection(base_sub_connstr);
 
-	subscriber_conn = connectdb(subscriber_connstr);
+	for (dbnum = 0; dbnum < n_databases; dbnum++)
+	{
+		char *db = database_list[dbnum];
 
-	/* Create the extension. */
-	print_msg(VERBOSITY_VERBOSE,
-			  _("Creating pglogical extension ...\n"));
-	install_extension(subscriber_conn, "pglogical");
+		sub_connstr = get_connstr(base_sub_connstr, db);
+		prov_connstr = get_connstr(base_prov_connstr, db);
 
-	/*
-	 * Create the identifier which is setup with the position to which we
-	 * already caught up using physical replication.
-	 */
-	print_msg(VERBOSITY_VERBOSE,
-			  _("Creating replication origin ...\n"));
-	initialize_replication_origin(subscriber_conn, slot_name, remote_lsn);
+		subscriber_conn = connectdb(sub_connstr);
 
-	/*
-	 * And finally add the node to the cluster.
-	 */
-	print_msg(VERBOSITY_NORMAL, _("Creating subscriber %s ...\n"),
-			  subscriber_name);
-	print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s\n"), replication_sets);
+		/* Create the extension. */
+		print_msg(VERBOSITY_VERBOSE,
+				  _("Creating pglogical extension for database %s...\n"), db);
+		install_extension(subscriber_conn, "pglogical");
 
-	pglogical_subscribe(subscriber_conn, subscriber_name, subscriber_connstr,
-						provider_connstr, replication_sets, apply_delay);
+		/*
+		 * Create the identifier which is setup with the position to which we
+		 * already caught up using physical replication.
+		 */
+		print_msg(VERBOSITY_VERBOSE,
+				  _("Creating replication origin for database %s...\n"), db);
+		initialize_replication_origin(subscriber_conn, slot_names[dbnum], remote_lsn);
 
-	PQfinish(subscriber_conn);
-	subscriber_conn = NULL;
+		/*
+		 * And finally add the node to the cluster.
+		 */
+		print_msg(VERBOSITY_NORMAL, _("Creating subscriber %s for database %s...\n"),
+				  subscriber_name, db);
+		print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s\n"), replication_sets);
+
+		pglogical_subscribe(subscriber_conn, subscriber_name, sub_connstr,
+							prov_connstr, replication_sets, apply_delay);
+
+		PQfinish(subscriber_conn);
+		subscriber_conn = NULL;
+	}
 
 	/* If user does not want the node to be running at the end, stop it. */
 	if (stop)
@@ -471,6 +556,7 @@ usage(void)
 	printf(_("                              can be either empty/non-existing directory,\n"));
 	printf(_("                              or directory populated using\n"));
 	printf(_("                              pg_basebackup -X stream command\n"));
+	printf(_("  --databases                 optional list of databases to replicate\n"));
 	printf(_("  -n, --subscriber-name=NAME  name of the newly created subscrber\n"));
 	printf(_("  --subscriber-dsn=CONNSTR    connection string to the newly created subscriber\n"));
 	printf(_("  --provider-dsn=CONNSTR      connection string to the provider\n"));
@@ -1040,12 +1126,42 @@ validate_replication_set_input(char *replication_sets)
 	return ret;
 }
 
+static char *
+get_connstr_dbname(char *connstr)
+{
+	PQconninfoOption *conn_opts = NULL;
+	PQconninfoOption *conn_opt;
+	char	   *err_msg = NULL;
+	char	   *ret = NULL;
+
+	conn_opts = PQconninfoParse(connstr, &err_msg);
+	if (conn_opts == NULL)
+	{
+		die(_("Invalid connection string: %s\n"), err_msg);
+	}
+
+	for (conn_opt = conn_opts; conn_opt->keyword != NULL; conn_opt++)
+	{
+		if (strcmp(conn_opt->keyword, "dbname") == 0)
+		{
+			ret = conn_opt->val;
+			break;
+		}
+	}
+
+	if (conn_opts)
+		PQconninfoFree(conn_opts);
+
+	return ret;
+}
+
+
 /*
  * Build connection string from individual parameter.
  *
  * dbname can be specified in connstr parameter
  */
-char *
+static char *
 get_connstr(char *connstr, char *dbname)
 {
 	char		*ret;
@@ -1552,4 +1668,29 @@ get_pgpid(void)
 	}
 	fclose(pidf);
 	return pid;
+}
+
+static char **
+get_database_list(char *databases, int *n_databases)
+{
+	char *c;
+	char **result;
+	int num = 1;
+	for (c = databases; *c; c++ )
+		if (*c == ',')
+			num++;
+	*n_databases = num;
+	result = palloc(num * sizeof(char *));
+	num = 0;
+	/* clone the argument so we don't destroy it with strtok*/
+	databases = pstrdup(databases);
+	c = strtok(databases, ",");
+	while (c != NULL)
+	{
+		result[num] = pstrdup(c);
+		num++;
+		c = strtok(NULL,",");
+	}
+	pfree(databases);
+	return result;
 }
