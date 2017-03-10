@@ -306,7 +306,7 @@ pglogical_apply_spi_mi_add_tuple(PGLogicalRelation *rel,
 	if (pglcstate->copy_buffered_tuples > MAX_BUFFERED_TUPLES ||
 		pglcstate->copy_buffered_size > MAX_BUFFER_SIZE)
 	{
-		pglogical_proccess_copy(pglcstate);
+		pglogical_apply_spi_mi_finish(rel);
 		pglogical_start_copy(rel);
 	}
 
