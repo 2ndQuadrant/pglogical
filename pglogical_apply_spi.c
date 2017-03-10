@@ -349,6 +349,8 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	if (pglcstate && pglcstate->rel != rel)
 		pglogical_apply_spi_mi_finish(pglcstate->rel);
 
+	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
+
 	/* Initialize new COPY state. */
 	pglcstate = palloc0(sizeof(pglogical_copyState));
 
@@ -474,7 +476,6 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	}
 #endif
 
-	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 	pglcstate->copy_parsetree = pg_parse_query(pglcstate->copy_stmt->data);
 	MemoryContextSwitchTo(oldcontext);
 
