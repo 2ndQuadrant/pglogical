@@ -281,6 +281,9 @@ pglogical_apply_spi_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 }
 
 
+/* We currently can't support multi insert using COPY on windows. */
+#ifndef WIN32
+
 bool
 pglogical_apply_spi_can_mi(PGLogicalRelation *rel)
 {
@@ -655,3 +658,20 @@ pglogical_copyOneRowTo(pglogical_copyState *pglcstate, Datum *values,
 
 	MemoryContextSwitchTo(oldcontext);
 }
+
+#else /* WIN32 */
+
+bool
+pglogical_apply_spi_can_mi(PGLogicalRelation *rel)
+{
+	return false;
+}
+
+void
+pglogical_apply_spi_mi_add_tuple(PGLogicalRelation *rel,
+								 PGLogicalTupleData *tup)
+{
+	elog(ERROR, "pglogical_apply_spi_mi_add_tuple called unexpectedly");
+}
+
+#endif /* WIN32 */
