@@ -64,7 +64,7 @@ static pglogical_copyState *pglcstate = NULL;
 
 static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 
-static void pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe);
+static void pglogical_start_copy(PGLogicalRelation *rel);
 static void pglogical_proccess_copy(pglogical_copyState *pglcstate);
 
 static void pglogical_copySendData(pglogical_copyState *pglcstate,
@@ -296,13 +296,7 @@ pglogical_apply_spi_mi_add_tuple(PGLogicalRelation *rel,
 	bool	*nulls;
 
 	/* Start COPY if not already done so */
-	pglogical_start_copy(rel,
-#ifdef WIN32
-						 false
-#else
-						 true
-#endif
-						);
+	pglogical_start_copy(rel);
 
 #define MAX_BUFFERED_TUPLES		10000
 #define MAX_BUFFER_SIZE			60000
@@ -312,8 +306,8 @@ pglogical_apply_spi_mi_add_tuple(PGLogicalRelation *rel,
 	if (pglcstate->copy_buffered_tuples > MAX_BUFFERED_TUPLES ||
 		pglcstate->copy_buffered_size > MAX_BUFFER_SIZE)
 	{
-		pglogical_proccess_copy(pglcstate);
-		pglogical_start_copy(rel, false);
+		pglogical_apply_spi_mi_finish(rel);
+		pglogical_start_copy(rel);
 	}
 
 	/*
@@ -329,7 +323,7 @@ pglogical_apply_spi_mi_add_tuple(PGLogicalRelation *rel,
  * Initialize copy state for reation.
  */
 static void
-pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
+pglogical_start_copy(PGLogicalRelation *rel)
 {
 	MemoryContext oldcontext;
 	Form_pg_attribute *attr;
@@ -339,7 +333,6 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	char		   *delim;
 	StringInfoData  attrnames;
 	int				i;
-	int				fd[2];
 
 	/* We are already doing COPY for requested relation, nothing to do. */
 	if (pglcstate && pglcstate->rel == rel)
@@ -348,6 +341,8 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	/* We are in COPY but for different relation, finish it first. */
 	if (pglcstate && pglcstate->rel != rel)
 		pglogical_apply_spi_mi_finish(pglcstate->rel);
+
+	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 
 	/* Initialize new COPY state. */
 	pglcstate = palloc0(sizeof(pglogical_copyState));
@@ -434,47 +429,15 @@ pglogical_start_copy(PGLogicalRelation *rel, bool use_pipe)
 	 * going to read anything from the STDIN normally. So our highjacking of
 	 * the stream seems ok.
 	 */
-#ifndef WIN32
-	if (use_pipe)
-	{
-		if (pipe(fd))
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not create a pipe: %m")));
+	if (pglcstate->copy_file == -1)
+		pglcstate->copy_file = OpenTemporaryFile(true);
 
-		/*
-		 * Setup a stream on either side of the pipe
-		 */
-		pglcstate->copy_read_file = fdopen(fd[0], "r");
-		if (pglcstate->copy_read_file == NULL)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not setup read stream: %m")));
+	Assert(pglcstate->copy_file > 0);
 
-		pglcstate->copy_write_file = fdopen(fd[1], "w");
-		if (pglcstate->copy_write_file == NULL)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not setup write stream: %m")));
+	pglcstate->copy_write_file = fopen(FilePathName(pglcstate->copy_file), "w");
+	pglcstate->copy_read_file = fopen(FilePathName(pglcstate->copy_file), "r");
+	pglcstate->copy_mechanism = 'f';
 
-		pglcstate->copy_mechanism = 'c';
-	}
-	else
-	{
-#endif
-		if (pglcstate->copy_file == -1)
-			pglcstate->copy_file = OpenTemporaryFile(true);
-
-		Assert(pglcstate->copy_file > 0);
-
-		pglcstate->copy_write_file = fopen(FilePathName(pglcstate->copy_file), "w");
-		pglcstate->copy_read_file = fopen(FilePathName(pglcstate->copy_file), "r");
-		pglcstate->copy_mechanism = 'f';
-#ifndef WIN32
-	}
-#endif
-
-	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 	pglcstate->copy_parsetree = pg_parse_query(pglcstate->copy_stmt->data);
 	MemoryContextSwitchTo(oldcontext);
 
@@ -488,7 +451,7 @@ static void
 pglogical_proccess_copy(pglogical_copyState *pglcstate)
 {
 	uint64	processed;
-	int		save_stdin;
+	FILE	*save_stdin;
 
 	if (!pglcstate->copy_parsetree || !pglcstate->copy_buffered_tuples)
 		return;
@@ -523,32 +486,17 @@ pglogical_proccess_copy(pglogical_copyState *pglcstate)
 	 * for this relation. Before that we save the current 'stdin' stream and
 	 * restore it back when the COPY is done
 	 */
-	save_stdin = dup(fileno(stdin));
-	if (save_stdin < 0)
-		ereport(FATAL,
-				(errcode_for_file_access(),
-				 errmsg("could not save stdin: %m")));
-
-	if (dup2(fileno(pglcstate->copy_read_file), fileno(stdin)) < 0)
-		ereport(FATAL,
-				(errcode_for_file_access(),
-				 errmsg("could not redirect stdin: %m")));
+	save_stdin = stdin;
+	stdin = pglcstate->copy_read_file;
 
 	/* Initiate the actual COPY */
 	DoCopy((CopyStmt *) linitial(pglcstate->copy_parsetree),
 			pglcstate->copy_stmt->data, &processed);
 
-	/*
-	 * Also close the read end of the pipe and restore 'stdin' to its original
-	 * value
-	 */
-	if (dup2(save_stdin, fileno(stdin)) < 0)
-		ereport(FATAL,
-				(errcode_for_file_access(),
-				 errmsg("could not restore stdin: %m")));
 
 	fclose(pglcstate->copy_read_file);
 	pglcstate->copy_read_file = NULL;
+	stdin = save_stdin;
 
 	/* Ensure we processed correct number of tuples */
 	Assert(processed == pglcstate->copy_buffered_tuples);

@@ -1596,7 +1596,6 @@ pglogical_apply_main(Datum main_arg)
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 	MySubscription = get_subscription(MyApplyWorker->subid);
 	MemoryContextSwitchTo(saved_ctx);
-	CommitTransactionCommand();
 
 #ifdef XCP
 	/*
@@ -1605,6 +1604,7 @@ pglogical_apply_main(Datum main_arg)
 	 */
 	InitMultinodeExecutor(false);
 #endif
+	CommitTransactionCommand();
 
 	elog(LOG, "starting apply for subscription %s", MySubscription->name);
 
