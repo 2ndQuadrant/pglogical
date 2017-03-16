@@ -109,9 +109,9 @@ static PGLogicalApplyFunctions apply_api =
 	.do_insert = pglogical_apply_heap_insert,
 	.do_update = pglogical_apply_heap_update,
 	.do_delete = pglogical_apply_heap_delete,
-	.can_multi_insert = NULL,
-	.multi_insert_add_tuple = NULL,
-	.multi_insert_finish = NULL
+	.can_multi_insert = pglogical_apply_heap_can_mi,
+	.multi_insert_add_tuple = pglogical_apply_heap_mi_add_tuple,
+	.multi_insert_finish = pglogical_apply_heap_mi_finish
 };
 
 #define MIN_MULTI_INSERT_TUPLES 10
@@ -395,7 +395,6 @@ handle_insert(StringInfo s)
 		else
 		{
 			apply_api.multi_insert_add_tuple(rel, &newtup);
-			pglogical_relation_close(rel, NoLock);
 			return;
 		}
 	}
@@ -455,6 +454,7 @@ multi_insert_finish(void)
 	if (use_multi_insert)
 	{
 		apply_api.multi_insert_finish(last_insert_rel);
+		pglogical_relation_close(last_insert_rel, NoLock);
 		use_multi_insert = false;
 		last_insert_rel = NULL;
 		last_insert_rel_cnt = 0;

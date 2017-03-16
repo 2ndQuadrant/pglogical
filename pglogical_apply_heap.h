@@ -27,7 +27,9 @@ extern void pglogical_apply_heap_update(PGLogicalRelation *rel,
 extern void pglogical_apply_heap_delete(PGLogicalRelation *rel,
 										PGLogicalTupleData *oldtup);
 
-extern void pglogical_apply_heap_sql(char *cmdstr, char *role,
-									 bool isTopLevel);
+bool pglogical_apply_heap_can_mi(PGLogicalRelation *rel);
+void pglogical_apply_heap_mi_add_tuple(PGLogicalRelation *rel,
+									   PGLogicalTupleData *tup);
+void pglogical_apply_heap_mi_finish(PGLogicalRelation *rel);
 
 #endif /* PGLOGICAL_APPLY_HEAP_H */

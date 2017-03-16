@@ -54,6 +54,7 @@ relcache_free_entry(PGLogicalRelation *entry)
 
 	entry->natts = 0;
 	entry->reloid = InvalidOid;
+	entry->rel = NULL;
 }
 
 
@@ -113,7 +114,7 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 			}
 		}
 	}
-	else
+	else if (!entry->rel)
 		entry->rel = heap_open(entry->reloid, lockmode);
 
 	return entry;

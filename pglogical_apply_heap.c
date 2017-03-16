@@ -35,6 +35,7 @@
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
 
+#include "optimizer/clauses.h"
 #include "optimizer/planner.h"
 
 #include "replication/origin.h"
@@ -73,6 +74,23 @@ typedef struct ApplyExecState {
 	ResultRelInfo	   *resultRelInfo;
 	TupleTableSlot	   *slot;
 } ApplyExecState;
+
+/* State related to bulk insert */
+typedef struct ApplyMIState
+{
+	PGLogicalRelation  *rel;
+	ApplyExecState	   *aestate;
+
+	CommandId			cid;
+	BulkInsertState		bistate;
+
+	HeapTuple		   *buffered_tuples;
+	int					maxbuffered_tuples;
+	int					nbuffered_tuples;
+} ApplyMIState;
+
+
+static ApplyMIState *pglmistate = NULL;
 
 void
 pglogical_apply_heap_begin(void)
@@ -568,4 +586,250 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	finish_apply_exec_state(aestate);
 
 	CommandCounterIncrement();
+}
+
+
+bool
+pglogical_apply_heap_can_mi(PGLogicalRelation *rel)
+{
+	/* Multi insert is only supported when conflicts result in errors. */
+	return pglogical_conflict_resolver == PGLOGICAL_RESOLVE_ERROR;
+}
+
+/*
+ * MultiInsert initialization.
+ */
+static void
+pglogical_apply_heap_mi_start(PGLogicalRelation *rel)
+{
+	MemoryContext	oldctx;
+	ApplyExecState *aestate;
+	ResultRelInfo  *resultRelInfo;
+	TupleDesc		desc;
+	bool			volatile_defexprs = false;
+
+	if (pglmistate && pglmistate->rel == rel)
+		return;
+
+	if (pglmistate && pglmistate->rel != rel)
+		pglogical_apply_heap_mi_finish(pglmistate->rel);
+
+	oldctx = MemoryContextSwitchTo(TopTransactionContext);
+
+	/* Initialize new MultiInsert state. */
+	pglmistate = palloc0(sizeof(ApplyMIState));
+
+	pglmistate->rel = rel;
+
+	/* Initialize the executor state. */
+	pglmistate->aestate = aestate = init_apply_exec_state(rel);
+	MemoryContextSwitchTo(TopTransactionContext);
+	resultRelInfo = aestate->resultRelInfo;
+
+	ExecOpenIndices(resultRelInfo
+#if PG_VERSION_NUM >= 90500
+					, false
+#endif
+					);
+
+	/* Check if table has any volatile default expressions. */
+	desc = RelationGetDescr(rel->rel);
+	if (desc->natts != rel->natts)
+	{
+		int			attnum;
+
+		for (attnum = 0; attnum < desc->natts; attnum++)
+		{
+			Expr	   *defexpr;
+
+			if (desc->attrs[attnum]->attisdropped)
+				continue;
+
+			defexpr = (Expr *) build_column_default(rel->rel, attnum + 1);
+
+			if (defexpr != NULL)
+			{
+				/* Run the expression through planner */
+				defexpr = expression_planner(defexpr);
+				volatile_defexprs = contain_volatile_functions_not_nextval((Node *) defexpr);
+
+				if (volatile_defexprs)
+					break;
+			}
+		}
+	}
+
+	/*
+	 * Decide if to buffer tuples based on the collected information
+	 * about the table.
+	 */
+	if ((resultRelInfo->ri_TrigDesc != NULL &&
+		 (resultRelInfo->ri_TrigDesc->trig_insert_before_row ||
+		  resultRelInfo->ri_TrigDesc->trig_insert_instead_row)) ||
+		volatile_defexprs)
+	{
+		pglmistate->maxbuffered_tuples = 1;
+	}
+	else
+	{
+		pglmistate->maxbuffered_tuples = 1000;
+	}
+
+	pglmistate->cid = GetCurrentCommandId(true);
+	pglmistate->bistate = GetBulkInsertState();
+
+	/* Make the space for buffer. */
+	pglmistate->buffered_tuples = palloc0(pglmistate->maxbuffered_tuples * sizeof(HeapTuple));
+	pglmistate->nbuffered_tuples = 0;
+
+	MemoryContextSwitchTo(oldctx);
+}
+
+/* Write the buffered tuples. */
+static void
+pglogical_apply_heap_mi_flush(void)
+{
+	MemoryContext	oldctx;
+	ResultRelInfo  *resultRelInfo;
+	int				i;
+
+	if (!pglmistate || pglmistate->nbuffered_tuples == 0)
+		return;
+
+	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(pglmistate->aestate->estate));
+	heap_multi_insert(pglmistate->rel->rel,
+					  pglmistate->buffered_tuples,
+					  pglmistate->nbuffered_tuples,
+					  pglmistate->cid,
+					  0, /* hi_options */
+					  pglmistate->bistate);
+	MemoryContextSwitchTo(oldctx);
+
+	resultRelInfo = pglmistate->aestate->resultRelInfo;
+
+	/*
+	 * If there are any indexes, update them for all the inserted tuples, and
+	 * run AFTER ROW INSERT triggers.
+	 */
+	if (resultRelInfo->ri_NumIndices > 0)
+	{
+		for (i = 0; i < pglmistate->nbuffered_tuples; i++)
+		{
+			List	   *recheckIndexes;
+
+			ExecStoreTuple(pglmistate->buffered_tuples[i],
+						   pglmistate->aestate->slot,
+						   InvalidBuffer, false);
+			recheckIndexes =
+				ExecInsertIndexTuples(pglmistate->aestate->slot,
+									  &(pglmistate->buffered_tuples[i]->t_self),
+									  pglmistate->aestate->estate, false, NULL, NIL);
+			ExecARInsertTriggers(pglmistate->aestate->estate, resultRelInfo,
+								 pglmistate->buffered_tuples[i],
+								 recheckIndexes);
+			list_free(recheckIndexes);
+		}
+	}
+
+	/*
+	 * There's no indexes, but see if we need to run AFTER ROW INSERT triggers
+	 * anyway.
+	 */
+	else if (resultRelInfo->ri_TrigDesc != NULL &&
+			 resultRelInfo->ri_TrigDesc->trig_insert_after_row)
+	{
+		for (i = 0; i < pglmistate->nbuffered_tuples; i++)
+		{
+			ExecARInsertTriggers(pglmistate->aestate->estate, resultRelInfo,
+								 pglmistate->buffered_tuples[i],
+								 NIL);
+		}
+	}
+
+	pglmistate->nbuffered_tuples = 0;
+}
+
+/* Add tuple to the MultiInsert. */
+void
+pglogical_apply_heap_mi_add_tuple(PGLogicalRelation *rel,
+								  PGLogicalTupleData *tup)
+{
+	MemoryContext	oldctx;
+	ApplyExecState *aestate;
+	HeapTuple		remotetuple;
+	TupleTableSlot *slot;
+
+	pglogical_apply_heap_mi_start(rel);
+
+	/*
+	 * If sufficient work is pending, process that first
+	 */
+	if (pglmistate->nbuffered_tuples >= pglmistate->maxbuffered_tuples)
+		pglogical_apply_heap_mi_flush();
+
+	/* Process and store remote tuple in the slot */
+	aestate = pglmistate->aestate;
+
+	if (pglmistate->nbuffered_tuples == 0)
+	{
+		/*
+		 * Reset the per-tuple exprcontext. We can only do this if the
+		 * tuple buffer is empty. (Calling the context the per-tuple
+		 * memory context is a bit of a misnomer now.)
+		 */
+		ResetPerTupleExprContext(aestate->estate);
+	}
+
+	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(aestate->estate));
+	fill_missing_defaults(rel, aestate->estate, tup);
+	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
+								  tup->values, tup->nulls);
+	MemoryContextSwitchTo(TopTransactionContext);
+	slot = aestate->slot;
+	/* Store the tuple in slot, but make sure it's not freed. */
+	ExecStoreTuple(remotetuple, slot, InvalidBuffer, false);
+
+	if (aestate->resultRelInfo->ri_TrigDesc &&
+		aestate->resultRelInfo->ri_TrigDesc->trig_insert_before_row)
+	{
+		slot = ExecBRInsertTriggers(aestate->estate,
+									aestate->resultRelInfo,
+									slot);
+
+		if (slot == NULL)
+		{
+			MemoryContextSwitchTo(oldctx);
+			return;
+		}
+		else
+			remotetuple = ExecMaterializeSlot(slot);
+	}
+
+	/* Check the constraints of the tuple */
+	if (rel->rel->rd_att->constr)
+		ExecConstraints(aestate->resultRelInfo, slot,
+						aestate->estate);
+
+	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples++] = remotetuple;
+	MemoryContextSwitchTo(oldctx);
+}
+
+void
+pglogical_apply_heap_mi_finish(PGLogicalRelation *rel)
+{
+	if (!pglmistate)
+		return;
+
+	Assert(pglmistate->rel == rel);
+
+	pglogical_apply_heap_mi_flush();
+
+	FreeBulkInsertState(pglmistate->bistate);
+
+	finish_apply_exec_state(pglmistate->aestate);
+
+	pfree(pglmistate->buffered_tuples);
+	pfree(pglmistate);
+
+	pglmistate = NULL;
 }
