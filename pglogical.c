@@ -57,10 +57,12 @@ PG_MODULE_MAGIC;
 
 static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{"error", PGLOGICAL_RESOLVE_ERROR, false},
+#ifndef XCP
 	{"apply_remote", PGLOGICAL_RESOLVE_APPLY_REMOTE, false},
 	{"keep_local", PGLOGICAL_RESOLVE_KEEP_LOCAL, false},
 	{"last_update_wins", PGLOGICAL_RESOLVE_LAST_UPDATE_WINS, false},
 	{"first_update_wins", PGLOGICAL_RESOLVE_FIRST_UPDATE_WINS, false},
+#endif
 	{NULL, 0, false}
 };
 
