@@ -114,7 +114,8 @@ static PGLogicalApplyFunctions apply_api =
 	.multi_insert_finish = pglogical_apply_heap_mi_finish
 };
 
-#define MIN_MULTI_INSERT_TUPLES 10
+/* Number of tuples inserted after which we switch to multi-insert. */
+#define MIN_MULTI_INSERT_TUPLES 5
 static PGLogicalRelation   *last_insert_rel = NULL;
 static int					last_insert_rel_cnt = 0;
 static bool					use_multi_insert = false;
