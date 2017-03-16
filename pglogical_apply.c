@@ -399,9 +399,10 @@ handle_insert(StringInfo s)
 			return;
 		}
 	}
-	else if (RelationGetRelid(rel->rel) != QueueRelid &&
-		apply_api.can_multi_insert &&
-		apply_api.can_multi_insert(rel))
+	else if (pglogical_batch_inserts &&
+			 RelationGetRelid(rel->rel) != QueueRelid &&
+			 apply_api.can_multi_insert &&
+			 apply_api.can_multi_insert(rel))
 	{
 		if (rel != last_insert_rel)
 		{

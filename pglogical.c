@@ -85,6 +85,7 @@ static const struct config_enum_entry server_message_level_options[] = {
 bool	pglogical_synchronous_commit = false;
 char   *pglogical_temp_directory;
 bool	pglogical_use_spi = false;
+bool	pglogical_batch_inserts = true;
 
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
@@ -739,6 +740,19 @@ _PG_init(void)
 							 "Use SPI instead of low-level API for applying changes",
 							 NULL,
 							 &pglogical_use_spi,
+#ifdef XCP
+							 true,
+#else
+							 false,
+#endif
+							 PGC_POSTMASTER,
+							 0,
+							 NULL, NULL, NULL);
+
+	DefineCustomBoolVariable("pglogical.batch_inserts",
+							 "Batch inserts if possible",
+							 NULL,
+							 &pglogical_batch_inserts,
 #ifdef XCP
 							 true,
 #else
