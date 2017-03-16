@@ -753,11 +753,7 @@ _PG_init(void)
 							 "Batch inserts if possible",
 							 NULL,
 							 &pglogical_batch_inserts,
-#ifdef XCP
 							 true,
-#else
-							 false,
-#endif
 							 PGC_POSTMASTER,
 							 0,
 							 NULL, NULL, NULL);
