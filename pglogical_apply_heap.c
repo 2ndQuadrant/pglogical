@@ -723,7 +723,11 @@ pglogical_apply_heap_mi_flush(void)
 			recheckIndexes =
 				ExecInsertIndexTuples(pglmistate->aestate->slot,
 									  &(pglmistate->buffered_tuples[i]->t_self),
-									  pglmistate->aestate->estate, false, NULL, NIL);
+									  pglmistate->aestate->estate
+#if PG_VERSION_NUM >= 90500
+									  , false, NULL, NIL
+#endif
+									 );
 			ExecARInsertTriggers(pglmistate->aestate->estate, resultRelInfo,
 								 pglmistate->buffered_tuples[i],
 								 recheckIndexes);
