@@ -16,7 +16,6 @@
 #include "executor/executor.h"
 
 extern List *pglogical_truncated_tables;
-extern DropBehavior pglogical_lastDropBehavior;
 
 extern EState *create_estate_for_relation(Relation rel, bool hasTriggers);
 extern ExprContext *prepare_per_tuple_econtext(EState *estate, TupleDesc tupdesc);

@@ -19,12 +19,15 @@
 #include "access/htup_details.h"
 #include "access/xact.h"
 
+#include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/objectaddress.h"
+#include "catalog/pg_extension.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 
+#include "commands/extension.h"
 #include "commands/trigger.h"
 
 #include "miscadmin.h"
@@ -195,6 +198,8 @@ void
 create_truncate_trigger(Relation rel)
 {
 	CreateTrigStmt *tgstmt;
+	ObjectAddress	trgobj;
+	ObjectAddress	extension;
 	Oid			fargtypes[1];
 	List	   *funcname = list_make2(makeString(EXTENSION_NAME),
 									  makeString("queue_truncate"));
@@ -236,8 +241,14 @@ create_truncate_trigger(Relation rel)
 	tgstmt->initdeferred = false;
 	tgstmt->constrrel = NULL;
 
-	(void) CreateTrigger(tgstmt, NULL, RelationGetRelid(rel), InvalidOid,
-						 InvalidOid, InvalidOid, true /* tgisinternal */);
+	trgobj = CreateTrigger(tgstmt, NULL, RelationGetRelid(rel), InvalidOid,
+						   InvalidOid, InvalidOid, true /* tgisinternal */);
+
+	extension.classId = ExtensionRelationId;
+	extension.objectId = get_extension_oid(EXTENSION_NAME, false);
+	extension.objectSubId = 0;
+
+	recordDependencyOn(&trgobj, &extension, DEPENDENCY_AUTO_EXTENSION);
 
 	/* Make the new trigger visible within this session */
 	CommandCounterIncrement();

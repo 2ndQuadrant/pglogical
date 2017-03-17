@@ -20,9 +20,12 @@
 #include "access/xlog.h"
 
 #include "catalog/dependency.h"
+#include "catalog/namespace.h"
 #include "catalog/objectaccess.h"
+#include "catalog/pg_extension.h"
 #include "catalog/pg_type.h"
 
+#include "commands/extension.h"
 #include "commands/trigger.h"
 
 #include "executor/executor.h"
@@ -51,7 +54,8 @@
 
 List *pglogical_truncated_tables = NIL;
 
-DropBehavior pglogical_lastDropBehavior = DROP_RESTRICT;
+static DropBehavior	pglogical_lastDropBehavior = DROP_RESTRICT;
+static bool			dropping_pglogical = false;
 static object_access_hook_type next_object_access_hook = NULL;
 
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
@@ -223,6 +227,8 @@ pglogical_ProcessUtility(Node *parsetree,
 #endif
 						 char *completionTag)
 {
+	dropping_pglogical = false;
+
 	if (nodeTag(parsetree) == T_TruncateStmt)
 		pglogical_start_truncate();
 
@@ -272,6 +278,26 @@ pglogical_object_access(ObjectAccessType access,
 
 		/* No need to check for internal deletions. */
 		if ((drop_arg->dropflags & PERFORM_DELETION_INTERNAL) != 0)
+			return;
+
+		/* Dropping pglogical itself? */
+		if (classId == ExtensionRelationId &&
+			objectId == get_extension_oid(EXTENSION_NAME, false))
+			dropping_pglogical = true;
+
+		/* Dropping dependency checking relation? */
+		if (classId == RelationRelationId)
+		{
+			Oid			nspoid;
+			Oid			reloid;
+
+			nspoid = get_namespace_oid(EXTENSION_NAME, true);
+			reloid = get_relname_relid("depend", nspoid);
+			if (reloid == objectId)
+				dropping_pglogical = true;
+		}
+
+		if (dropping_pglogical)
 			return;
 
 		/* No local node? */
