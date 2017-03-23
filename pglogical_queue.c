@@ -241,8 +241,8 @@ create_truncate_trigger(Relation rel)
 	tgstmt->initdeferred = false;
 	tgstmt->constrrel = NULL;
 
-	trgobj = CreateTrigger(tgstmt, NULL, RelationGetRelid(rel), InvalidOid,
-						   InvalidOid, InvalidOid, true /* tgisinternal */);
+	trgobj = PGLCreateTrigger(tgstmt, NULL, RelationGetRelid(rel), InvalidOid,
+							  InvalidOid, InvalidOid, true /* tgisinternal */);
 
 	extension.classId = ExtensionRelationId;
 	extension.objectId = get_extension_oid(EXTENSION_NAME, false);

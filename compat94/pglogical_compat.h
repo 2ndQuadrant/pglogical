@@ -5,6 +5,9 @@
 
 #include "access/xlog.h"
 #include "access/xlogdefs.h"
+#include "catalog/objectaddress.h"
+#include "catalog/pg_trigger.h"
+#include "commands/trigger.h"
 #include "nodes/pg_list.h"
 #include "storage/lwlock.h"
 #include "utils/array.h"
@@ -51,5 +54,16 @@ extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)
 
 #define ObjectAddressSet(addr, class_id, object_id) \
 	ObjectAddressSubSet(addr, class_id, object_id, 0)
+
+inline ObjectAddress PGLCreateTrigger(CreateTrigStmt *stmt, const char *queryString,
+			  Oid relOid, Oid refRelOid, Oid constraintOid, Oid indexOid,
+			  bool isInternal)
+{
+	ObjectAddress myself;
+	myself.classId = TriggerRelationId;
+	myself.objectId = CreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, isInternal);
+	myself.objectSubId = 0;
+	return myself;
+}
 
 #endif

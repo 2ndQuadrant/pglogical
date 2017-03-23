@@ -12,4 +12,6 @@ extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)
 	GetConfigOptionByName(name, varname) \
 )
 
+#define PGLCreateTrigger CreateTrigger
+
 #endif
