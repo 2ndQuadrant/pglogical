@@ -248,7 +248,7 @@ create_truncate_trigger(Relation rel)
 	extension.objectId = get_extension_oid(EXTENSION_NAME, false);
 	extension.objectSubId = 0;
 
-	recordDependencyOn(&trgobj, &extension, DEPENDENCY_AUTO_EXTENSION);
+	recordDependencyOn(&trgobj, &extension, DEPENDENCY_AUTO);
 
 	/* Make the new trigger visible within this session */
 	CommandCounterIncrement();
