@@ -55,9 +55,10 @@ extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)
 #define ObjectAddressSet(addr, class_id, object_id) \
 	ObjectAddressSubSet(addr, class_id, object_id, 0)
 
-inline ObjectAddress PGLCreateTrigger(CreateTrigStmt *stmt, const char *queryString,
-			  Oid relOid, Oid refRelOid, Oid constraintOid, Oid indexOid,
-			  bool isInternal)
+static inline ObjectAddress
+PGLCreateTrigger(CreateTrigStmt *stmt, const char *queryString,
+				 Oid relOid, Oid refRelOid, Oid constraintOid, Oid indexOid,
+				 bool isInternal)
 {
 	ObjectAddress myself;
 	myself.classId = TriggerRelationId;
