@@ -736,7 +736,7 @@ and `ENABLE ALWAYS` triggers will be fired.
 
 ### PostgreSQL Version differences
 
-pglogical can replicate across PostgreSQL major versions. Despite that, long
+PGLogical can replicate across PostgreSQL major versions. Despite that, long
 term cross-version replication is not considered a design target, though it may
 often work. Issues where changes are valid on the provider but not on the
 subscriber are more likely to arise when replicating across versions.
@@ -745,6 +745,11 @@ It is safer to replicate from an old version to a newer version since PostgreSQL
 maintains solid backward compatibility but only limited forward compatibility.
 
 Replicating between different minor versions makes no difference at all.
+
+### Database encoding differences
+
+PGLogical does not support replication between databases with different
+encoding. We recommend using `UTF-8` encoding in all replicated databases.
 
 ### Doesn't replicate DDL
 
@@ -759,7 +764,7 @@ decoding plugin its self, such as:
   write them to a table to be replicated and applied on the other end; or
 * doing DDL management via tools that synchronize DDL on all nodes
 
-### Postgres-XL support
+### Postgres-XL
 
 Postgres-XL is only supported as subsriber (cannot be a provider). Also for
 workloads with many small transactions the performance of replication may
