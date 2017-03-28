@@ -109,7 +109,7 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 	CommitTransactionCommand();
 
 	initStringInfo(&command);
-	appendStringInfo(&command, "%s --snapshot=\"%s\" %s -s -F c -f \"%s\" \"%s\"",
+	appendStringInfo(&command, "\"%s\" --snapshot=\"%s\" %s -s -F c -f \"%s\" \"%s\"",
 					 pg_dump, snapshot, schema_filter.data, destfile,
 					 sub->origin_if->dsn);
 
@@ -142,7 +142,7 @@ restore_structure(PGLogicalSubscription *sub, const char *srcfile,
 
 	initStringInfo(&command);
 	appendStringInfo(&command,
-					 "%s --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
+					 "\"%s\" --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
 					 pg_restore, section, sub->target_if->dsn, srcfile);
 
 	res = system(command.data);
@@ -717,16 +717,14 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));
 		{
-			StringInfoData	tmpfile;
+			char	tmpfile[MAXPGPATH];
 
-			oldctx = MemoryContextSwitchTo(myctx);
-			initStringInfo(&tmpfile);
-			appendStringInfo(&tmpfile, "%s/pglogical-%d.dump",
-							 pglogical_temp_directory, MyProcPid);
-			MemoryContextSwitchTo(oldctx);
+			snprintf(tmpfile, MAXPGPATH, "%s/pglogical-%d.dump",
+					 pglogical_temp_directory, MyProcPid);
+			canonicalize_path(tmpfile);
 
 			PG_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
-									CStringGetDatum(tmpfile.data));
+									CStringGetDatum(tmpfile));
 			{
 				StartTransactionCommand();
 
@@ -749,10 +747,10 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					CommitTransactionCommand();
 
 					/* Dump structure to temp storage. */
-					dump_structure(sub, tmpfile.data, snapshot);
+					dump_structure(sub, tmpfile, snapshot);
 
 					/* Restore base pre-data structure (types, tables, etc). */
-					restore_structure(sub, tmpfile.data, "pre-data");
+					restore_structure(sub, tmpfile, "pre-data");
 				}
 
 				/* Copy data. */
@@ -815,13 +813,13 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					set_subscription_sync_status(sub->id, status);
 					CommitTransactionCommand();
 
-					restore_structure(sub, tmpfile.data, "post-data");
+					restore_structure(sub, tmpfile, "post-data");
 				}
 			}
 			PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
-										CStringGetDatum(tmpfile.data));
+										CStringGetDatum(tmpfile));
 			pglogical_sync_tmpfile_cleanup_cb(0,
-											  CStringGetDatum(tmpfile.data));
+											  CStringGetDatum(tmpfile));
 		}
 		PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 									PointerGetDatum(sub));
