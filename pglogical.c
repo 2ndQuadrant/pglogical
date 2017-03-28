@@ -699,6 +699,12 @@ pglogical_supervisor_main(Datum main_arg)
 static void
 pglogical_temp_directory_assing_hook(const char *newval, void *extra)
 {
+	if (strlen(newval))
+	{
+		pglogical_temp_directory = strdup(newval);
+	}
+	else
+	{
 #ifndef WIN32
 		const char *tmpdir = getenv("TMPDIR");
 
@@ -717,7 +723,9 @@ pglogical_temp_directory_assing_hook(const char *newval, void *extra)
 		}
 #endif
 
-	pglogical_temp_directory = strdup(tmpdir);
+		pglogical_temp_directory = strdup(tmpdir);
+
+	}
 
 	if (pglogical_temp_directory == NULL)
 		ereport(ERROR,
