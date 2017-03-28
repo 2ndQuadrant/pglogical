@@ -13,6 +13,7 @@ reused from the earlier Slony technology:
 pglogical is new technology utilising the latest in-core features, so we have these version restrictions:
 * Provider & subscriber nodes must run PostgreSQL 9.4+
 * PostgreSQL 9.5+ is required for replication origin filtering and conflict detection
+* Additionaly, subscriber can be Postgres-XL 9.5+
 
 Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
@@ -530,23 +531,86 @@ happen on a subscriber, conflicts can arise for the incoming changes. These
 are automatically detected and can be acted on depending on the configuration.
 
 The configuration of the conflicts resolver is done via the
-`pglogical.conflict_resolution` setting. The supported values for the
-`pglogical.conflict_resolution` are:
+`pglogical.conflict_resolution` setting.
 
-- `error` - the replication will stop on error if conflict is detected and
-  manual action is needed for resolving
-- `apply_remote` - always apply the change that's conflicting with local data,
-  this is the default
-- `keep_local` - keep the local version of the data and ignore the conflicting
-  change that is coming from the remote node
-- `last_update_wins` - the version of data with newest commit timestamp will be
-  kept (this can be either local or remote version)
-- `first_update_wins` - the version of the data with oldest timestamp will be
-  kept (this can be either local or remote version)
+## Configuration options
 
-When `track_commit_timestamp` is disabled, the only allowed value is
-`apply_remote`. As `track_commit_timestamp` is not available in PostgreSQL 9.4
-`pglogical.conflict_resolution` can only be `apply_remote` (default)
+Some aspects of PGLogical can be configured using configuration options that
+can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
+
+- `pglogical.conflict_resolution`
+  Sets the resolution method for any detected conflicts between local data
+  and incoming changes.
+
+  Possible values:
+  - `error` - the replication will stop on error if conflict is detected and
+    manual action is needed for resolving
+  - `apply_remote` - always apply the change that's conflicting with local
+    data
+  - `keep_local` - keep the local version of the data and ignore the
+     conflicting change that is coming from the remote node
+  - `last_update_wins` - the version of data with newest commit timestamp
+     will be kept (this can be either local or remote version)
+  - `first_update_wins` - the version of the data with oldest timestamp will
+     be kept (this can be either local or remote version)
+
+  The available settings and defaults depend on version of PostgreSQL and
+  other settings.
+
+  The default value in PostgreSQL is `apply_remote`.
+
+  The `keep_local`, `last_update_wins` and `first_update_wins` settings
+  require `track_commit_timestamp` PostgreSQL setting to be enabled. As
+  `track_commit_timestamp` is not available in PostgreSQL 9.4
+  `pglogical.conflict_resolution` can only be `apply_remote` or `error`.
+
+  In Postgres-XL, the only supported value and the default is `error`.
+
+- `pglogical.conflict_log_level`
+  Sets the log level for reporting detected conflicts when the
+  `pglogical.conflict_resolution` is set to anything else than `error`.
+
+  Main use for this setting is to suppress logging of conflicts.
+
+  Possible values are same as for `log_min_messages` PostgreSQL setting.
+
+  The default is `LOG`.
+
+- `pglogical.batch_inserts`
+  Tells PGLogical to use batch insert mechanism if possible. Batch mechanism
+  uses PostgreSQL internal batch insert mode which is also used by `COPY`
+  command.
+
+  The batch inserts will improve replication peformance of transactions that
+  did many inserts into one table. PGLogial will switch to batch mode when
+  transaction did more than 5 INSERTs.
+
+  It's only possible to switch to batch mode when there are no
+  `INSTEAD OF INSERT` and `BEFORE INSERT` triggers on the table and when
+  there are no defaults with volatile expressions for columns of the table.
+  Also the batch mode will only work when `pglogical.conflict_resolution` is
+  set to `error`.
+
+  The default is `true`.
+
+- `pglogical.use_spi`
+  Tells PGLogical to use SPI interface to form actual SQL
+  (`INSERT`, `UPDATE`, `DELETE`) statements to apply incoming changes instead
+  of using internal low level interface.
+
+  This is mainly useful for Postgres-XL and debugging purposes.
+
+  The default in PostgreSQL is `false`.
+
+  In Postgres-XL the default and only allowed setting is `true`.
+
+- `pglogical.temp_directory`
+  Defines system path where to put temporary files needed for schema
+  synchronization. This path need to exist and be writable by user running
+  Postgres.
+
+  Default is `/tmp`.
+
 
 The resolved conflicts are logged using the log level set using
 `pglogical.conflict_log_level`. This parameter defaults to `LOG`. If set to
@@ -703,8 +767,8 @@ suffer due to increased write latency. On the other hand large insert
 (or bulkcopy) transactions are heavily optimized to work very fast with
 Postgres-XL.
 
-The `pglogical.conflict_resolution` setting defaults can only be set to
-`error` on Postgres-XL.
+The Postgre-XL changes defaults and available settings for
+`pglogical.conflict_resolution` and `pglogical.use_spi` configuration options.
 
 ## Credits and Licence
 
