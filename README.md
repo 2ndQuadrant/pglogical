@@ -533,6 +533,11 @@ are automatically detected and can be acted on depending on the configuration.
 The configuration of the conflicts resolver is done via the
 `pglogical.conflict_resolution` setting.
 
+The resolved conflicts are logged using the log level set using
+`pglogical.conflict_log_level`. This parameter defaults to `LOG`. If set to
+lower level than `log_min_messages` the resolved conflicts won't appear in
+the server log.
+
 ## Configuration options
 
 Some aspects of PGLogical can be configured using configuration options that
@@ -610,12 +615,6 @@ can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
   Postgres.
 
   Default is `/tmp`.
-
-
-The resolved conflicts are logged using the log level set using
-`pglogical.conflict_log_level`. This parameter defaults to `LOG`. If set to
-lower level than `log_min_messages` the resolved conflicts won't appear in
-the server log.
 
 ## Limitations and restrictions
 
