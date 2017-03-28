@@ -85,9 +85,10 @@ static const struct config_enum_entry server_message_level_options[] = {
 };
 
 bool	pglogical_synchronous_commit = false;
-char   *pglogical_temp_directory;
+char   *pglogical_temp_directory = "";
 bool	pglogical_use_spi = false;
 bool	pglogical_batch_inserts = true;
+static char *pglogical_temp_directory_config;
 
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
@@ -695,6 +696,35 @@ pglogical_supervisor_main(Datum main_arg)
 	proc_exit(1);
 }
 
+static void
+pglogical_temp_directory_assing_hook(const char *newval, void *extra)
+{
+#ifndef WIN32
+		const char *tmpdir = getenv("TMPDIR");
+
+		if (!tmpdir)
+			tmpdir = "/tmp";
+#else
+		char		tmpdir[MAXPGPATH];
+		int			ret;
+
+		ret = GetTempPath(MAXPGPATH, tmpdir);
+		if (ret == 0 || ret > MAXPGPATH)
+		{
+			ereport(ERROR, "could not locate temporary directory: %s\n",
+					!ret ? strerror(errno) : "");
+			return false;
+		}
+#endif
+
+	pglogical_temp_directory = strdup(tmpdir);
+
+	if (pglogical_temp_directory == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_OUT_OF_MEMORY),
+				 errmsg("out of memory")));
+}
+
 
 /*
  * Entry point for this module.
@@ -768,10 +798,12 @@ _PG_init(void)
 	DefineCustomStringVariable("pglogical.temp_directory",
 							   "Directory to store dumps for local restore",
 							   NULL,
-							   &pglogical_temp_directory,
-							   "/tmp", PGC_SIGHUP,
+							   &pglogical_temp_directory_config,
+							   "", PGC_SIGHUP,
 							   0,
-							   NULL, NULL, NULL);
+							   NULL,
+							   pglogical_temp_directory_assing_hook,
+							   NULL);
 
 	DefineCustomStringVariable("pglogical.extra_connection_options",
 							   "connection options to add to all peer node connections",

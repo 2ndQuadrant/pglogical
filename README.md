@@ -614,7 +614,8 @@ can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
   synchronization. This path need to exist and be writable by user running
   Postgres.
 
-  Default is `/tmp`.
+  Default is empty, which tells PGLogial to use default temporary directory
+  based on environment and operating system settings.
 
 ## Limitations and restrictions
 
