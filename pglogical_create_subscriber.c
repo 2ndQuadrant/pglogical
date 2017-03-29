@@ -1144,7 +1144,7 @@ get_connstr_dbname(char *connstr)
 	{
 		if (strcmp(conn_opt->keyword, "dbname") == 0)
 		{
-			ret = conn_opt->val;
+			ret = pstrdup(conn_opt->val);
 			break;
 		}
 	}
