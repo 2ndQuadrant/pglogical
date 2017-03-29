@@ -107,8 +107,11 @@ system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "SELECT * FROM pglogical.re
 #At this point subscriber sync starts crashing (`sync worker`) and recovering
 # check logs at this point at:
 # /tmp/tmp_020_pdatadir and /tmp/tmp_020_sdatadir
+# As per Petr this is expected behavior.
+# But since the table does not exist on subscriber, the sync worker dies when trying
+# to accessing it. It even logs why it dies on the line above.
 system_or_bail 'sleep', '10';
-command_ok([ 'psql', '-p', "$PGPORT", '-c', "SELECT * FROM basic_dml1" ], 'replication check');
+command_fails([ 'psql', '-p', "$PGPORT", '-c', "SELECT * FROM basic_dml1" ], 'replication check');
 #cleanup
 system("pg_ctl stop -D /tmp/tmp_020_sdatadir -m immediate &");
 system("pg_ctl stop -D /tmp/tmp_020_pdatadir -m immediate &");

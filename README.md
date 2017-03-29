@@ -587,7 +587,7 @@ can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
   command.
 
   The batch inserts will improve replication peformance of transactions that
-  did many inserts into one table. PGLogial will switch to batch mode when
+  did many inserts into one table. PGLogical will switch to batch mode when
   transaction did more than 5 INSERTs.
 
   It's only possible to switch to batch mode when there are no
@@ -614,7 +614,7 @@ can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
   synchronization. This path need to exist and be writable by user running
   Postgres.
 
-  Default is empty, which tells PGLogial to use default temporary directory
+  Default is empty, which tells PGLogical to use default temporary directory
   based on environment and operating system settings.
 
 ## Limitations and restrictions

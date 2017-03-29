@@ -149,7 +149,7 @@ SELECT count(*) FROM pg_stat_replication;
 SELECT pglogical.replicate_ddl_command($$
         DROP TABLE public.multi_ups_tbl CASCADE;
 $$);
-NOTICE:  drop cascades to public.multi_ups_tbl membership in replication set default
+NOTICE:  drop cascades to table public.multi_ups_tbl membership in replication set default
  replicate_ddl_command 
 -----------------------
  t
