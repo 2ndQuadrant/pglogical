@@ -492,10 +492,15 @@ pglogical_proccess_copy(pglogical_copyState *pglcstate)
 	save_stdin = stdin;
 	stdin = pglcstate->copy_read_file;
 
+	/* COPY may call into SPI (triggers, ...) and we already are in SPI. */
+	SPI_push();
+
 	/* Initiate the actual COPY */
 	DoCopy((CopyStmt *) linitial(pglcstate->copy_parsetree),
 			pglcstate->copy_stmt->data, &processed);
 
+	/* Clean up SPI state */
+	SPI_pop();
 
 	fclose(pglcstate->copy_read_file);
 	pglcstate->copy_read_file = NULL;
