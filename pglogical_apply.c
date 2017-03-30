@@ -168,9 +168,8 @@ ensure_transaction(void)
 	}
 
 	StartTransactionCommand();
-	MemoryContextSwitchTo(MessageContext);
-
 	apply_api.on_begin();
+	MemoryContextSwitchTo(MessageContext);
 
 	return true;
 }
@@ -427,13 +426,17 @@ handle_insert(StringInfo s)
 		LockRelId		lockid = rel->rel->rd_lockInfo.lockRelId;
 		Relation		qrel;
 
-		MemoryContextSwitchTo(MessageContext);
-		LockRelationIdForSession(&lockid, RowExclusiveLock);
+		multi_insert_finish();
 
-		apply_api.on_commit();
+		MemoryContextSwitchTo(MessageContext);
 
 		ht = heap_form_tuple(RelationGetDescr(rel->rel),
 							 newtup.values, newtup.nulls);
+
+		LockRelationIdForSession(&lockid, RowExclusiveLock);
+		pglogical_relation_close(rel, NoLock);
+
+		apply_api.on_commit();
 
 		handle_queued_message(ht, started_tx);
 
@@ -446,12 +449,13 @@ handle_insert(StringInfo s)
 		heap_close(qrel, NoLock);
 
 		apply_api.on_begin();
+		MemoryContextSwitchTo(MessageContext);
 
 //		if (oldxid != GetTopTransactionId())
 //			CommitTransactionCommand();
 	}
-
-	pglogical_relation_close(rel, NoLock);
+	else
+		pglogical_relation_close(rel, NoLock);
 }
 
 static void
