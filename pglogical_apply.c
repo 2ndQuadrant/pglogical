@@ -391,11 +391,12 @@ handle_insert(StringInfo s)
 		if (rel != last_insert_rel)
 		{
 			multi_insert_finish();
-			last_insert_rel = rel;
+			/* Fall through to normal insert. */
 		}
 		else
 		{
 			apply_api.multi_insert_add_tuple(rel, &newtup);
+			last_insert_rel_cnt++;
 			return;
 		}
 	}
@@ -409,8 +410,11 @@ handle_insert(StringInfo s)
 			last_insert_rel = rel;
 			last_insert_rel_cnt = 0;
 		}
-		else if (last_insert_rel_cnt++ > MIN_MULTI_INSERT_TUPLES)
+		else if (last_insert_rel_cnt++ >= MIN_MULTI_INSERT_TUPLES)
+		{
 			use_multi_insert = true;
+			last_insert_rel_cnt = 0;
+		}
 	}
 
 	/* Normal insert. */
@@ -453,7 +457,7 @@ handle_insert(StringInfo s)
 static void
 multi_insert_finish(void)
 {
-	if (use_multi_insert)
+	if (use_multi_insert && last_insert_rel_cnt)
 	{
 		apply_api.multi_insert_finish(last_insert_rel);
 		pglogical_relation_close(last_insert_rel, NoLock);
