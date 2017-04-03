@@ -607,6 +607,9 @@ can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
 
   The default in PostgreSQL is `false`.
 
+  This can be set to `true` only when `pglogical.conflict_resolution` is set to `error`.
+In this state, conflicts are not detected.
+
   In Postgres-XL the default and only allowed setting is `true`.
 
 - `pglogical.temp_directory`
