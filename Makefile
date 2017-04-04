@@ -55,10 +55,10 @@ OBJS += $(srcdir)/compat$(PGVER)/pglogical_compat.o
 
 ifeq ($(PGVER),94)
 DATA += compat94/pglogical_origin.control compat94/pglogical_origin--1.0.0.sql
-REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
+REGRESS = preseed infofuncs init preseed_check basic extended \
 		  toasted replication_set add_table matview primary_key \
-		  interfaces foreign_key functions copy triggers parallel row_filter \
-		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
+		  interfaces foreign_key functions copy triggers parallel \
+		  att_list column_filter apply_delay multiple_upstreams \
 		  node_origin_cascade drop
 
 REGRESS += --dbname=regression

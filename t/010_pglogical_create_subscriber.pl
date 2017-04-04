@@ -56,7 +56,8 @@ system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE TABLE some_local_tb
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl3(key, data) VALUES('key1', 'data1')";
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl3(key, data) VALUES('key2', NULL)";
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl3(key, data) VALUES('key3', 'data3')";
-
+# Required for PostgreSQL 9.4 run
+#system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical_origin";
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0'";
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "ALTER EXTENSION pglogical UPDATE";
 
