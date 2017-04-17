@@ -769,7 +769,7 @@ decoding plugin its self, such as:
 
 ### Postgres-XL
 
-Postgres-XL is only supported as subsriber (cannot be a provider). Also for
+Postgres-XL is only supported as subscriber (cannot be a provider). Also for
 workloads with many small transactions the performance of replication may
 suffer due to increased write latency. On the other hand large insert
 (or bulkcopy) transactions are heavily optimized to work very fast with

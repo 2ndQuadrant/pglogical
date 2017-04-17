@@ -24,7 +24,7 @@ BEGIN
         END IF;
 END;$$;
 
-CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
+CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
 ALTER EXTENSION pglogical UPDATE;
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider1', dsn := (SELECT provider1_dsn FROM pglogical_regress_variables()) || ' user=super');
