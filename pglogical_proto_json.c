@@ -671,7 +671,8 @@ json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple,
 		 * Don't send unchanged toast column as we may not be able to fetch
 		 * them.
 		 */
-		if (att->attlen == -1 && VARATT_IS_EXTERNAL_ONDISK(values[i]))
+		if (!isnull[i] && att->attlen == -1 &&
+			VARATT_IS_EXTERNAL_ONDISK(values[i]))
 			continue;
 
 		if (needsep)
