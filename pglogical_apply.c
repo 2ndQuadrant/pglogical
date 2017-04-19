@@ -1248,6 +1248,10 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 {
 	List	   *commands;
 	ListCell   *command_i;
+#ifdef PGXC
+	List	   *commandSourceQueries;
+	ListCell   *commandSourceQuery_i;
+#endif
 	MemoryContext oldcontext;
 	ErrorContextCallback errcallback;
 
@@ -1258,7 +1262,11 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
+#ifdef PGXC
+	commands = pg_parse_query_get_source(cmdstr, &commandSourceQueries);
+#else
 	commands = pg_parse_query(cmdstr);
+#endif
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -1269,11 +1277,18 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	 */
 	isTopLevel = isTopLevel && (list_length(commands) == 1);
 
+#ifdef PGXC
+	forboth(command_i, commands, commandSourceQuery_i, commandSourceQueries)
+#else
 	foreach(command_i, commands)
+#endif
 	{
 		List	   *plantree_list;
 		List	   *querytree_list;
 		Node	   *command = (Node *) lfirst(command_i);
+#ifdef PGXC
+		char	   *commandSource = (char *) lfirst(commandSourceQuery_i);
+#endif
 		const char *commandTag;
 		Portal		portal;
 		int			save_nestlevel;
@@ -1294,7 +1309,13 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		commandTag = CreateCommandTag(command);
 
 		querytree_list = pg_analyze_and_rewrite(
-			command, cmdstr, NULL, 0);
+			command,
+#ifdef PGXC
+			commandSource,
+#else
+			cmdstr,
+#endif
+			NULL, 0);
 
 		plantree_list = pg_plan_queries(
 			querytree_list, 0, NULL);
@@ -1303,7 +1324,12 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 
 		portal = CreatePortal("pglogical", true, true);
 		PortalDefineQuery(portal, NULL,
-						  cmdstr, commandTag,
+#ifdef PGXC
+						  commandSource,
+#else
+						  cmdstr,
+#endif
+						  commandTag,
 						  plantree_list, NULL);
 		PortalStart(portal, NULL, 0, InvalidSnapshot);
 
