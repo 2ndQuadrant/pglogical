@@ -45,6 +45,8 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
+#include "tcop/utility.h"
+
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
@@ -1543,6 +1545,7 @@ truncate_table(char *nspname, char *relname)
 	RangeVar	   *rv;
 	Oid				relid;
 	TruncateStmt   *truncate;
+	StringInfoData	sql;
 
 	rv = makeRangeVar(nspname, relname, -1);
 
@@ -1550,13 +1553,34 @@ truncate_table(char *nspname, char *relname)
 	if (relid == InvalidOid)
 		return;
 
+	initStringInfo(&sql);
+	appendStringInfo(&sql, "TRUNCATE TABLE %s",
+			quote_qualified_identifier(rv->schemaname, rv->relname));
+
 	/* Truncate the table. */
 	truncate = makeNode(TruncateStmt);
 	truncate->relations = list_make1(rv);
 	truncate->restart_seqs = false;
 	truncate->behavior = DROP_RESTRICT;
 
-	ExecuteTruncate(truncate);
+	/*
+	 * We use standard_ProcessUtility to process the truncate statement. This
+	 * allows us to let Postgres-XL do the correct things in order to truncate
+	 * the table from the remote nodes.
+	 *
+	 * Except the query string, most other parameters are made-up. This is OK
+	 * for TruncateStmt, but if we ever decide to use standard_ProcessUtility
+	 * for other utility statements, then we must take a careful relook.
+	 */
+	standard_ProcessUtility((Node *)truncate,
+			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL,
+#ifdef PGXC
+			false,
+#endif
+			NULL
+			);
+	/* release memory allocated to create SQL statement */
+	pfree(sql.data);
 
 	CommandCounterIncrement();
 }
