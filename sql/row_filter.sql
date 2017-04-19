@@ -66,6 +66,17 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
 
+-- wait for the initial data to copy
+DO $$
+BEGIN
+    FOR i IN 1..300 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
+
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
