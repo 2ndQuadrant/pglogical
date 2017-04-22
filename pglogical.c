@@ -717,8 +717,10 @@ pglogical_temp_directory_assing_hook(const char *newval, void *extra)
 		ret = GetTempPath(MAXPGPATH, tmpdir);
 		if (ret == 0 || ret > MAXPGPATH)
 		{
-			ereport(ERROR, "could not locate temporary directory: %s\n",
-					!ret ? strerror(errno) : "");
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("could not locate temporary directory: %s\n",
+							!ret ? strerror(errno) : "")));
 			return false;
 		}
 #endif
