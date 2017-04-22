@@ -679,4 +679,10 @@ pglogical_apply_spi_mi_add_tuple(PGLogicalRelation *rel,
 	elog(ERROR, "pglogical_apply_spi_mi_add_tuple called unexpectedly");
 }
 
+void
+pglogical_apply_spi_mi_finish(PGLogicalRelation *rel)
+{
+	elog(ERROR, "pglogical_apply_spi_mi_finish called unexpectedly");
+}
+
 #endif /* WIN32 */
