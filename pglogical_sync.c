@@ -228,6 +228,7 @@ static void
 start_copy_origin_tx(PGconn *conn, const char *snapshot)
 {
 	PGresult	   *res;
+	char		   *s;
 	const char	   *setup_query =
 		"BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY;\n"
 		"SET DATESTYLE = ISO;\n"
@@ -241,7 +242,10 @@ start_copy_origin_tx(PGconn *conn, const char *snapshot)
 	appendStringInfoString(&query, setup_query);
 
 	if (snapshot)
-		appendStringInfo(&query, "SET TRANSACTION SNAPSHOT '%s';\n", snapshot);
+	{
+		s = PQescapeLiteral(conn, snapshot, strlen(snapshot));
+		appendStringInfo(&query, "SET TRANSACTION SNAPSHOT %s;\n", s);
+	}
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -251,9 +255,10 @@ start_copy_origin_tx(PGconn *conn, const char *snapshot)
 }
 
 static void
-start_copy_target_tx(PGconn *conn)
+start_copy_target_tx(PGconn *conn, const char *origin_name)
 {
 	PGresult	   *res;
+	char		   *s;
 	const char	   *setup_query =
 		"BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;\n"
 		"SET session_replication_role = 'replica';\n"
@@ -262,8 +267,27 @@ start_copy_target_tx(PGconn *conn)
 		"SET extra_float_digits TO 3;\n"
 		"SET statement_timeout = 0;\n"
 		"SET lock_timeout = 0;\n";
+	StringInfoData	query;
 
-	res = PQexec(conn, setup_query);
+	initStringInfo(&query);
+
+	/*
+	 * Set correct origin if target db supports it.
+	 * We must do this before starting the transaction otherwise the status
+	 * code bellow would get much more complicated.
+	 */
+	if (PQserverVersion(conn) >= 90500)
+	{
+		s = PQescapeLiteral(conn, origin_name, strlen(origin_name));
+		appendStringInfo(&query,
+						 "SELECT pg_catalog.pg_replication_origin_session_setup(%s);\n",
+						 s);
+		PQfreemem(s);
+	}
+
+	appendStringInfoString(&query, setup_query);
+
+	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		elog(ERROR, "BEGIN on target node failed: %s",
 				PQresultErrorMessage(res));
@@ -512,7 +536,8 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 static void
 copy_tables_data(char *sub_name, const char *origin_dsn,
 				 const char *target_dsn, const char *origin_snapshot,
-				 List *tables, List *replication_sets)
+				 List *tables, List *replication_sets,
+				 const char *origin_name)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
@@ -524,7 +549,7 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 
 	/* Connect to target node. */
 	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
-	start_copy_target_tx(target_conn);
+	start_copy_target_tx(target_conn, origin_name);
 
 	/* Copy every table. */
 	foreach (lc, tables)
@@ -558,7 +583,7 @@ static List *
 copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 						   const char *target_dsn,
 						   const char *origin_snapshot,
-						   List *replication_sets)
+						   List *replication_sets, const char *origin_name)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
@@ -575,7 +600,7 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 
 	/* Connect to target node. */
 	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
-	start_copy_target_tx(target_conn);
+	start_copy_target_tx(target_conn, origin_name);
 
 	/* Copy every table. */
 	foreach (lc, tables)
@@ -772,7 +797,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 														sub->origin_if->dsn,
 														sub->target_if->dsn,
 														snapshot,
-														sub->replication_sets);
+														sub->replication_sets,
+														sub->slot_name);
 
 					/* Store info about all the synchronized tables. */
 					StartTransactionCommand();
@@ -903,7 +929,8 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 
 		/* Copy data. */
 		copy_tables_data(sub->name, sub->origin_if->dsn,sub->target_if->dsn,
-						 snapshot, list_make1(table), sub->replication_sets);
+						 snapshot, list_make1(table), sub->replication_sets,
+						 sub->slot_name);
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));

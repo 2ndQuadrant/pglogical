@@ -415,6 +415,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		TransactionId	xmin;
 		TimestampTz		local_ts;
 		RepOriginId		local_origin;
+		bool			local_origin_found;
 		bool			apply;
 		HeapTuple		applytuple;
 
@@ -450,14 +451,15 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		/* trigger might have changed tuple */
 		remotetuple = ExecMaterializeSlot(aestate->slot);
 
-		get_tuple_origin(localslot->tts_tuple, &xmin, &local_origin,
-						 &local_ts);
+		local_origin_found = get_tuple_origin(localslot->tts_tuple, &xmin,
+											  &local_origin, &local_ts);
 
 		/*
 		 * If the local tuple was previously updated by different transaction
 		 * on different server, consider this to be conflict and resolve it.
 		 */
-		if (xmin != GetTopTransactionId() &&
+		if (local_origin_found &&
+			xmin != GetTopTransactionId() &&
 			local_origin != replorigin_session_origin)
 		{
 			PGLogicalConflictResolution resolution;
