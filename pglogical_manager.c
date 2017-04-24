@@ -213,14 +213,14 @@ pglogical_manager_main(Datum main_arg)
 		int		rc;
 		bool	processed_all;
 
+		/* Launch the apply workers. */
+		processed_all = manage_apply_workers();
+
 		/* Handle sequences and update our sleep timer as necessary. */
 		if (synchronize_sequences())
 			sleep_timer = Min(sleep_timer * 2, MAX_SLEEP);
 		else
 			sleep_timer = Max(sleep_timer / 2, MIN_SLEEP);
-
-		/* Launch the apply workers. */
-		processed_all = manage_apply_workers();
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
