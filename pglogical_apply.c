@@ -226,7 +226,6 @@ handle_commit(StringInfo s)
 
 	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
 
-	Assert(commit_lsn == replorigin_session_origin_lsn);
 	Assert(commit_time == replorigin_session_origin_timestamp);
 
 	if (IsTransactionState())
@@ -236,6 +235,9 @@ handle_commit(StringInfo s)
 		multi_insert_finish();
 
 		apply_api.on_commit();
+
+		/* We need to write end_lsn to the commit record. */
+		replorigin_session_origin_lsn = end_lsn;
 
 		CommitTransactionCommand();
 		MemoryContextSwitchTo(TopMemoryContext);
