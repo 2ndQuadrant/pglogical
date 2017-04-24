@@ -409,6 +409,16 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
  t
 (1 row)
 
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
 SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) as synced
   FROM pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
  WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS')
@@ -451,11 +461,5 @@ NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema membershi
  replicate_ddl_command 
 -----------------------
  t
-(1 row)
-
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
- 
 (1 row)
 

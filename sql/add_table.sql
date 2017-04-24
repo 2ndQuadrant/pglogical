@@ -204,6 +204,17 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
 
 SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'default');
 
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+
 SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) as synced
   FROM pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)
  WHERE C.relkind = 'S' AND N.nspname IN ('public', 'strange.schema-IS')
@@ -228,5 +239,3 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
-
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
