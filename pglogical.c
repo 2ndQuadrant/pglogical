@@ -693,7 +693,7 @@ pglogical_supervisor_main(Datum main_arg)
 			proc_exit(1);
 	}
 
-	proc_exit(1);
+	proc_exit(0);
 }
 
 static void

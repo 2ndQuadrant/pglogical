@@ -200,8 +200,11 @@ pglogical_manager_main(Datum main_arg)
 	elog(LOG, "starting pglogical database manager for database %s",
 		 get_database_name(MyDatabaseId));
 
-	pglogical_manage_extension();
+	CommitTransactionCommand();
 
+	/* Use separate transaction to avoid lock escalation. */
+	StartTransactionCommand();
+	pglogical_manage_extension();
 	CommitTransactionCommand();
 
 	/* Main wait loop. */
@@ -232,6 +235,5 @@ pglogical_manager_main(Datum main_arg)
 		CHECK_FOR_INTERRUPTS();
 	}
 
-	/* SIGTERM is not normal for pglogical manager. */
-	proc_exit(1);
+	proc_exit(0);
 }
