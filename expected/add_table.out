@@ -453,3 +453,9 @@ NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema membershi
  t
 (1 row)
 
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+ pg_xlog_wait_remote_apply 
+---------------------------
+ 
+(1 row)
+

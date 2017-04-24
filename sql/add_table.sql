@@ -228,3 +228,5 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_nosync CASCADE;
 	DROP SCHEMA "strange.schema-IS" CASCADE;
 $$);
+
+SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
