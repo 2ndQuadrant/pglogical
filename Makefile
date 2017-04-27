@@ -161,7 +161,7 @@ git-dist: dist-common
 check_prove:
 	$(prove_check)
 
-.PHONY: all check regresscheck
+.PHONY: all check regresscheck pglogical.control
 
 define _pgl_create_recursive_target
 .PHONY: $(1)-$(2)-recurse
