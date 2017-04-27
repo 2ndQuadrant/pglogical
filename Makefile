@@ -118,7 +118,7 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 
 
 pglogical.control: pglogical.control.in pglogical.h
-	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > $(realpath $(abs_top_builddir))/pglogical.control
+	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > $(realpath $(srcdir))/pglogical.control
 
 all: pglogical.control
 
