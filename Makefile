@@ -31,9 +31,8 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
 		  node_origin_cascade drop
 
-EXTRA_CLEAN += $(srcdir)/pglogical.control compat94/pglogical_compat.o \
-			   compat95/pglogical_compat.o compat96/pglogical_compat.o \
-			   pglogical_create_subscriber.o
+EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
+			   compat96/pglogical_compat.o pglogical_create_subscriber.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
@@ -66,10 +65,14 @@ REGRESS += --dbname=regression
 SCRIPTS_built += pglogical_dump/pglogical_dump
 SCRIPTS += pglogical_dump/pglogical_dump
 requires = requires=pglogical_origin
+control_path = $(abspath $(abs_top_builddir))/pglogical.control
 else
 DATA += pglogical_origin.control pglogical_origin--1.0.0.sql
 requires =
+control_path = $(abspath $(srcdir))/pglogical.control
 endif
+
+EXTRA_CLEAN += $(control_path)
 
 
 PGXS = $(shell $(PG_CONFIG) --pgxs)
@@ -119,7 +122,7 @@ pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 
 
 pglogical.control: pglogical.control.in pglogical.h
-	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > $(realpath $(srcdir))/pglogical.control
+	sed 's/__PGLOGICAL_VERSION__/$(pglogical_version)/;s/__REQUIRES__/$(requires)/' $(realpath $(srcdir)/pglogical.control.in) > $(control_path)
 
 all: pglogical.control
 
