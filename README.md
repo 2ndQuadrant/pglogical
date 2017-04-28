@@ -746,6 +746,8 @@ subscriber are more likely to arise when replicating across versions.
 
 It is safer to replicate from an old version to a newer version since PostgreSQL
 maintains solid backward compatibility but only limited forward compatibility.
+When replicating from a higher PostgreSQL version to a lower one, schema
+synchronization does not work.
 
 Replicating between different minor versions makes no difference at all.
 
