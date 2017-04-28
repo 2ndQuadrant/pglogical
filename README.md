@@ -746,8 +746,8 @@ subscriber are more likely to arise when replicating across versions.
 
 It is safer to replicate from an old version to a newer version since PostgreSQL
 maintains solid backward compatibility but only limited forward compatibility.
-When replicating from a higher PostgreSQL version to a lower one, schema
-synchronization does not work.
+Initial schema synchronization is only supported when replicating between same
+version of PostgreSQL or from lower version to higher version.
 
 Replicating between different minor versions makes no difference at all.
 
@@ -771,11 +771,16 @@ decoding plugin its self, such as:
 
 ### Postgres-XL
 
-Postgres-XL is only supported as subscriber (cannot be a provider). Also for
+Minimum supported version of Postgres-XL is 9.5r1.5.
+
+Postgres-XL is only supported as subscriber (cannot be a provider). For
 workloads with many small transactions the performance of replication may
 suffer due to increased write latency. On the other hand large insert
 (or bulkcopy) transactions are heavily optimized to work very fast with
 Postgres-XL.
+
+Also any DDL limitations apply so extra care need to be taken when using
+`replicate_ddl_command()`.
 
 The Postgre-XL changes defaults and available settings for
 `pglogical.conflict_resolution` and `pglogical.use_spi` configuration options.
