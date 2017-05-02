@@ -834,10 +834,10 @@ _PG_init(void)
 	pglogical_executor_init();
 
 	/* Run the supervisor. */
+	memset(&bgw, 0, sizeof(bgw));
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
-	bgw.bgw_main = NULL;
 	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
 			 EXTENSION_NAME);
 	snprintf(bgw.bgw_function_name, BGW_MAXLEN,
@@ -845,8 +845,6 @@ _PG_init(void)
 	snprintf(bgw.bgw_name, BGW_MAXLEN,
 			 "pglogical supervisor");
 	bgw.bgw_restart_time = 5;
-	bgw.bgw_notify_pid = 0;
-	bgw.bgw_main_arg = (Datum) 0;
 
 	RegisterBackgroundWorker(&bgw);
 }
