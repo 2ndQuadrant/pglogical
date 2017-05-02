@@ -11,13 +11,9 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output_plugin.h"
 
 #include "mb/pg_wchar.h"
 #include "replication/logical.h"
-#ifdef HAVE_REPLICATION_ORIGINS
-#include "replication/origin.h"
-#endif
 
 #include "access/xact.h"
 #include "executor/executor.h"
@@ -25,6 +21,11 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+
+#include "pglogical_output_plugin.h"
+#ifdef HAVE_REPLICATION_ORIGINS
+#include "replication/origin.h"
+#endif
 
 #include "pglogical_output_config.h"
 #include "pglogical_executor.h"
@@ -582,7 +583,7 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 			Datum		res;
 			bool		isnull;
 
-			res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
+			res = ExecEvalExpr(exprstate, econtext, &isnull);
 
 			/* NULL is same as false for our use. */
 			if (isnull)

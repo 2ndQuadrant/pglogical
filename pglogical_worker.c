@@ -16,6 +16,8 @@
 
 #include "access/xact.h"
 
+#include "pgstat.h"
+
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
@@ -260,7 +262,8 @@ wait_for_worker_startup(PGLogicalWorker *worker,
 		Assert(status == BGWH_NOT_YET_STARTED || status == BGWH_STARTED);
 
 		rc = WaitLatch(&MyProc->procLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L,
+					   PG_WAIT_EXTENSION);
 
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);

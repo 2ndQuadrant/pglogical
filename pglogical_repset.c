@@ -697,10 +697,7 @@ create_replication_set(PGLogicalRepSet *repset)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -816,10 +813,7 @@ alter_replication_set(PGLogicalRepSet *repset)
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
-	simple_heap_update(rel, &oldtup->t_self, newtup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, newtup);
+	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
 
 	/* Cleanup. */
 	heap_freetuple(newtup);
@@ -1083,10 +1077,7 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	CacheInvalidateRelcacheByRelid(reloid);
@@ -1160,10 +1151,7 @@ replication_set_add_seq(Oid setid, Oid seqoid)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	CacheInvalidateRelcacheByRelid(seqoid);

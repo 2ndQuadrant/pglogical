@@ -197,8 +197,7 @@ fill_missing_defaults(PGLogicalRelation *rel, EState *estate,
 	for (i = 0; i < num_defaults; i++)
 		tuple->values[defmap[i]] = ExecEvalExpr(defexprs[i],
 												econtext,
-												&tuple->nulls[defmap[i]],
-												NULL);
+												&tuple->nulls[defmap[i]]);
 }
 
 static ApplyExecState *

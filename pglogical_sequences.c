@@ -59,13 +59,13 @@ sequence_get_last_value(Oid seqoid)
 	SysScanDesc		scan;
 	HeapTuple			tup;
 	int64				last_value;
-	Form_pg_sequence	seq;
+	Form_pg_sequence_data seq;
 
 	seqrel = heap_open(seqoid, AccessShareLock);
 	scan = systable_beginscan(seqrel, 0, false, NULL, 0, NULL);
 	tup = systable_getnext(scan);
 	Assert(HeapTupleIsValid(tup));
-	seq = (Form_pg_sequence) GETSTRUCT(tup);
+	seq = (Form_pg_sequence_data) GETSTRUCT(tup);
 	last_value = seq->last_value;
 	systable_endscan(scan);
 	heap_close(seqrel, AccessShareLock);
@@ -304,10 +304,7 @@ pglogical_create_sequence_state_record(Oid seqoid)
 		tuple = heap_form_tuple(tupDesc, values, nulls);
 
 		/* Insert the tuple to the catalog. */
-		simple_heap_insert(rel, tuple);
-
-		/* Update the indexes. */
-		CatalogUpdateIndexes(rel, tuple);
+		CatalogTupleInsert(rel, tuple);
 	}
 
 	/* Cleanup. */

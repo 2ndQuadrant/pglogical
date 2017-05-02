@@ -19,6 +19,8 @@
 #include "commands/dbcommands.h"
 #include "commands/extension.h"
 
+#include "pgstat.h"
+
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
@@ -224,7 +226,8 @@ pglogical_manager_main(Datum main_arg)
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   processed_all ? sleep_timer : MIN_SLEEP);
+					   processed_all ? sleep_timer : MIN_SLEEP,
+					   PG_WAIT_EXTENSION);
 
         ResetLatch(&MyProc->procLatch);
 

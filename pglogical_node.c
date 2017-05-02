@@ -171,10 +171,7 @@ create_node(PGLogicalNode *node)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -346,10 +343,7 @@ create_local_node(Oid nodeid, Oid ifid)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -503,10 +497,7 @@ create_node_interface(PGlogicalInterface *nodeif)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -752,10 +743,7 @@ create_subscription(PGLogicalSubscription *sub)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -839,10 +827,7 @@ alter_subscription(PGLogicalSubscription *sub)
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
-	simple_heap_update(rel, &oldtup->t_self, newtup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, newtup);
+	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
 
 	/* Cleanup. */
 	heap_freetuple(newtup);

@@ -39,6 +39,8 @@
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
 
+#include "pgstat.h"
+
 #include "replication/origin.h"
 
 #include "storage/fd.h"
@@ -637,7 +639,7 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   1000L);
+					   1000L, PG_WAIT_EXTENSION);
 
         ResetLatch(&MyProc->procLatch);
 
@@ -1142,10 +1144,7 @@ create_local_sync_status(PGLogicalSyncStatus *sync)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -1311,10 +1310,7 @@ set_subscription_sync_status(Oid subid, char status)
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
-	simple_heap_update(rel, &oldtup->t_self, newtup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, newtup);
+	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
 
 	/* Cleanup. */
 	heap_freetuple(newtup);
@@ -1500,10 +1496,7 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
-	simple_heap_update(rel, &oldtup->t_self, newtup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, newtup);
+	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
 
 	/* Cleanup. */
 	heap_freetuple(newtup);
@@ -1551,7 +1544,7 @@ wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   60000L);
+					   60000L, PG_WAIT_EXTENSION);
 
         ResetLatch(&MyProc->procLatch);
 
@@ -1601,15 +1594,10 @@ truncate_table(char *nspname, char *relname)
 	 */
 #ifdef PGXC
 	standard_ProcessUtility((Node *)truncate,
-			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL,
-			false,
-			NULL
-			);
+			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL, false, NULL);
 #else
-	standard_ProcessUtility((Node *)truncate,
-			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL,
-			NULL
-			);
+	standard_ProcessUtility(castNode(PlannedStmt, truncate),
+			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL, NULL, NULL);
 #endif
 	/* release memory allocated to create SQL statement */
 	pfree(sql.data);

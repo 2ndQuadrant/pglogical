@@ -32,7 +32,8 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
 		  node_origin_cascade drop
 
 EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
-			   compat96/pglogical_compat.o pglogical_create_subscriber.o
+			   compat96/pglogical_compat.o compat10/pglogical_compat.o \
+			   pglogical_create_subscriber.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
@@ -46,12 +47,13 @@ NO_TEMP_INSTALL = yes
 
 PG_CONFIG ?= pg_config
 
-PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
+PGVER := $(shell $(PG_CONFIG) --version | sed 's/^[^0-9/]*\([0-9][0-9\.]\+\).*/\1/g' | awk -F . '{ print $$1$$2 }')
 
 PG_CPPFLAGS += -I$(libpq_srcdir) -I$(realpath $(srcdir)/compat$(PGVER))
 SHLIB_LINK += $(libpq)
 
 OBJS += $(srcdir)/compat$(PGVER)/pglogical_compat.o
+$(info $(OBJS))
 
 ifeq ($(PGVER),94)
 DATA += compat94/pglogical_origin.control compat94/pglogical_origin--1.0.0.sql

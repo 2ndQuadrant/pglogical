@@ -13,12 +13,11 @@
 #include "postgres.h"
 
 #include "catalog/catversion.h"
+#include "miscadmin.h"
 #include "mb/pg_wchar.h"
 #include "nodes/makefuncs.h"
 #include "utils/builtins.h"
 #include "utils/int8.h"
-
-#include "miscadmin.h"
 
 #include "pglogical.h"
 #include "pglogical_output_config.h"
@@ -452,19 +451,19 @@ parse_param_int32(DefElem *elem)
 static List*
 add_startup_msg_s(List *l, char *key, char *val)
 {
-	return lappend(l, makeDefElem(key, (Node*)makeString(val)));
+	return lappend(l, makeDefElem(key, (Node*)makeString(val), 0));
 }
 
 static List*
 add_startup_msg_i(List *l, char *key, int val)
 {
-	return lappend(l, makeDefElem(key, (Node*)makeString(psprintf("%d", val))));
+	return lappend(l, makeDefElem(key, (Node*)makeString(psprintf("%d", val)), 0));
 }
 
 static List*
 add_startup_msg_b(List *l, char *key, bool val)
 {
-	return lappend(l, makeDefElem(key, (Node*)makeString(val ? "t" : "f")));
+	return lappend(l, makeDefElem(key, (Node*)makeString(val ? "t" : "f"), 0));
 }
 
 /*

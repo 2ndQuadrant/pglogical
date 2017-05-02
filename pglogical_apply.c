@@ -1127,7 +1127,7 @@ apply_work(PGconn *streamConn)
 		rc = WaitLatchOrSocket(&MyProc->procLatch,
 							   WL_SOCKET_READABLE | WL_LATCH_SET |
 							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-							   fd, 1000L);
+							   fd, 1000L, PG_WAIT_EXTENSION);
 
 		ResetLatch(&MyProc->procLatch);
 
@@ -1319,9 +1319,9 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		commandTag = CreateCommandTag(command);
 
 		querytree_list = pg_analyze_and_rewrite(
-			command,
+			castNode(RawStmt, command),
 			cmdstr,
-			NULL, 0);
+			NULL, 0, NULL);
 
 		plantree_list = pg_plan_queries(
 			querytree_list, 0, NULL);
@@ -1338,7 +1338,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		receiver = CreateDestReceiver(DestNone);
 
 		(void) PortalRun(portal, FETCH_ALL,
-						 isTopLevel,
+						 isTopLevel, true,
 						 receiver, receiver,
 						 NULL);
 		(*receiver->rDestroy) (receiver);

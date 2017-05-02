@@ -110,10 +110,7 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);

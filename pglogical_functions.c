@@ -38,6 +38,7 @@
 
 #include "nodes/makefuncs.h"
 
+#include "pgstat.h"
 #include "pgtime.h"
 
 #include "parser/parse_coerce.h"
@@ -573,7 +574,8 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 			CHECK_FOR_INTERRUPTS();
 
 			(void) WaitLatch(&MyProc->procLatch,
-							 WL_LATCH_SET | WL_TIMEOUT, 1000L);
+							 WL_LATCH_SET | WL_TIMEOUT, 1000L,
+							 PG_WAIT_EXTENSION);
 
 			ResetLatch(&MyProc->procLatch);
 		}
@@ -1915,7 +1917,7 @@ filter_tuple(HeapTuple htup, ExprContext *econtext, List *row_filter_list)
 		Datum		res;
 		bool		isnull;
 
-		res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
+		res = ExecEvalExpr(exprstate, econtext, &isnull);
 
 		/* NULL is same as false for our use. */
 		if (isnull)

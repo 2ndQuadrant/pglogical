@@ -38,6 +38,8 @@
 
 #include "parser/parse_coerce.h"
 
+#include "pgstat.h"
+
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
@@ -403,7 +405,7 @@ pglogical_manage_extension(void)
 
 			alter_stmt.options = NIL;
 			alter_stmt.extname = EXTENSION_NAME;
-			ExecAlterExtensionStmt(&alter_stmt);
+			ExecAlterExtensionStmt(NULL, &alter_stmt);
 		}
 	}
 
@@ -684,7 +686,7 @@ pglogical_supervisor_main(Datum main_arg)
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   180000L);
+					   180000L, PG_WAIT_EXTENSION);
 
         ResetLatch(&MyProc->procLatch);
 
