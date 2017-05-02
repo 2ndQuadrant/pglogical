@@ -539,6 +539,7 @@ pglogical_read_begin(StringInfo in, XLogRecPtr *remote_lsn,
 	/* read flags */
 	uint8	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	/* read fields */
 	*remote_lsn = pq_getmsgint64(in);
@@ -557,6 +558,7 @@ pglogical_read_commit(StringInfo in, XLogRecPtr *commit_lsn,
 	/* read flags */
 	uint8	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	/* read fields */
 	*commit_lsn = pq_getmsgint64(in);
