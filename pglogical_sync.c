@@ -1599,13 +1599,18 @@ truncate_table(char *nspname, char *relname)
 	 * for TruncateStmt, but if we ever decide to use standard_ProcessUtility
 	 * for other utility statements, then we must take a careful relook.
 	 */
+#ifdef PGXC
 	standard_ProcessUtility((Node *)truncate,
 			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL,
-#ifdef PGXC
 			false,
-#endif
 			NULL
 			);
+#else
+	standard_ProcessUtility((Node *)truncate,
+			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL,
+			NULL
+			);
+#endif
 	/* release memory allocated to create SQL statement */
 	pfree(sql.data);
 
