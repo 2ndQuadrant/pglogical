@@ -21,7 +21,7 @@ extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)
 #define PGLCreateTrigger CreateTrigger
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout, wait_event_info) \
-	WaitLatchOrSocket(latch, wakeEvents, sock, timeout);
+	WaitLatchOrSocket(latch, wakeEvents, sock, timeout)
 
 #define WaitLatch(latch, wakeEvents, timeout, wait_event_info) \
 	WaitLatch(latch, wakeEvents, timeout)

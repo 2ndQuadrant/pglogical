@@ -1293,7 +1293,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	{
 		List	   *plantree_list;
 		List	   *querytree_list;
-		Node	   *command = (Node *) lfirst(command_i);
+		RawStmt	   *command = (RawStmt *) lfirst(command_i);
 		const char *commandTag;
 		Portal		portal;
 		int			save_nestlevel;
@@ -1316,10 +1316,14 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		save_nestlevel = NewGUCNestLevel();
 		SetConfigOption("role", role, PGC_INTERNAL, PGC_S_OVERRIDE);
 
+#if PG_VERSION_NUM >= 100000
+		commandTag = CreateCommandTag(command->stmt);
+#else
 		commandTag = CreateCommandTag(command);
+#endif
 
 		querytree_list = pg_analyze_and_rewrite(
-			castNode(RawStmt, command),
+			command,
 			cmdstr,
 			NULL, 0, NULL);
 

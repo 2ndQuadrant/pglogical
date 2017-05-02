@@ -95,7 +95,7 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 	StringInfoData	schema_filter;
 	StringInfoData	command;
 
-	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump))
+	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump) != 0)
 		elog(ERROR, "pglogical subscriber init failed to find pg_dump relative to binary %s",
 			 my_exec_path);
 
@@ -135,7 +135,7 @@ restore_structure(PGLogicalSubscription *sub, const char *srcfile,
 	int			res;
 	StringInfoData	command;
 
-	if (find_other_exec_version(my_exec_path, PGRESTORE_BINARY, &version, pg_restore))
+	if (find_other_exec_version(my_exec_path, PGRESTORE_BINARY, &version, pg_restore) != 0)
 		elog(ERROR, "pglogical subscriber init failed to find pg_restore relative to binary %s",
 			 my_exec_path);
 
@@ -730,10 +730,10 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 		origin_conn = pglogical_connect(sub->origin_if->dsn,
 										sub->name, "snap");
-		use_failover_slot = pglogical_remote_function_exists(origin_conn,
-															 "pg_catalog",
-										  "pg_create_logical_replication_slot",
-															 3);
+		use_failover_slot = PQserverVersion(origin_conn) < 100000 &&
+			pglogical_remote_function_exists(origin_conn, "pg_catalog",
+											 "pg_create_logical_replication_slot",
+											 3);
 		PQfinish(origin_conn);
 
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
@@ -1596,8 +1596,8 @@ truncate_table(char *nspname, char *relname)
 	standard_ProcessUtility((Node *)truncate,
 			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL, false, NULL);
 #else
-	standard_ProcessUtility(castNode(PlannedStmt, truncate),
-			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL, NULL, NULL);
+
+	ExecuteTruncate(truncate);
 #endif
 	/* release memory allocated to create SQL statement */
 	pfree(sql.data);

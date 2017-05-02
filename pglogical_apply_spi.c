@@ -497,8 +497,7 @@ pglogical_proccess_copy(pglogical_copyState *pglcstate)
 
 	/* Initiate the actual COPY */
 	PGLDoCopy((CopyStmt *) linitial(pglcstate->copy_parsetree),
-		   pglcstate->copy_stmt->data, 0, pglcstate->copy_stmt->len,
-		   &processed);
+		   pglcstate->copy_stmt->data, -1, 0, &processed);
 
 	/* Clean up SPI state */
 	SPI_pop();

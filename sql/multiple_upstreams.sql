@@ -6,6 +6,14 @@ SET client_min_messages = 'warning';
 
 GRANT ALL ON SCHEMA public TO nonsuper;
 
+DO $$
+BEGIN
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') >= 1000 THEN
+		CREATE OR REPLACE FUNCTION public.pg_current_xlog_location() RETURNS pg_lsn
+		LANGUAGE SQL AS 'SELECT pg_current_wal_location()';
+	END IF;
+END; $$;
+
 CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
 AS $FUNC$
 BEGIN

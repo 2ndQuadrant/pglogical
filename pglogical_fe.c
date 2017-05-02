@@ -25,8 +25,8 @@ find_other_exec_version(const char *argv0, const char *target,
 	char		cmd[MAXPGPATH];
 	char		cmd_output[1024];
 	FILE       *output;
-	int			pre_dot,
-				post_dot;
+	int			pre_dot = 0,
+				post_dot = 0;
 
 	if (find_my_exec(argv0, retpath) < 0)
 		return -1;
@@ -51,7 +51,7 @@ find_other_exec_version(const char *argv0, const char *target,
 	}
 	pclose(output);
 
-	if (sscanf(cmd_output, "%*s %*s %d.%d", &pre_dot, &post_dot) != 2)
+	if (sscanf(cmd_output, "%*s %*s %d.%d", &pre_dot, &post_dot) < 1)
 		return -2;
 
 	*version = (pre_dot * 100 + post_dot) * 100;

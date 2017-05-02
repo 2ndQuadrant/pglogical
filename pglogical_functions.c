@@ -1231,7 +1231,11 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	/* Validate the output from the parser. */
 	if (list_length(raw_parsetree_list) != 1)
 		goto fail;
+#if PG_VERSION_NUM >= 100000
+	stmt = (SelectStmt *) linitial_node(RawStmt, raw_parsetree_list)->stmt;
+#else
 	stmt = (SelectStmt *) linitial(raw_parsetree_list);
+#endif
 	if (stmt == NULL ||
 		!IsA(stmt, SelectStmt) ||
 		stmt->distinctClause != NIL ||

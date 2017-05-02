@@ -225,9 +225,9 @@ pglogical_finish_truncate(void)
 static void
 pglogical_ProcessUtility(
 #if PG_VERSION_NUM >= 100000
-						 PlannedStmt *parsetree,
+						 PlannedStmt *pstmt,
 #else
-						 Node *parsetree,
+						 Node *pstmt,
 #endif
 						 const char *queryString,
 						 ProcessUtilityContext context,
@@ -241,7 +241,10 @@ pglogical_ProcessUtility(
 #endif
 						 char *completionTag)
 {
-#if PG_VERSION_NUM < 100000
+#if PG_VERSION_NUM >= 100000
+	Node	   *parsetree = pstmt->utilityStmt;
+#else
+	Node	   *parsetree = pstmt;
 	#define queryEnv NULL
 #endif
 
@@ -254,7 +257,7 @@ pglogical_ProcessUtility(
 		pglogical_lastDropBehavior = ((DropStmt *)parsetree)->behavior;
 
 	if (next_ProcessUtility_hook)
-		next_ProcessUtility_hook(parsetree, queryString, context, params,
+		next_ProcessUtility_hook(pstmt, queryString, context, params,
 								 queryEnv,
 								 dest,
 #ifdef XCP
@@ -262,7 +265,7 @@ pglogical_ProcessUtility(
 #endif
 								 completionTag);
 	else
-		standard_ProcessUtility(parsetree, queryString, context, params,
+		standard_ProcessUtility(pstmt, queryString, context, params,
 								queryEnv,
 								dest,
 #ifdef XCP
