@@ -1293,7 +1293,11 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	{
 		List	   *plantree_list;
 		List	   *querytree_list;
-		RawStmt	   *command = (RawStmt *) lfirst(command_i);
+#if PG_VERSION_NUM >= 100000
+		RawStmt	   *command = (RawStmt *) lfirst_node(RawStmt, command_i);
+#else
+		Node	   *command = (Node *) lfirst(command_i);
+#endif
 		const char *commandTag;
 		Portal		portal;
 		int			save_nestlevel;

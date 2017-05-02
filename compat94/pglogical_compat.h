@@ -31,8 +31,6 @@
 #define PG_UINT16_MAX	(0xFFFF)
 #endif
 
-#define RawStmt Node
-
 #define PG_WAIT_EXTENSION 0
 
 extern PGDLLIMPORT XLogRecPtr XactLastCommitEnd;

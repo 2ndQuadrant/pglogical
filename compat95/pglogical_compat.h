@@ -5,8 +5,6 @@
 #include "catalog/heap.h"
 #include "storage/lwlock.h"
 
-#define RawStmt Node
-
 #define PG_WAIT_EXTENSION 0
 
 extern LWLockPadded *GetNamedLWLockTranche(const char *tranche_name);

@@ -4,8 +4,6 @@
 #include "access/heapam.h"
 #include "catalog/heap.h"
 
-#define RawStmt Node
-
 #define PG_WAIT_EXTENSION 0
 
 #define PGLCreateTrigger CreateTrigger
