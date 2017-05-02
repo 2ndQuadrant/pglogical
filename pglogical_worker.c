@@ -124,10 +124,10 @@ pglogical_worker_register(PGLogicalWorker *worker)
 
 	LWLockRelease(PGLogicalCtx->lock);
 
+	memset(&bgw, 0, sizeof(bgw));
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
-	bgw.bgw_main = NULL;
 	snprintf(bgw.bgw_library_name, BGW_MAXLEN,
 			 EXTENSION_NAME);
 	if (worker->worker_type == PGLOGICAL_WORKER_MANAGER)
