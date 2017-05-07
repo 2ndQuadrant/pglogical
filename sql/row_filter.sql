@@ -8,7 +8,7 @@ SELECT pglogical.replicate_ddl_command($$
 		id serial primary key,
 		other integer,
 		data text,
-		something interval
+		"SomeThing" interval
 	);
 $$);
 
@@ -77,7 +77,7 @@ BEGIN
     END LOOP;
 END;$$;
 
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
 ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
@@ -87,7 +87,7 @@ ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
 TRUNCATE basic_dml;
 
 -- check basic insert replication
-INSERT INTO basic_dml(other, data, something)
+INSERT INTO basic_dml(other, data, "SomeThing")
 VALUES (5, 'foo', '1 minute'::interval),
        (4, 'bar', '12 weeks'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
@@ -95,25 +95,25 @@ VALUES (5, 'foo', '1 minute'::interval),
        (1, NULL, NULL);
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- update one row
 \c :provider_dsn
-UPDATE basic_dml SET other = '4', data = NULL, something = '3 days'::interval WHERE id = 4;
+UPDATE basic_dml SET other = '4', data = NULL, "SomeThing" = '3 days'::interval WHERE id = 4;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- update multiple rows
 \c :provider_dsn
 UPDATE basic_dml SET other = id, data = data || id::text;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
-UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
-UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
+UPDATE basic_dml SET other = id, "SomeThing" = "SomeThing" - '10 seconds'::interval WHERE id < 3;
+UPDATE basic_dml SET other = id, "SomeThing" = "SomeThing" + '10 seconds'::interval WHERE id > 3;
 DELETE FROM basic_dml WHERE id = 3;
 INSERT INTO basic_dml VALUES (3, 99, 'bazbaz', '2 years 1 hour'::interval);
 INSERT INTO basic_dml VALUES (7, 100, 'bazbaz', '2 years 1 hour'::interval);
@@ -123,7 +123,7 @@ SELECT * from basic_dml ORDER BY id;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
-SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing", subonly, subonly_def FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 UPDATE basic_dml SET data = 'bar' WHERE id = 3;
@@ -136,7 +136,7 @@ SELECT * from basic_dml ORDER BY id;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
 \c :subscriber_dsn
-SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing", subonly, subonly_def FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 UPDATE basic_dml SET data = 'bar' WHERE id = 6;
@@ -145,21 +145,21 @@ UPDATE basic_dml SET data = 'abcd' WHERE id = 6;
 -- as it does not have the primary key
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- delete multiple rows
 \c :provider_dsn
 DELETE FROM basic_dml WHERE id < 4;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- truncate
 \c :provider_dsn
 TRUNCATE basic_dml;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- copy
 \c :provider_dsn
@@ -171,7 +171,7 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 \.
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
