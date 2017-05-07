@@ -398,7 +398,9 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 			first = false;
 		else
 			appendStringInfoString(&attlist, ",");
-		appendStringInfoString(&attlist, attname);
+		appendStringInfoString(&attlist,
+							   PQescapeIdentifier(origin_conn, attname,
+												  strlen(attname)));
 	}
 	MemoryContextSwitchTo(oldctx);
 	pglogical_relation_close(rel, AccessShareLock);

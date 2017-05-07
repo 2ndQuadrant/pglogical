@@ -7,7 +7,7 @@ SELECT pglogical.replicate_ddl_command($$
 		id serial primary key,
 		other integer,
 		data text,
-		something interval
+		"SomeThing" interval
 	);
 $$);
  replicate_ddl_command 
@@ -143,8 +143,8 @@ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
-  id  | other | data | something 
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+  id  | other | data | SomeThing 
 ------+-------+------+-----------
  5000 |     1 | aaa  | @ 1 hour
  5002 |     3 | ccc  | @ 3 mins
@@ -156,7 +156,7 @@ ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
 \c :provider_dsn
 TRUNCATE basic_dml;
 -- check basic insert replication
-INSERT INTO basic_dml(other, data, something)
+INSERT INTO basic_dml(other, data, "SomeThing")
 VALUES (5, 'foo', '1 minute'::interval),
        (4, 'bar', '12 weeks'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
@@ -169,8 +169,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data |    something    
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+ id | other | data |    SomeThing    
 ----+-------+------+-----------------
   2 |     4 | bar  | @ 84 days
   4 |     2 | qux  | @ 8 mons 2 days
@@ -179,7 +179,7 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 -- update one row
 \c :provider_dsn
-UPDATE basic_dml SET other = '4', data = NULL, something = '3 days'::interval WHERE id = 4;
+UPDATE basic_dml SET other = '4', data = NULL, "SomeThing" = '3 days'::interval WHERE id = 4;
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
  pg_xlog_wait_remote_apply 
 ---------------------------
@@ -187,8 +187,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data | something 
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+ id | other | data | SomeThing 
 ----+-------+------+-----------
   2 |     4 | bar  | @ 84 days
   4 |     4 |      | @ 3 days
@@ -205,8 +205,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data | something 
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+ id | other | data | SomeThing 
 ----+-------+------+-----------
   2 |     2 | bar2 | @ 84 days
   4 |     4 |      | @ 3 days
@@ -214,15 +214,15 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 (3 rows)
 
 \c :provider_dsn
-UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
-UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
+UPDATE basic_dml SET other = id, "SomeThing" = "SomeThing" - '10 seconds'::interval WHERE id < 3;
+UPDATE basic_dml SET other = id, "SomeThing" = "SomeThing" + '10 seconds'::interval WHERE id > 3;
 DELETE FROM basic_dml WHERE id = 3;
 INSERT INTO basic_dml VALUES (3, 99, 'bazbaz', '2 years 1 hour'::interval);
 INSERT INTO basic_dml VALUES (7, 100, 'bazbaz', '2 years 1 hour'::interval);
 UPDATE basic_dml SET data = 'baz' WHERE id in (3,7);
 -- This update would be filtered at subscriber
 SELECT * from basic_dml ORDER BY id;
- id | other | data |     something      
+ id | other | data |     SomeThing      
 ----+-------+------+--------------------
   1 |     1 | foo1 | @ 50 secs
   2 |     2 | bar2 | @ 84 days -10 secs
@@ -239,8 +239,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
- id | other |  data  |     something      | subonly | subonly_def 
+SELECT id, other, data, "SomeThing", subonly, subonly_def FROM basic_dml ORDER BY id;
+ id | other |  data  |     SomeThing      | subonly | subonly_def 
 ----+-------+--------+--------------------+---------+-------------
   2 |     2 | bar2   | @ 84 days -10 secs |         |          99
   3 |    99 | bazbaz | @ 2 years 1 hour   |         |          99
@@ -257,7 +257,7 @@ DELETE FROM basic_dml WHERE data = 'baz';
 INSERT INTO basic_dml VALUES (6, 100, 'baz', '2 years 1 hour'::interval);
 -- insert would be filtered
 SELECT * from basic_dml ORDER BY id;
- id | other | data |     something      
+ id | other | data |     SomeThing      
 ----+-------+------+--------------------
   1 |     1 | foo1 | @ 50 secs
   2 |     2 | bar2 | @ 84 days -10 secs
@@ -274,8 +274,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
- id | other | data |     something      | subonly | subonly_def 
+SELECT id, other, data, "SomeThing", subonly, subonly_def FROM basic_dml ORDER BY id;
+ id | other | data |     SomeThing      | subonly | subonly_def 
 ----+-------+------+--------------------+---------+-------------
   2 |     2 | bar2 | @ 84 days -10 secs |         |          99
   3 |    99 | bar  | @ 2 years 1 hour   |         |          99
@@ -295,8 +295,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data |     something      
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+ id | other | data |     SomeThing      
 ----+-------+------+--------------------
   2 |     2 | bar2 | @ 84 days -10 secs
   3 |    99 | bar  | @ 2 years 1 hour
@@ -314,8 +314,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data |    something     
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+ id | other | data |    SomeThing     
 ----+-------+------+------------------
   4 |     4 |      | @ 3 days 10 secs
   5 |     5 |      | 
@@ -331,8 +331,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data | something 
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+ id | other | data | SomeThing 
 ----+-------+------+-----------
 (0 rows)
 
@@ -346,8 +346,8 @@ SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
-  id  | other | data | something 
+SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+  id  | other | data | SomeThing 
 ------+-------+------+-----------
  9000 |     1 | aaa  | @ 1 hour
  9002 |     3 | ccc  | @ 3 mins

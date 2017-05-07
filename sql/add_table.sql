@@ -16,7 +16,7 @@ CREATE TABLE public.test_publicschema(data text, id serial primary key);
 SELECT pglogical.replicate_ddl_command($$
 CREATE SCHEMA "strange.schema-IS";
 CREATE TABLE public.test_nosync(id serial primary key, data text);
-CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key);
+CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key, "S0m3th1ng" timestamptz DEFAULT '1993-01-01 00:00:00 CET');
 CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key, data text DEFAULT '');
 $$);
 
@@ -41,8 +41,8 @@ INSERT INTO public.test_publicschema(data) VALUES('a');
 INSERT INTO public.test_publicschema(data) VALUES('b');
 INSERT INTO public.test_nosync(data) VALUES('a');
 INSERT INTO public.test_nosync(data) VALUES('b');
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAULT);
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAuLT);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAULT, DEFAULT);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAuLT, DEFAULT);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
@@ -76,8 +76,8 @@ SELECT count(1) FROM pg_replication_slots;
 
 INSERT INTO public.test_publicschema VALUES(3, 'c');
 INSERT INTO public.test_publicschema VALUES(4, 'd');
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3);
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(4);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(3, DEFAULT);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(4, DEFAULT);
 
 SELECT pglogical.synchronize_sequence(c.oid)
   FROM pg_class c, pg_namespace n
@@ -154,8 +154,8 @@ SELECT * FROM pglogical.replication_set_remove_table('repset_test', '"strange.sc
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(1);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(2);
 
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5);
-INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5, DEFAULT);
+INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6, DEFAULT);
 
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
 
