@@ -239,6 +239,37 @@ finish_apply_exec_state(ApplyExecState *aestate)
 	pfree(aestate);
 }
 
+static bool
+has_tuple_changed(Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
+{
+	HeapTupleHeader newheader,
+					oldheader;
+
+	newheader = newtuple->t_data;
+	oldheader = oldtuple->t_data;
+
+	if (rel->relhasoids &&
+		!OidIsValid(HeapTupleHeaderGetOid(newheader)))
+		HeapTupleHeaderSetOid(newheader, HeapTupleHeaderGetOid(oldheader));
+
+	/* if the tuple payload is the same ... */
+	if (newtuple->t_len == oldtuple->t_len &&
+		newheader->t_hoff == oldheader->t_hoff &&
+		(HeapTupleHeaderGetNatts(newheader) ==
+		 HeapTupleHeaderGetNatts(oldheader)) &&
+		((newheader->t_infomask & ~HEAP_XACT_MASK) ==
+		 (oldheader->t_infomask & ~HEAP_XACT_MASK)) &&
+		memcmp(((char *) newheader) + SizeofHeapTupleHeader,
+			   ((char *) oldheader) + SizeofHeapTupleHeader,
+			   newtuple->t_len - SizeofHeapTupleHeader) == 0)
+	{
+		/* ... then there was no change */
+		return false;
+	}
+
+	return true;
+}
+
 /*
  * Handle insert via low level api.
  */
@@ -250,7 +281,6 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	TupleTableSlot	   *localslot;
 	HeapTuple			remotetuple;
 	HeapTuple			applytuple;
-	PGLogicalConflictResolution resolution;
 	List			   *recheckIndexes = NIL;
 	MemoryContext		oldctx;
 
@@ -303,9 +333,21 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	if (OidIsValid(conflicts))
 	{
 		/* Tuple already exists, try resolving conflict. */
-		bool apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
-										  remotetuple, &applytuple,
-										  &resolution);
+		bool apply;
+		PGLogicalConflictResolution resolution;
+
+		/*
+		 * If we are inserting exactly same tuple that already exists and
+		 * we've been asked to ignore those on conflict, there is nothing
+		 * more to do here.
+		 */
+		if (pglogical_conflict_ignore_redundant_updates &&
+			!has_tuple_changed(rel->rel, localslot->tts_tuple, remotetuple))
+			goto done;
+
+		apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
+									 remotetuple, &applytuple,
+									 &resolution);
 
 		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
 								  localslot->tts_tuple, remotetuple,
@@ -371,6 +413,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 							 remotetuple, recheckIndexes);
 	}
 
+done:
 	ExecCloseIndices(aestate->resultRelInfo);
 
 	PopActiveSnapshot();
@@ -463,6 +506,15 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		{
 			PGLogicalConflictResolution resolution;
 
+			/*
+			 * If we are updating exactly same tuple that already exists and
+			 * we've been asked to ignore those on conflict, there is nothing
+			 * more to do here.
+			 */
+			if (pglogical_conflict_ignore_redundant_updates &&
+				!has_tuple_changed(rel->rel, localslot->tts_tuple, remotetuple))
+				goto done;
+
 			apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
 										 remotetuple, &applytuple,
 										 &resolution);
@@ -523,6 +575,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 								  remotetuple, NULL, PGLogicalResolution_Skip);
 	}
 
+done:
 	/* Cleanup. */
 	PopActiveSnapshot();
 	finish_apply_exec_state(aestate);
@@ -573,7 +626,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 		ExecARDeleteTriggers(aestate->estate, aestate->resultRelInfo,
 							 &localslot->tts_tuple->t_self, NULL);
 	}
-	else
+	else if (!pglogical_conflict_ignore_redundant_updates)
 	{
 		/* The tuple to be deleted could not be found. */
 		HeapTuple remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),

@@ -772,6 +772,14 @@ _PG_init(void)
 							 PGC_SUSET, 0,
 							 NULL, NULL, NULL);
 
+	DefineCustomBoolVariable("pglogical.conflict_ignore_redundant_updates",
+							 "log conflicts that didn't change any data",
+							 NULL,
+							 &pglogical_conflict_ignore_redundant_updates,
+							 true, PGC_POSTMASTER,
+							 0,
+							 NULL, NULL, NULL);
+
 	DefineCustomBoolVariable("pglogical.synchronous_commit",
 							 "pglogical specific synchronous commit value",
 							 NULL,

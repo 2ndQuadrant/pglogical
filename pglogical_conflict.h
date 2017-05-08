@@ -39,6 +39,7 @@ typedef enum
 
 extern int pglogical_conflict_resolver;
 extern int pglogical_conflict_log_level;
+extern bool pglogical_conflict_ignore_redundant_updates;
 
 typedef enum PGLogicalConflictType
 {

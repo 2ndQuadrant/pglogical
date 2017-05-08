@@ -42,6 +42,7 @@
 
 int		pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
 int		pglogical_conflict_log_level = LOG;
+bool	pglogical_conflict_ignore_redundant_updates = true;
 
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
