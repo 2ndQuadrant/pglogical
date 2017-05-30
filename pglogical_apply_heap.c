@@ -248,7 +248,7 @@ has_tuple_changed(Relation rel, HeapTuple oldtuple, HeapTuple newtuple)
 	newheader = newtuple->t_data;
 	oldheader = oldtuple->t_data;
 
-	if (rel->relhasoids &&
+	if (rel->rd_rel->relhasoids &&
 		!OidIsValid(HeapTupleHeaderGetOid(newheader)))
 		HeapTupleHeaderSetOid(newheader, HeapTupleHeaderGetOid(oldheader));
 
