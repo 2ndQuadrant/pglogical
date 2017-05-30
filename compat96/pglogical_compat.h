@@ -14,6 +14,7 @@
 #define WaitLatch(latch, wakeEvents, timeout, wait_event_info) \
 	WaitLatch(latch, wakeEvents, timeout)
 
+#undef castNode
 #define castNode(_type_, nodeptr) ((_type_ *) (nodeptr))
 
 #define pg_analyze_and_rewrite(parsetree, query_string, paramTypes, numParams, queryEnv) \
