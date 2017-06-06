@@ -26,35 +26,43 @@ $SIG{__DIE__} = \&Carp::confess;
 @EXPORT_OK = qw();
 
 sub new {
-	my ($class, $pglnode, $dbname, $nodename) = @_;
+	my ($class, %kwargs) = @_;
 
-	die 'need PostgresPGLNode as 1st arg'
-		unless defined $pglnode && $pglnode->isa('PostgresPGLNode');
+	die 'need node arg to be a PostgresPGLNode'
+		unless defined $kwargs{node} && $kwargs{node}->isa('PostgresPGLNode');
 
-	die 'need dbname as 2nd arg'
-		unless defined $dbname;
+	die 'need dbname arg'
+		unless defined $kwargs{dbname};
 
-	die 'need node name as 3rd arg'
-		unless defined $nodename;
+	die 'need name arg'
+		unless defined $kwargs{name};
 
 	my $self = bless {
-		'_node' => $pglnode,
-		'_dbname' => $dbname,
-		'_name' => $nodename,
+		'_node' => $kwargs{node},
+		'_dbname' => $kwargs{dbname},
+		'_name' => $kwargs{name},
 	}, $class;
 
 	return $self;
 }
 
-sub init {
-	my $self = shift;
+# SQL creation of a pglogical node
+sub create {
+	my ($self, %kwargs) = shift;
 	my $exists = $self->node->safe_psql('postgres', 'SELECT 1 FROM pg_catalog.pg_database WHERE datname = ' . quote_literal($self->dbname));
 	if ($exists eq '')
 	{
 		$self->node->safe_psql('postgres', 'CREATE DATABASE ' . quote_ident($self->dbname));
 	}
 	$self->psql('CREATE EXTENSION IF NOT EXISTS pglogical');
+	# TODO: support options to pglogical.create_node
 	$self->_create_node();
+}
+
+# We were created by pglogical_create_subscription
+sub _init_from_physical {
+	my $self = shift;
+	# nothing to do for now
 }
 
 sub _create_node {
@@ -83,75 +91,6 @@ sub replication_set_add_table {
 sub replication_set_remove_table {
 	my ($self, $setname, $tablename) = @_;
 	$self->safe_psql("SELECT * FROM pglogical.replication_set_remove_table(" . quote_literal($setname) . ", " . quote_literal($tablename) . ")");
-}
-
-sub create_subscription {
-	my ($self, $provider, $subname, %kwargs) = @_;
-	die "pass a PGLDB as 1st arg, not a dsn"
-		if defined $kwargs{'provider_dsn'};
-	die "subscriber name should be supplied as 2nd non-named argument"
-		if defined $kwargs{'subscription_name'};
-	die "provider must be a PGLDB instance"
-		if !$provider->isa('PGLDB');
-	if ($self->node->pg_version_num / 100 == 904) {
-		$self->psql('CREATE EXTENSION IF NOT EXISTS pglogical_origin');
-	}
-	my $query = "SELECT * FROM pglogical.create_subscription("
-		. "subscription_name := " . quote_literal($subname) . ", "
-		. "provider_dsn := " . quote_literal($provider->connstr) . ", "
-		. to_pg_named_arglist(\%kwargs)
-		. ");";
-	printf("subscribing [%s] to [%s]\n", $self->name, $provider->name);
-	print("Joining with query:\n$query\n");
-	$self->safe_psql($query);
-}
-
-sub wait_for_replicating {
-	my ($self, $subname) = @_;
-	die 'subname must be defined'
-		unless defined($subname);
-	say "waiting for [" . $self->name . "] sub [" . $subname . "] to start replicating";
-	$self->node->poll_query_until($self->dbname, "SELECT status = 'replicating' FROM pglogical.show_subscription_status(" . quote_literal($subname) . ")");
-	say "done waiting for [" . $self->name . "] sub [" . $subname . "] to start replicating";
-	return 1;
-}
-
-sub wait_for_sync {
-	# It'd be nice to accept a list of tables here, but meh for now
-	my ($self,$subname) = @_;
-	die 'subname must be defined'
-		unless defined($subname);
-	say "waiting for [" . $self->name . "] sub [" . $subname . "] to sync up";
-	$self->node->poll_query_until($self->dbname, "SELECT 'r' = ALL (SELECT sync_status FROM pglogical.local_sync_status INNER JOIN pglogical.subscription ON (sync_subid = sub_id) WHERE sub_name = " . quote_literal($subname) . ")");
-	say "done waiting for [" . $self->name . "] sub [" . $subname . "] to sync up";
-	return 1;
-}
-
-sub subscription_status {
-	my ($self,$subname) = @_;
-	die 'subname must be defined'
-		unless defined($subname);
-	my @fields = ('subscription_name', 'status', 'provider_node', 'replication_sets', 'forward_origins');
-	my $ret = $self->safe_psql('SELECT ' . join(", ", (map {quote_ident($_)} @fields)) . ' FROM pglogical.show_subscription_status(' . quote_literal($subname) . ')');
-	my %status;
-	@status{@fields} = split(/\|/,$ret);
-	return \%status;
-}
-
-sub sync_status {
-	my ($self,$subname) = @_;
-	die 'subname must be defined'
-		unless defined($subname);
-	my @fields = ('sync_kind', 'sync_subid', 'sync_nspname', 'sync_relname', 'sync_status');
-	my $sql = 'SELECT ' . join(", ", (map {quote_ident($_)} @fields)) . ' FROM pglogical.local_sync_status INNER JOIN pglogical.subscription ON (sync_subid = sub_id) WHERE sub_name = ' . quote_literal($subname) . ' ORDER BY 2, 3, 4;';
-	my $ret = $self->safe_psql($sql);
-	my @lines;
-	foreach my $line (split(/\n/, $ret)) {
-		my %status;
-		@status{@fields} = split(/\|/,$line);
-		push @lines, \%status;
-	}
-	return \@lines;
 }
 
 sub replicate_ddl {

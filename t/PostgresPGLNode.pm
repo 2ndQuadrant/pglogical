@@ -179,10 +179,25 @@ sub init_physical_clone
 	# PostgresNode's state
 	$self->_update_pid(1);
 
-	# For every subscription created, return a PGLDB instance.
+	# We created one node per DB, with one subscription each. Just
+	# return the subscriptions, the caller can get the nodes from
+	# them if it wants them.
+	#
 	my @subscriptions;
 	foreach my $dbname (@dbnames) {
-		push @subscriptions, PGLDB->new($self, $dbname, $params{subscriber_name});
+		my $pglnode = PGLDB->new(
+			node => $self,
+			dbname => $dbname,
+			name => $params{subscriber_name}
+			);
+		$pglnode->_init_from_physical();
+		my $subscription = PGLSubscription->new(
+			from => $pglnode,
+			name => $params{subscriber_name}
+			);
+		# discover provider name
+		$subscription->_init_from_physical();
+		push @subscriptions, $subscription;
 	}
 
 	return \@subscriptions;

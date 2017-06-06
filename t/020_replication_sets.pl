@@ -11,6 +11,7 @@ use TestLib;
 # Local
 use PostgresPGLNode;
 use PGLDB;
+use PGLSubscription;
 
 my $pgldb = 'pgltest';
 my $providername = 'test_provider';
@@ -28,28 +29,38 @@ $node_sub->start;
 $node_pub->safe_psql('postgres', "CREATE DATABASE $pgldb");
 $node_sub->safe_psql('postgres', "CREATE DATABASE $pgldb");
 
-my $pgl_pub = PGLDB->new($node_pub, $pgldb, $providername);
-$pgl_pub->init;
+my $pgl_pub = PGLDB->new(
+	node => $node_pub,
+	dbname => $pgldb,
+	name => $providername);
+$pgl_pub->create;
 $pgl_pub->create_replication_set('set_include');
 $pgl_pub->create_replication_set('set_exclude');
 
-my $pgl_sub = PGLDB->new($node_sub, $pgldb, $subscribername);
-$pgl_sub->init;
-$pgl_sub->create_subscription(
-	$pgl_pub, $subscriptionname,
+my $pgl_sub = PGLDB->new(
+	node => $node_sub,
+	dbname => $pgldb,
+	name => $subscribername);
+$pgl_sub->create;
+
+my $subscription = PGLSubscription->new(
+	from => $pgl_sub,
+	name => $subscriptionname);
+$subscription->create(
+	$pgl_pub,
 	replication_sets => ['set_include', 'ddl_sql'],
 	forward_origins => [],
     synchronize_structure => 'false',
     synchronize_data => 'false' 
 );
 
-ok($pgl_sub->wait_for_replicating($subscriptionname), 'replication started');
+ok($subscription->wait_for_replicating(), 'replication started');
 
-say "Subscription state: " . Dumper($pgl_sub->subscription_status($subscriptionname));
+say "Subscription state: " . Dumper($subscription->subscription_status());
 
-ok($pgl_sub->wait_for_sync($subscriptionname), 'tables synced');
+ok($subscription->wait_for_sync(), 'tables synced');
 
-say "sync status: " . Dumper($pgl_sub->sync_status($subscriptionname));
+say "sync status: " . Dumper($subscription->sync_status());
 
 $pgl_pub->replicate_ddl(q[
     CREATE TABLE public.tbl_included (
@@ -65,14 +76,14 @@ $pgl_pub->replicate_ddl(q[
     );
 ]);
 
-say "Subscription state: " . Dumper($pgl_sub->subscription_status($subscriptionname));
+say "Subscription state: " . Dumper($subscription->subscription_status());
 
 $pgl_pub->replication_set_add_table('set_include', 'tbl_included', 1);
 $pgl_pub->replication_set_add_table('set_exclude', 'tbl_excluded', 1);
 
-ok($pgl_sub->wait_for_sync($subscriptionname), 'tables synced after add');
+ok($subscription->wait_for_sync(), 'tables synced after add');
 
-say "sync status: " . Dumper($pgl_sub->sync_status($subscriptionname));
+say "sync status: " . Dumper($subscription->sync_status());
 
 is($pgl_sub->safe_psql("SELECT sync_kind, sync_status FROM pglogical.local_sync_status WHERE sync_relname = 'tbl_included' AND sync_nspname = 'public'"),
    'd|r',

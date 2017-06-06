@@ -9,6 +9,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 # Local
 use PostgresPGLNode;
 use PGLDB;
+use PGLSubscription;
 
 my $PGPORT=$ENV{'PGPORT'};
 my $PROVIDER_PORT=5431;
@@ -52,8 +53,12 @@ INSERT INTO some_local_tbl3(key, data) VALUES('key2', NULL);
 INSERT INTO some_local_tbl3(key, data) VALUES('key3', 'data3');
 ]);
 
-my $pub = PGLDB->new($node_pub, $pgldb, $providername);
-$pub->init;
+my $pub = PGLDB->new(
+	node => $node_pub,
+	dbname => $pgldb,
+	name => $providername);
+
+$pub->create;
 
 my $node_sub = get_new_pgl_node('node_sub');
 my $subscriptions = $node_sub->init_physical_clone(
@@ -62,7 +67,8 @@ my $subscriptions = $node_sub->init_physical_clone(
 );
 
 is(scalar(@$subscriptions), 1, '1 subscription created');
-my $sub = $$subscriptions[0];
+my $subscription = $$subscriptions[0];
+my $sub = $subscription->subscriberdb;
 
 is($sub->name, $subscribername, 'subscriber name matches');
 is($sub->dbname, $pgldb, 'dbname matches');
