@@ -58,6 +58,8 @@ END;
 $$;
 ALTER EXTENSION pglogical UPDATE;
 
+\dx pglogical
+
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
 
 \c :subscriber_dsn

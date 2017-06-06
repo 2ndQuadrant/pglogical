@@ -87,7 +87,7 @@ CREATE TABLE pglogical.depend (
     refobjid oid NOT NULL,
     refobjsubid integer NOT NULL,
 
-	deptype "char" NOT NULL
+    deptype "char" NOT NULL
 ) WITH (user_catalog_table=true);
 
 DROP EVENT TRIGGER IF EXISTS pglogical_truncate_trigger_add;
