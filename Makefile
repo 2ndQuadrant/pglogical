@@ -163,8 +163,24 @@ git-dist: dist-common
 # Copy perl modules in postgresql_srcdir/src/test/perl
 # to postgresql_installdir/lib/pgxs/src/test/perl
 
-check_prove:
-	$(prove_check)
+ifeq ($(MAJORVERSION),9.4)
+
+prove_installcheck:
+	@echo "No prove / TAP support in 9.4, ignoring prove tests"
+
+else
+
+$(pgxsdir)/src/test/perl/PostgresNode.pm:
+	@[ -e $(pgxsdir)/src/test/perl/PostgresNode.pm ] || ( echo -e "----ERROR----\nCan't run prove_installcheck, copy src/test/perl/* to $(pgxsdir)/src/test/perl/ and retry\n-------------" && exit 1)
+
+
+prove_installcheck: $(pgxsdir)/src/test/perl/PostgresNode.pm install
+	rm -rf $(CURDIR)/tmp_check/
+	cd $(srcdir) && PERL5LIB=t/ TESTDIR='$(CURDIR)' PATH="$(shell $(PG_CONFIG) --bindir):$$PATH" PGPORT='6$(DEF_PGPORT)' top_builddir='$(CURDIR)/$(top_builddir)' PG_REGRESS='$(pgxsdir)/src/test/regress/pg_regress' $(PROVE) $(PG_PROVE_FLAGS) $(PROVE_FLAGS) $(or $(PROVE_TESTS),t/*.pl)
+
+endif
+
+check_prove: prove_installcheck
 
 .PHONY: all check regresscheck pglogical.control
 

@@ -1,9 +1,14 @@
 use strict;
 use warnings;
+use 5.10.0;
 use Cwd;
 use Config;
 use TestLib;
-use Test::More tests => 11;
+use Test::More;
+use Time::HiRes qw(gettimeofday tv_interval);
+# Local
+use PostgresPGLNode;
+use PGLDB;
 
 my $PGPORT=$ENV{'PGPORT'};
 my $PROVIDER_PORT=5431;
@@ -14,74 +19,114 @@ program_help_ok('pglogical_create_subscriber');
 
 program_options_handling_ok('pglogical_create_subscriber');
 
-system_or_bail 'rm', '-rf', '/tmp/tmp_datadir';
-system_or_bail 'rm', '-rf', '/tmp/tmp_backupdir';
+my $ts;
 
-system_or_bail 'initdb', '-A trust', '-D', '/tmp/tmp_datadir';
+my $pgldb = 'pgltest';
+my $providername = 'test_provider';
+my $subscribername = 'test_subscriber';
+my $subscriptionname = 'test_physical';
 
-system_or_bail 'pwd';
-
-system_or_bail 'cp', 'regress-pg_hba.conf', '/tmp/tmp_datadir/pg_hba.conf';
-
-my $pg_version = `pg_config --version| sed 's/[^0-9\.]//g' | awk -F . '{ print \$1\$2 }'`;
-
-if ($pg_version >= 95) {
-    `cat t/perl-95-postgresql.conf>>/tmp/tmp_datadir/postgresql.conf`;
-} else {
-    `cat t/perl-94-postgresql.conf>>/tmp/tmp_datadir/postgresql.conf`;
-}
-
-system("postgres -p $PROVIDER_PORT -D /tmp/tmp_datadir -c logging_collector=on &");
-
-#allow Postgres server to startup
-system_or_bail 'sleep', '17';
-
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE USER super SUPERUSER";
+my $node_pub = get_new_pgl_node('node_pub');
+$node_pub->init;
+$node_pub->start;
+$node_pub->safe_psql('postgres', "CREATE DATABASE $pgldb");
 
 # insert some pre-seed data
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE SEQUENCE some_local_seq";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE TABLE some_local_tbl(id serial primary key, key text unique not null, data text)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl(key, data) VALUES('key1', 'data1')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl(key, data) VALUES('key2', NULL)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl(key, data) VALUES('key3', 'data3')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE TABLE some_local_tbl1(id serial, key text unique not null, data text)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl1(key, data) VALUES('key1', 'data1')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl1(key, data) VALUES('key2', NULL)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl1(key, data) VALUES('key3', 'data3')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE TABLE some_local_tbl2(id serial, key text, data text)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl2(key, data) VALUES('key1', 'data1')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl2(key, data) VALUES('key2', NULL)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl2(key, data) VALUES('key3', 'data3')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE TABLE some_local_tbl3(id integer, key text, data text)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl3(key, data) VALUES('key1', 'data1')";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl3(key, data) VALUES('key2', NULL)";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "INSERT INTO some_local_tbl3(key, data) VALUES('key3', 'data3')";
-# Required for PostgreSQL 9.4 run
-#system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical_origin";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0'";
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "ALTER EXTENSION pglogical UPDATE";
+$node_pub->safe_psql($pgldb, q[
+CREATE SEQUENCE some_local_seq;
+CREATE TABLE some_local_tbl(id serial primary key, key text unique not null, data text);
+INSERT INTO some_local_tbl(key, data) VALUES('key1', 'data1');
+INSERT INTO some_local_tbl(key, data) VALUES('key2', NULL);
+INSERT INTO some_local_tbl(key, data) VALUES('key3', 'data3');
+CREATE TABLE some_local_tbl1(id serial, key text unique not null, data text);
+INSERT INTO some_local_tbl1(key, data) VALUES('key1', 'data1');
+INSERT INTO some_local_tbl1(key, data) VALUES('key2', NULL);
+INSERT INTO some_local_tbl1(key, data) VALUES('key3', 'data3');
+CREATE TABLE some_local_tbl2(id serial, key text, data text);
+INSERT INTO some_local_tbl2(key, data) VALUES('key1', 'data1');
+INSERT INTO some_local_tbl2(key, data) VALUES('key2', NULL);
+INSERT INTO some_local_tbl2(key, data) VALUES('key3', 'data3');
+CREATE TABLE some_local_tbl3(id integer, key text, data text);
+INSERT INTO some_local_tbl3(key, data) VALUES('key1', 'data1');
+INSERT INTO some_local_tbl3(key, data) VALUES('key2', NULL);
+INSERT INTO some_local_tbl3(key, data) VALUES('key3', 'data3');
+]);
 
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-c', "SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=postgres user=super')";
+my $pub = PGLDB->new($node_pub, $pgldb, $providername);
+$pub->init;
 
-command_ok([ 'pglogical_create_subscriber', '-D', '/tmp/tmp_backupdir', "--subscriber-name=test_subscriber", "--subscriber-dsn=$SUBSCRIBER_DSN", "--provider-dsn=$PROVIDER_DSN", '--drop-slot-if-exists', '-v', '--hba-conf=regress-pg_hba.conf', '--postgresql-conf=/tmp/tmp_datadir/postgresql.conf'], 'pglogical_create_subscriber check');
+my $node_sub = get_new_pgl_node('node_sub');
+my $subscriptions = $node_sub->init_physical_clone(
+	publisher => $pub,
+	subscriber_name => $subscribername
+);
 
-#test whether preseed data is there
+is(scalar(@$subscriptions), 1, '1 subscription created');
+my $sub = $$subscriptions[0];
 
-command_ok([ 'psql', '-p', "$PGPORT", '-c', "\\d" ], 'preseed check 1 ');
-command_ok([ 'psql', '-p', "$PGPORT", '-c', "SELECT * from some_local_tbl" ], 'preseed check 2 ');
+is($sub->name, $subscribername, 'subscriber name matches');
+is($sub->dbname, $pgldb, 'dbname matches');
+is($sub->safe_psql(q[
+	SELECT origin.node_name, target.node_name, sub_name
+	FROM pglogical.subscription
+		INNER JOIN pglogical.node origin ON (origin.node_id = sub_origin)
+		INNER JOIN pglogical.node target ON (target.node_id = sub_target)
+	]),
+   "$providername|$subscribername|$subscribername",
+   'node and subscription names match');
 
-#insert some new data
-system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-f', 't/basic.sql';
+is($sub->safe_psql(q[
+	select table_name, table_type from information_schema.tables where table_schema = 'public' order by table_name;
+	]),
+	q[some_local_tbl|BASE TABLE
+some_local_tbl1|BASE TABLE
+some_local_tbl2|BASE TABLE
+some_local_tbl3|BASE TABLE],
+	'expected tables exist on subscriber');
 
-#allow script to complete executing
-system_or_bail 'sleep', '11';
+is($sub->safe_psql(q[
+	SELECT * from some_local_tbl order by key;
+	]),
+	q[1|key1|data1
+2|key2|
+3|key3|data3],
+	'expected data in table some_local_tbl');
 
-#check whether it is replicated
-command_ok([ 'psql', '-p', "$PGPORT", '-c', "\\d" ], 'replication check 1 ');
-command_ok([ 'psql', '-p', "$PGPORT", '-c', "SELECT * from basic_dml" ], 'replication check 2 ');
-command_ok([ 'psql', '-p', "$PGPORT", '-c', "SELECT * from public.basic_dml" ], 'replication check 3 ');
+print "Creating public.basic_dml...";
+$pub->replicate_ddl(q[
+	CREATE TABLE public.basic_dml (
+		id serial primary key,
+		other integer
+	)]
+);
+say " created";
 
-#cleanup
-system("pg_ctl stop -D /tmp/tmp_backupdir -m immediate &");
-system("pg_ctl stop -D /tmp/tmp_datadir -m immediate &");
+print "Waiting to see public.basic_dml on subscriber...";
+print "(my dsn is " . $sub->connstr . ")";
+$ts = [gettimeofday()];
+$sub->poll_query_until(
+	q[SELECT EXISTS (SELECT 1 FROM information_schema.tables where table_schema = 'public' and table_name = 'basic_dml')])
+	or BAIL_OUT("basic_dml didn't replicate");
+say " seen; took " . tv_interval ( $ts, [gettimeofday()] ) . " seconds";
 
+is($sub->safe_psql(q[SELECT 1 FROM information_schema.tables where table_schema = 'public' and table_name = 'basic_dml']),
+	'1', 'table schema basic_dml got replicated');
+
+$pub->safe_psql(q[INSERT INTO basic_dml(other) VALUES (666)]);
+$pub->replication_set_add_table('default', 'basic_dml', 1);
+$pub->safe_psql(q[INSERT INTO basic_dml(other) VALUES (42)]);
+
+print "Waiting to see row other=42 in public.basic_dml on subscriber...";
+$ts = [gettimeofday()];
+$sub->node->poll_query_until($sub->dbname, q[SELECT exists(SELECT 1 FROM basic_dml WHERE other = 42)])
+	or BAIL_OUT("value in basic_dml didn't replicate");
+say " seen; took " . tv_interval ( $ts, [gettimeofday()] ) . " seconds";
+
+is($sub->safe_psql(q[
+	SELECT id, other from basic_dml order by id;
+	]),
+	q[1|666
+2|42],
+	'expected data in table basic_dml');
+
+done_testing();
