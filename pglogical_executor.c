@@ -55,7 +55,7 @@
 List *pglogical_truncated_tables = NIL;
 
 static DropBehavior	pglogical_lastDropBehavior = DROP_RESTRICT;
-static bool			dropping_pglogical = false;
+static bool			dropping_pglogical_obj = false;
 static object_access_hook_type next_object_access_hook = NULL;
 
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
@@ -248,7 +248,7 @@ pglogical_ProcessUtility(
 	#define queryEnv NULL
 #endif
 
-	dropping_pglogical = false;
+	dropping_pglogical_obj = false;
 
 	if (nodeTag(parsetree) == T_TruncateStmt)
 		pglogical_start_truncate();
@@ -306,21 +306,26 @@ pglogical_object_access(ObjectAccessType access,
 		/* Dropping pglogical itself? */
 		if (classId == ExtensionRelationId &&
 			objectId == get_extension_oid(EXTENSION_NAME, false))
-			dropping_pglogical = true;
+			dropping_pglogical_obj = true;
 
-		/* Dropping dependency checking relation? */
+		/* Dropping relation within pglogical? */
 		if (classId == RelationRelationId)
 		{
-			Oid			nspoid;
-			Oid			reloid;
+			Oid			relnspoid;
+			Oid			pglnspoid;
 
-			nspoid = get_namespace_oid(EXTENSION_NAME, true);
-			reloid = get_relname_relid("depend", nspoid);
-			if (reloid == objectId)
-				dropping_pglogical = true;
+			pglnspoid = get_namespace_oid(EXTENSION_NAME, true);
+			relnspoid = get_rel_namespace(objectId);
+
+			if (pglnspoid == relnspoid)
+				dropping_pglogical_obj = true;
 		}
 
-		if (dropping_pglogical)
+		/*
+		 * Don't do extra dependency checks for internal objects, those
+		 * should be handled by Postgres.
+		 */
+		if (dropping_pglogical_obj)
 			return;
 
 		/* No local node? */

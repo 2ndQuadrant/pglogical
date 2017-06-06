@@ -53,6 +53,13 @@ BEGIN
 END;
 $$;
 ALTER EXTENSION pglogical UPDATE;
+\dx pglogical
+                   List of installed extensions
+   Name    | Version |  Schema   |          Description           
+-----------+---------+-----------+--------------------------------
+ pglogical | 2.0.1   | pglogical | PostgreSQL Logical Replication
+(1 row)
+
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
  create_node 
 -------------
