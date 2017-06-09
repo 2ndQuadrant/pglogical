@@ -58,10 +58,6 @@ ok($subscription->wait_for_replicating(), 'replication started');
 
 say "Subscription state: " . Dumper($subscription->subscription_status());
 
-ok($subscription->wait_for_sync(), 'tables synced');
-
-say "sync status: " . Dumper($subscription->sync_status());
-
 $pgl_pub->replicate_ddl(q[
     CREATE TABLE public.tbl_included (
         id serial primary key,
@@ -81,9 +77,10 @@ say "Subscription state: " . Dumper($subscription->subscription_status());
 $pgl_pub->replication_set_add_table('set_include', 'tbl_included', 1);
 $pgl_pub->replication_set_add_table('set_exclude', 'tbl_excluded', 1);
 
-ok($subscription->wait_for_sync(), 'tables synced after add');
+ok($subscription->wait_for_catchup($pgl_pub));
+ok($subscription->wait_for_table_sync(['public', 'tbl_included']), 'tables synced after add');
 
-say "sync status: " . Dumper($subscription->sync_status());
+say "sync status: " . Dumper($subscription->table_sync_status(['public', 'tbl_included']));
 
 is($pgl_sub->safe_psql("SELECT sync_kind, sync_status FROM pglogical.local_sync_status WHERE sync_relname = 'tbl_included' AND sync_nspname = 'public'"),
    'd|r',

@@ -7,8 +7,7 @@ use Test::More;
 
 # sudo, wtf?
 TODO: {
-local $TODO = 'Whole test need rewriting using the new framework, with no sudo etc';
-todo_skip 1;
+todo_skip 'Whole test need rewriting using the new framework, with no sudo etc', 1;
 
 my $PGPORT=65432; #subscriber's port
 my $PROVIDER_PORT=65431;

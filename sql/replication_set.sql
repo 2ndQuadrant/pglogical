@@ -14,6 +14,9 @@ CREATE TABLE public.test_nopkey(id int);
 CREATE UNLOGGED TABLE public.test_unlogged(id int primary key);
 $$);
 
+SELECT nspname, relname, set_name FROM pglogical.tables
+ WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
 
 -- show initial replication sets

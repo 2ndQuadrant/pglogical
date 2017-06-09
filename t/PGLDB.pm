@@ -93,6 +93,32 @@ sub replication_set_remove_table {
 	$self->safe_psql("SELECT * FROM pglogical.replication_set_remove_table(" . quote_literal($setname) . ", " . quote_literal($tablename) . ")");
 }
 
+sub replication_set_add_all_tables {
+	my ($self, $setname, $schemas, $sync, %kwargs) = @_;
+	$self->safe_psql("SELECT * FROM pglogical.replication_set_add_all_tables(" . quote_literal($setname) . ", " . to_pg_literal($schemas) . ", " . quote_literal($sync) 
+		. append_pg_named_arglist(%kwargs)
+		. ")");
+}
+
+sub replication_set_add_sequence {
+	my ($self, $setname, $sequencename, $sync, %kwargs) = @_;
+	$self->safe_psql("SELECT * FROM pglogical.replication_set_add_sequence(" . quote_literal($setname) . ", " . quote_literal($sequencename) . ", " . quote_literal($sync) 
+		. append_pg_named_arglist(%kwargs)
+		. ")");
+}
+
+sub replication_set_remove_sequence {
+	my ($self, $setname, $sequencename) = @_;
+	$self->safe_psql("SELECT * FROM pglogical.replication_set_remove_sequence(" . quote_literal($setname) . ", " . quote_literal($sequencename) . ")");
+}
+
+sub replication_set_add_all_sequences {
+	my ($self, $setname, $schemas, $sync, %kwargs) = @_;
+	$self->safe_psql("SELECT * FROM pglogical.replication_set_add_all_sequences(" . quote_literal($setname) . ", " . to_pg_literal($schemas) . ", " . quote_literal($sync) 
+		. append_pg_named_arglist(%kwargs)
+		. ")");
+}
+
 sub replicate_ddl {
 	my ($self, $ddl, $repsets) = @_;
 	die 'repsets must be arrayref or undef'
