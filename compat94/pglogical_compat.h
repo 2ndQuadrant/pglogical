@@ -111,4 +111,6 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 
 #define makeDefElem(name, arg, location) makeDefElem(name, arg)
 
+#define SizeofHeapTupleHeader offsetof(HeapTupleHeaderData, t_bits)
+
 #endif
