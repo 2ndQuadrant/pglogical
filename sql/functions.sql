@@ -165,7 +165,13 @@ ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null;
 
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
+-- This cannot ever apply on the downstream because we check constraints
+-- and the new rows will violate the NOT NULL constraint on id2, so
+-- it should time out.
+BEGIN;
+SET statement_timeout = '2s';
 SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ROLLBACK;
 
 \c :subscriber_dsn
 

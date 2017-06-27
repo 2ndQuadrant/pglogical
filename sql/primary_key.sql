@@ -93,6 +93,9 @@ ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
 $$);
 
 \d+ pk_users;
+-- Due to the duplicate PK, subscriber can never apply the change
+-- and catch up
+SET statement_timeout = '2s';
 SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
