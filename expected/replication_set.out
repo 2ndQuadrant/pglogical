@@ -16,6 +16,16 @@ $$);
  t
 (1 row)
 
+SELECT nspname, relname, set_name FROM pglogical.tables
+ WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
+      nspname      |      relname       | set_name 
+-------------------+--------------------+----------
+ normalschema      | test_normalschema  | 
+ public            | test_nopkey        | 
+ public            | test_publicschema  | 
+ strange.schema-IS | test_strangeschema | 
+(4 rows)
+
 SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
  pg_xlog_wait_remote_apply 
 ---------------------------
