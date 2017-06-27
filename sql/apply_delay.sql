@@ -75,10 +75,13 @@ SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts3', CURRENT_TIMESTAMP);
 
-SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
-       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))) :: integer as ddl_replicate_time;
-SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
-       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))) :: integer as inserts_replicate_time;
+SELECT EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))
+       BETWEEN 1 AND 2.5 AS ddl_replicate_time_ok;
+
+SELECT EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))
+       BETWEEN 1 AND 2.5 AS inserts_replicate_time_ok;
 
 \c :subscriber_dsn
 
