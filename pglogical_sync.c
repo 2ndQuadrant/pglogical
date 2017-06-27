@@ -319,6 +319,20 @@ finish_copy_target_tx(PGconn *conn)
 		elog(ERROR, "COMMIT on target node failed: %s",
 				PQresultErrorMessage(res));
 	PQclear(res);
+
+	/*
+	 * Resetting the origin explicitly before the backend exits will help
+	 * prevent races with other accesses to the same replication origin.
+	 */
+	if (PQserverVersion(conn) >= 90500)
+	{
+		res = PQexec(conn, "SELECT pg_catalog.pg_replication_origin_session_reset();\n");
+		if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			elog(WARNING, "Resetting session origin on target node failed: %s",
+					PQresultErrorMessage(res));
+		PQclear(res);
+	}
+
 	PQfinish(conn);
 }
 
@@ -755,14 +769,18 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 			PG_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
 									CStringGetDatum(tmpfile));
 			{
+				Relation replorigin_rel;
+
 				StartTransactionCommand();
 
 				originid = ensure_replication_origin(sub->slot_name);
 				elog(DEBUG3, "advancing origin with oid %u for forwarded row to %X/%X during subscription sync",
 					originid,
 					(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
+				replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
 				replorigin_advance(originid, lsn, XactLastCommitEnd, true,
 								   true);
+				heap_close(replorigin_rel, RowExclusiveLock);
 
 				CommitTransactionCommand();
 
@@ -918,12 +936,17 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 							PointerGetDatum(sub));
 	{
+		Relation replorigin_rel;
+
 		StartTransactionCommand();
 		originid = ensure_replication_origin(sub->slot_name);
 		elog(DEBUG2, "advancing origin %s (oid %u) for forwarded row to %X/%X after sync error",
 			MySubscription->slot_name, originid,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
+
+		replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
 		replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
+		heap_close(replorigin_rel, RowExclusiveLock);
 
 		set_table_sync_status(sub->id, table->schemaname, table->relname,
 							  SYNC_STATUS_DATA);
