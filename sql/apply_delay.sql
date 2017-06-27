@@ -54,13 +54,13 @@ SELECT pglogical.replicate_ddl_command($$
     );
 $$);
 -- clear old applies, from any previous tests etc.
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts1', CURRENT_TIMESTAMP);
 
 SELECT * FROM pglogical.replication_set_add_table('delay', 'basic_dml1');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts2', CURRENT_TIMESTAMP);
 
@@ -71,7 +71,7 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts3', CURRENT_TIMESTAMP);
 

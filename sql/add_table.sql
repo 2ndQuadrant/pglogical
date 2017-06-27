@@ -20,7 +20,7 @@ CREATE TABLE "strange.schema-IS".test_strangeschema(id serial primary key, "S0m3
 CREATE TABLE "strange.schema-IS".test_diff_repset(id serial primary key, data text DEFAULT '');
 $$);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 -- create some replication sets
 SELECT * FROM pglogical.create_replication_set('repset_test');
@@ -44,7 +44,7 @@ INSERT INTO public.test_nosync(data) VALUES('b');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAULT, DEFAULT);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAuLT, DEFAULT);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.test_publicschema;
@@ -83,7 +83,7 @@ SELECT pglogical.synchronize_sequence(c.oid)
   FROM pg_class c, pg_namespace n
  WHERE c.relkind = 'S' AND c.relnamespace = n.oid AND n.nspname IN ('public', 'strange.schema-IS');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.test_publicschema;
@@ -157,7 +157,7 @@ INSERT INTO "strange.schema-IS".test_diff_repset VALUES(2);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5, DEFAULT);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6, DEFAULT);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM "strange.schema-IS".test_diff_repset;
@@ -173,7 +173,7 @@ UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
 DELETE FROM "strange.schema-IS".test_diff_repset WHERE id < 3;
 TRUNCATE "strange.schema-IS".test_diff_repset;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -186,7 +186,7 @@ SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert :=
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -196,7 +196,7 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
 
 TRUNCATE "strange.schema-IS".test_diff_repset;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 

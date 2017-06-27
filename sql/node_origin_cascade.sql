@@ -91,7 +91,7 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider_dsn
 SELECT id, other, data, something FROM top_level_tbl ORDER BY id;
@@ -114,7 +114,7 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, other, data, something FROM mid_level_tbl ORDER BY id;

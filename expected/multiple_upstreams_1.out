@@ -40,13 +40,13 @@ INSERT INTO multi_ups_tbl VALUES(2, 'key2', 'data2');
 INSERT INTO multi_ups_tbl VALUES(3, 'key3', 'data3');
 SELECT * FROM pglogical.replication_set_add_table('default', 'multi_ups_tbl', true);
  replication_set_add_table 
----------------------------
+---------------------------------
  t
 (1 row)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -58,7 +58,7 @@ INSERT INTO multi_ups_tbl VALUES(5, 'key5', 'data5');
 INSERT INTO multi_ups_tbl VALUES(6, 'key6', 'data6');
 SELECT * FROM pglogical.replication_set_add_table('default', 'multi_ups_tbl');
  replication_set_add_table 
----------------------------
+---------------------------------
  t
 (1 row)
 

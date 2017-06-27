@@ -40,7 +40,7 @@ INSERT INTO multi_ups_tbl VALUES(2, 'key2', 'data2');
 INSERT INTO multi_ups_tbl VALUES(3, 'key3', 'data3');
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'multi_ups_tbl', true);
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider1_dsn
 

@@ -16,7 +16,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'x');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 COPY x (a, b, c, d, e) from stdin;
 9999	\N	\\N	\NN	\N
@@ -53,7 +53,7 @@ COPY x (a, b, c, d, e) from stdin;
 \.
 
 SELECT * FROM x ORDER BY a;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM x ORDER BY a;

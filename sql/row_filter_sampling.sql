@@ -24,7 +24,7 @@ SELECT * FROM pglogical.replication_set_remove_table('default', 'test_tablesampl
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_tablesample', true, row_filter := $rf$id > funcn_get_bernoulli_sample_count(10, 0) $rf$);
 
 SELECT * FROM test_tablesample ORDER BY id limit 5;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 

@@ -9,7 +9,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_trg_data');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -44,7 +44,7 @@ FOR EACH ROW EXECUTE PROCEDURE test_trg_data_hist_fn();
 
 INSERT INTO test_trg_data(data) VALUES ('no_history');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -59,7 +59,7 @@ INSERT INTO test_trg_data(data) VALUES ('yes_history');
 UPDATE test_trg_data SET data = 'yes_history';
 DELETE FROM test_trg_data;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -80,7 +80,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 -- create row filter trigger
@@ -113,7 +113,7 @@ FOR EACH ROW EXECUTE PROCEDURE filter_basic_dml_fn();
 5003,4,ddd,4 days
 \.
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 -- rows received at suscriber as trigger is not enabled yet.
@@ -130,7 +130,7 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 -- rows filtered at suscriber as trigger is enabled.

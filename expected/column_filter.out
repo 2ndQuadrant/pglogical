@@ -49,9 +49,9 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
   5 |      | 
 (5 rows)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -89,9 +89,9 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_oids_dml', c
  t
 (1 row)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -122,9 +122,9 @@ SELECT * from basic_oids_dml ORDER BY id;
   5 |     1 |      | 
 (5 rows)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 

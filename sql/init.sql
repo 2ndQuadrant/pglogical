@@ -34,6 +34,10 @@ BEGIN
 	END LOOP;
 END;$FUNC$ LANGUAGE plpgsql;
 
+CREATE FUNCTION
+pglogical_wait_slot_confirm_lsn(slotname name, target pg_lsn)
+RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
+
 \c :subscriber_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
 

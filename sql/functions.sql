@@ -21,12 +21,12 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'public.funct2');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.funct2(a,b) VALUES (1,2);--c should be 22
 INSERT INTO public.funct2(a,b,c) VALUES (3,4,5);-- c should be 5
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * from public.funct2;
@@ -48,12 +48,12 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.funct5(a,b) VALUES (1,2);--c should be e.g. 21 for 2015
 INSERT INTO public.funct5(a,b,c) VALUES (3,4,20);-- c should be 20
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * from public.funct5;
@@ -72,13 +72,13 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.funct (a) VALUES (1);
 INSERT INTO public.funct (a) VALUES (2);
 INSERT INTO public.funct (a) VALUES (3);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.funct;
@@ -88,7 +88,7 @@ SELECT * FROM public.funct;
 BEGIN;
 COMMIT;--empty transaction
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.funct;
@@ -106,12 +106,12 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'nullcheck_tbl');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -126,7 +126,7 @@ SELECT * FROM public.nullcheck_tbl;
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (3,3,'name3');
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (4,4,'name4');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -136,7 +136,7 @@ SELECT * FROM public.nullcheck_tbl;
 
 UPDATE public.nullcheck_tbl SET name='name31' where id = 3;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -155,7 +155,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'not_nullcheck_tbl');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -165,7 +165,7 @@ ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null;
 
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -212,7 +212,7 @@ $$;
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (4,4,'name4'); -- id2 will be 99 on subscriber
 ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null default 0;
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (5,5,'name5'); -- id2 will be 0 on both
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.not_nullcheck_tbl;

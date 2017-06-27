@@ -39,7 +39,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider_dsn
 
@@ -53,14 +53,14 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;

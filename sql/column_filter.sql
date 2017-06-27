@@ -34,7 +34,7 @@ SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_tab
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', synchronize_data := true, columns := '{id, data, something}');
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
@@ -54,7 +54,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_oids_dml', c
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_oids_dml', columns := '{id, data, something}');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -80,7 +80,7 @@ UPDATE basic_oids_dml SET other = '40', data = NULL, something = '3 days'::inter
 
 SELECT * from basic_oids_dml ORDER BY id;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_oids_dml ORDER BY id;

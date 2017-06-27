@@ -67,12 +67,12 @@ $$;
 
 SELECT * FROM create_many_tables(1,200);
 SELECT * FROM add_many_tables_to_replication_set(1,200);
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 BEGIN;
 SELECT * FROM insert_into_many_tables(1,200);
 COMMIT;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -84,7 +84,7 @@ SELECT count(*) FROM public.HUGE2;
 \set VERBOSITY terse
 SELECT * FROM drop_many_tables(1,200);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 -- medium number of rows in many different tables: replication with DDL inside transaction
 BEGIN;
@@ -93,7 +93,7 @@ SELECT * FROM add_many_tables_to_replication_set(1,200);
 SELECT * FROM insert_into_many_tables(1,200);
 COMMIT;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -109,5 +109,5 @@ DROP function add_many_tables_to_replication_set(int, int);
 DROP function insert_into_many_tables(int, int);
 DROP function drop_many_tables(int, int);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 

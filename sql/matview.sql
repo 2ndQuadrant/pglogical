@@ -17,7 +17,7 @@ REFRESH MATERIALIZED VIEW test_mv;
 
 INSERT INTO test_tbl VALUES (2, 'b');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 SELECT * FROM test_tbl;
 SELECT * FROM test_mv;

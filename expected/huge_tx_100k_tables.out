@@ -68,13 +68,13 @@ SELECT * FROM create_many_tables(1,100000);
 
 SELECT * FROM add_many_tables_to_replication_set(1,100000);
  add_many_tables_to_replication_set 
-------------------------------------
+-------------------------------------
  
 (1 row)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -86,9 +86,9 @@ SELECT * FROM insert_into_many_tables(1,100000);
 (1 row)
 
 COMMIT;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -314,9 +314,9 @@ NOTICE:  drop cascades to 1 other object
  
 (1 row)
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -330,7 +330,7 @@ SELECT * FROM create_many_tables(1,100000);
 
 SELECT * FROM add_many_tables_to_replication_set(1,100000);
  add_many_tables_to_replication_set 
-------------------------------------
+-------------------------------------
  
 (1 row)
 
@@ -341,9 +341,9 @@ SELECT * FROM insert_into_many_tables(1,100000);
 (1 row)
 
 COMMIT;
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 
@@ -573,9 +573,9 @@ DROP function create_many_tables(int, int);
 DROP function add_many_tables_to_replication_set(int, int);
 DROP function insert_into_many_tables(int, int);
 DROP function drop_many_tables(int, int);
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 

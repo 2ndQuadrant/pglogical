@@ -13,7 +13,7 @@ SELECT pglogical.replicate_ddl_command($$
 	);
 $$);
 SELECT * FROM pglogical.replication_set_add_table('default', 'a_huge');
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 BEGIN;
 
@@ -21,7 +21,7 @@ INSERT INTO public.a_huge VALUES (generate_series(1, 20000000), generate_series(
 
 COMMIT;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT count(*) FROM a_huge;
@@ -45,7 +45,7 @@ INSERT INTO public.b_huge VALUES (generate_series(1,20000000), generate_series(1
 
 COMMIT;
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT count(*) FROM b_huge;
@@ -59,4 +59,4 @@ SELECT pglogical.replicate_ddl_command($$
 $$);
 
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
