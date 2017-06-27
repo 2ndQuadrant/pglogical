@@ -23,7 +23,7 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical_dependency.o pglogical_apply_heap.o pglogical_apply_spi.o \
 	   pglogical_output_config.o pglogical_output_plugin.o \
 	   pglogical_output_proto.o pglogical_proto_json.o \
-	   pglogical_proto_native.o
+	   pglogical_proto_native.o pglogical_monitoring.o
 
 SCRIPTS_built = pglogical_create_subscriber
 
