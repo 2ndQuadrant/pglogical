@@ -105,6 +105,7 @@ SELECT count(*) FROM pg_stat_replication;
 
 -- cleanup
 \c :provider_dsn
+\set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
         DROP TABLE public.multi_ups_tbl CASCADE;
 $$);
