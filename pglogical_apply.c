@@ -281,12 +281,15 @@ handle_commit(StringInfo s)
 	if (remote_origin_id != InvalidRepOriginId &&
 		remote_origin_id != replorigin_session_origin)
 	{
+		Relation replorigin_rel;
 		elog(DEBUG3, "advancing origin oid %u for forwarded row to %X/%X",
 			remote_origin_id,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 
+		replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
+		heap_close(replorigin_rel, RowExclusiveLock);
 	}
 
 	in_remote_transaction = false;
