@@ -120,9 +120,35 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 
 		/* FIXME: recheck the indexes */
 		if (recheckIndexes != NIL)
+		{
+			StringInfoData si;
+			ListCell *lc;
+			const char *idxname, *relname, *nspname;
+			Relation target_rel = estate->es_result_relation_info->ri_RelationDesc;
+
+			relname = RelationGetRelationName(target_rel);
+			nspname = get_namespace_name(RelationGetNamespace(target_rel));
+
+			initStringInfo(&si);
+			foreach (lc, recheckIndexes)
+			{
+				Oid idxoid = lfirst_oid(lc);
+				idxname = get_rel_name(idxoid);
+				if (idxname == NULL)
+					elog(ERROR, "cache lookup failed for index oid %u", idxoid);
+				if (si.len > 0)
+					appendStringInfoString(&si, ", ");
+				appendStringInfoString(&si, quote_identifier(idxname));
+			}
+
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("pglogical doesn't support index rechecks")));
+					 errmsg("pglogical doesn't support deferrable indexes"),
+					 errdetail("relation %s.%s has deferrable indexes: %s",
+								quote_identifier(nspname),
+								quote_identifier(relname),
+								si.data)));
+		}
 
 		list_free(recheckIndexes);
 	}
