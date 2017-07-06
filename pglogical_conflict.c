@@ -212,8 +212,11 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
 	idxoid = RelationGetReplicaIndex(relinfo->ri_RelationDesc);
 	if (!OidIsValid(idxoid))
 	{
-		elog(ERROR, "could not find primary key for table with oid %u",
-			 RelationGetRelid(relinfo->ri_RelationDesc));
+		ereport(ERROR,
+				(errmsg("could not find REPLICA IDENTITY index for table %s with oid %u",
+						get_rel_name(RelationGetRelid(relinfo->ri_RelationDesc)),
+						RelationGetRelid(relinfo->ri_RelationDesc)),
+				 errhint("The REPLICA IDENTITY index is usually the PRIMARY KEY. See the PostgreSQL docs for ALTER TABLE ... REPLICA IDENTITY")));
 	}
 	idxrel = index_open(idxoid, RowExclusiveLock);
 
