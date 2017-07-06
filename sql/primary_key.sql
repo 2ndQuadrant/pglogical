@@ -145,7 +145,127 @@ SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT * FROM pk_users;
 
+
 \c :provider_dsn
+
+--
+-- Test to show that we don't defend against alterations to tables
+-- that will break replication once added to a repset, or prevent
+-- dml that would break on apply.
+--
+-- See 2ndQuadrant/pglogical_internal#146
+--
+
+-- Show that the current PK is not marked 'indisreplident' because we use
+-- REPLICA IDENTITY DEFAULT
+SELECT indisreplident FROM pg_index WHERE indexrelid = 'pk_users_pkey'::regclass;
+SELECT relreplident FROM pg_class WHERE oid = 'pk_users'::regclass;
+
+SELECT pglogical.replicate_ddl_command($$
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey;
+$$);
+
+INSERT INTO pk_users VALUES(90,0,0,'User90', 'Address90');
+
+-- pglogical will stop us adding the table to a repset if we try to,
+-- but didn't stop us altering it, and won't stop us updating it...
+BEGIN;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'pk_users');
+SELECT * FROM pglogical.replication_set_add_table('default', 'pk_users');
+ROLLBACK;
+
+-- Per 2ndQuadrant/pglogical_internal#146 this shouldn't be allowed, but
+-- currently is. Logical decoding will fail to capture this change and we
+-- won't progress with decoding.
+--
+-- This will get recorded by logical decoding with no 'oldkey' values,
+-- causing pglogical to fail to apply it with an error like
+--
+--    CONFLICT: remote UPDATE on relation public.pk_users (tuple not found). Resolution: skip.
+--
+UPDATE pk_users SET id = 91 WHERE id = 90;
+
+-- Catchup will replay the insert and succeed, but the update
+-- will be lost.
+BEGIN;
+SET statement_timeout = '2s';
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ROLLBACK;
+
+-- To carry on we'll need to make the index on the downstream
+-- (which is odd, because logical decoding didn't capture the
+--  oldkey of the tuple, so how can we apply it?)
+\c :subscriber_dsn
+ALTER TABLE public.pk_users
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY (id) NOT DEFERRABLE;
+
+\c :provider_dsn
+
+ALTER TABLE public.pk_users
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY (id) NOT DEFERRABLE;
+
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+
+
+
+
+-- Demonstrate that deferrable indexes aren't yet supported for updates on downstream
+-- and will fail with an informative error.
+SELECT pglogical.replicate_ddl_command($$
+ALTER TABLE public.pk_users
+    DROP CONSTRAINT pk_users_pkey,
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY (id) DEFERRABLE INITIALLY DEFERRED;
+$$);
+
+-- Not allowed, deferrable
+ALTER TABLE public.pk_users REPLICA IDENTITY USING INDEX pk_users_pkey;
+
+-- New index isn't REPLICA IDENTITY either
+SELECT indisreplident FROM pg_index WHERE indexrelid = 'pk_users_pkey'::regclass;
+
+-- pglogical won't let us add the table to a repset, though
+-- it doesn't stop us altering it; see 2ndQuadrant/pglogical_internal#146
+BEGIN;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'pk_users');
+SELECT * FROM pglogical.replication_set_add_table('default', 'pk_users');
+ROLLBACK;
+
+-- We can still INSERT (which is fine)
+INSERT INTO pk_users VALUES(100,0,0,'User100', 'Address100');
+
+-- FIXME pglogical shouldn't allow this, no valid replica identity exists
+-- see 2ndQuadrant/pglogical_internal#146
+UPDATE pk_users SET id = 101 WHERE id = 100;
+
+-- Must time out, apply will fail on downstream due to no replident index
+BEGIN;
+SET statement_timeout = '2s';
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ROLLBACK;
+
+\c :subscriber_dsn
+
+-- entry 100 must be absent since we can't apply it without
+-- a suitable pk
+SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;
+
+-- we can recover by re-creating the pk as non-deferrable
+ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
+    ADD CONSTRAINT pk_users_pkey PRIMARY KEY (id) NOT DEFERRABLE;
+
+\c :provider_dsn
+
+-- then replay
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+
+\c :subscriber_dsn
+SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;
+
+\c :provider_dsn
+-- Subscriber and provider have diverged due to inability to replicate
+-- the UPDATEs
+SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;
+
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.pk_users CASCADE;
