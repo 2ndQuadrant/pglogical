@@ -660,6 +660,16 @@ It's fine to have extra unique constraints on an upstream if the downstream only
 gets writes from that upstream and nowhere else. The rule is that the downstream
 constraints must *not be more restrictive* than those on the upstream(s).
 
+### Unique constraints must not be deferrable
+
+On the downstream end pglogical does not support index-based constraints
+defined as `DEFERRABLE`. It will emit the error
+
+    ERROR: pglogical doesn't support index rechecks needed for deferrable indexes
+    DETAIL: relation "public"."test_relation" has deferrable indexes: "index1", "index2"
+
+if such an index is present when it attempts to apply changes to a table.
+
 ### DDL
 
 Automatic DDL replication is not supported. Managing DDL so that the provider and
@@ -756,18 +766,10 @@ Replicating between different minor versions makes no difference at all.
 PGLogical does not support replication between databases with different
 encoding. We recommend using `UTF-8` encoding in all replicated databases.
 
-### Doesn't replicate DDL
+### Large objects
 
-Logical decoding doesn't decode catalog changes directly. So the plugin can't
-just send a `CREATE TABLE` statement when a new table is added.
-
-If the data being decoded is being applied to another PostgreSQL database then
-its table definitions must be kept in sync via some means external to the logical
-decoding plugin its self, such as:
-
-* Event triggers using DDL deparse to capture DDL changes as they happen and
-  write them to a table to be replicated and applied on the other end; or
-* doing DDL management via tools that synchronize DDL on all nodes
+PostgreSQL's logical decoding facility does not support decoding changes
+to large objects, so pglogical cannot replicate large objects.
 
 ### Postgres-XL
 
