@@ -10,6 +10,9 @@ BEGIN
 		PERFORM pg_sleep(0.01);
 	END LOOP;
 END;$FUNC$ LANGUAGE plpgsql;
+CREATE FUNCTION
+pglogical_wait_slot_confirm_lsn(slotname name, target pg_lsn)
+RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
 SET client_min_messages = 'warning';
 DO $$
 BEGIN
@@ -114,9 +117,9 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), 0);
- pg_xlog_wait_remote_apply 
----------------------------
+SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+ pglogical_wait_slot_confirm_lsn 
+---------------------------------
  
 (1 row)
 

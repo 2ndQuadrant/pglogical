@@ -14,6 +14,10 @@ BEGIN
 	END LOOP;
 END;$FUNC$ LANGUAGE plpgsql;
 
+CREATE FUNCTION
+pglogical_wait_slot_confirm_lsn(slotname name, target pg_lsn)
+RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
+
 SET client_min_messages = 'warning';
 
 DO $$
