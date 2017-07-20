@@ -8,12 +8,13 @@ SELECT pglogical.replicate_ddl_command($$
 		id serial primary key,
 		other integer,
 		data text,
-		"SomeThing" interval
+		"SomeThing" interval,
+		insert_xid bigint DEFAULT txid_current()
 	);
 $$);
 
 -- used to check if initial copy does row filtering
-\COPY basic_dml FROM STDIN WITH CSV
+\COPY basic_dml(id, other, data, "SomeThing") FROM STDIN WITH CSV
 5000,1,aaa,1 hour
 5001,2,bbb,2 years
 5002,3,ccc,3 minutes
@@ -81,6 +82,7 @@ SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
 ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;
+ALTER TABLE public.basic_dml ADD COLUMN subonly_def_ts timestamptz DEFAULT current_timestamp;
 
 \c :provider_dsn
 
@@ -119,7 +121,7 @@ INSERT INTO basic_dml VALUES (3, 99, 'bazbaz', '2 years 1 hour'::interval);
 INSERT INTO basic_dml VALUES (7, 100, 'bazbaz', '2 years 1 hour'::interval);
 UPDATE basic_dml SET data = 'baz' WHERE id in (3,7);
 -- This update would be filtered at subscriber
-SELECT * from basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" from basic_dml ORDER BY id;
 SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
@@ -132,7 +134,7 @@ DELETE FROM basic_dml WHERE data = 'baz';
 -- Delete reaches the subscriber for a filtered row
 INSERT INTO basic_dml VALUES (6, 100, 'baz', '2 years 1 hour'::interval);
 -- insert would be filtered
-SELECT * from basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing" from basic_dml ORDER BY id;
 SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
@@ -146,6 +148,9 @@ UPDATE basic_dml SET data = 'abcd' WHERE id = 6;
 SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+
+-- transaction timestamp should be updated for each row (see #148)
+SELECT count(DISTINCT subonly_def_ts) = count(DISTINCT insert_xid) FROM basic_dml;
 
 -- delete multiple rows
 \c :provider_dsn
@@ -163,7 +168,7 @@ SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- copy
 \c :provider_dsn
-\COPY basic_dml FROM STDIN WITH CSV
+\COPY basic_dml(id, other, data, "SomeThing") FROM STDIN WITH CSV
 9000,1,aaa,1 hour
 9001,2,bbb,2 years
 9002,3,ccc,3 minutes

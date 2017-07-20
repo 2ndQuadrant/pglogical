@@ -167,6 +167,15 @@ ensure_transaction(void)
 		return false;
 	}
 
+	/*
+	 * pglogical doesn't have "statements" as such, so we'll report one
+	 * statement per applied transaction. We must set the statement start time
+	 * because StartTransaction() uses it to initialize the transaction cached
+	 * timestamp used by current_timestamp. If we don't set it, every xact will
+	 * get the same current_timestamp. See 2ndQuadrant/pglogical_internal#148
+	 */
+	SetCurrentStatementStartTimestamp();
+
 	StartTransactionCommand();
 	apply_api.on_begin();
 	MemoryContextSwitchTo(MessageContext);
