@@ -25,7 +25,16 @@ BEGIN
 		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
 	END IF;
 END;$$;
-CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
+
+DO $$
+BEGIN
+        IF version() ~ 'Postgres-XL' THEN
+                CREATE EXTENSION IF NOT EXISTS pglogical;
+        ELSE
+                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
+        END IF;
+END;
+$$;
 ALTER EXTENSION pglogical UPDATE;
 
 -- fail (local node not existing)
