@@ -339,7 +339,7 @@ pglogical_worker_detach(bool crash)
 		 pglogical_worker_type_name(MyPGLogicalWorker->worker_type),
 		 MyProcPid, MyPGLogicalWorker - &PGLogicalCtx->workers[0],
 		 MyPGLogicalWorkerGeneration,
-		 crash ? "crashed" : "detaching cleanly");
+		 crash ? "exiting with error" : "detaching cleanly");
 
 	/*
 	 * If we crashed we need to report it.
