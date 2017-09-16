@@ -69,7 +69,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 	res = PQexec(conn, query.data);
 	/* TODO: better error message? */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		elog(ERROR, "could not get table list");
+		elog(ERROR, "could not get table list: %s", PQresultErrorMessage(res));
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -136,7 +136,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	res = PQexec(conn, query.data);
 	/* TODO: better error message? */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) != 1)
-		elog(ERROR, "could not get table list");
+		elog(ERROR, "could not get table list: %s", PQresultErrorMessage(res));
 
 	remoterel->relid = atooid(PQgetvalue(res, 0, 0));
 	remoterel->nspname = pstrdup(PQgetvalue(res, 0, 1));
