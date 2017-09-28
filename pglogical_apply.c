@@ -295,10 +295,14 @@ handle_commit(StringInfo s)
 			remote_origin_id,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 
+#if PG_VERSION_NUM >= 90500
 		replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
+#endif
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
+#if PG_VERSION_NUM >= 90500
 		heap_close(replorigin_rel, RowExclusiveLock);
+#endif
 	}
 
 	in_remote_transaction = false;

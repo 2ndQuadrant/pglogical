@@ -777,10 +777,14 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 				elog(DEBUG3, "advancing origin with oid %u for forwarded row to %X/%X during subscription sync",
 					originid,
 					(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
+#if PG_VERSION_NUM >= 90500
 				replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
+#endif
 				replorigin_advance(originid, lsn, XactLastCommitEnd, true,
 								   true);
+#if PG_VERSION_NUM >= 90500
 				heap_close(replorigin_rel, RowExclusiveLock);
+#endif
 
 				CommitTransactionCommand();
 
@@ -944,9 +948,13 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 			MySubscription->slot_name, originid,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 
+#if PG_VERSION_NUM >= 90500
 		replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
+#endif
 		replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
+#if PG_VERSION_NUM >= 90500
 		heap_close(replorigin_rel, RowExclusiveLock);
+#endif
 
 		set_table_sync_status(sub->id, table->schemaname, table->relname,
 							  SYNC_STATUS_DATA);
