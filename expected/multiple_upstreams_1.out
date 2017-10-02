@@ -40,13 +40,13 @@ INSERT INTO multi_ups_tbl VALUES(2, 'key2', 'data2');
 INSERT INTO multi_ups_tbl VALUES(3, 'key3', 'data3');
 SELECT * FROM pglogical.replication_set_add_table('default', 'multi_ups_tbl', true);
  replication_set_add_table 
----------------------------------
+-----------------------
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -58,7 +58,7 @@ INSERT INTO multi_ups_tbl VALUES(5, 'key5', 'data5');
 INSERT INTO multi_ups_tbl VALUES(6, 'key6', 'data6');
 SELECT * FROM pglogical.replication_set_add_table('default', 'multi_ups_tbl');
  replication_set_add_table 
----------------------------------
+-----------------------
  t
 (1 row)
 
@@ -95,7 +95,7 @@ END;
 $$;
 SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
  subscription_name  |   status    | provider_node  |                 replication_sets                  | forward_origins 
---------------------+-------------+----------------+---------------------------------------------------+-----------------
+--------------------+-------------+----------------+-----------------------------------------+-----------------
  test_subscription  | replicating | test_provider  | {default_insert_only,ddl_sql,repset_test,default} | 
  test_subscription1 | replicating | test_provider1 | {default,default_insert_only,ddl_sql}             | 
 (2 rows)

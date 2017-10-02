@@ -18,22 +18,22 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'a_huge');
  replication_set_add_table 
----------------------------------
+-----------------------
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
 BEGIN;
 INSERT INTO public.a_huge VALUES (generate_series(1, 20000000), generate_series(1, 20000000));
 COMMIT;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -69,15 +69,15 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'b_huge');
  replication_set_add_table 
----------------------------------
+-----------------------
  t
 (1 row)
 
 INSERT INTO public.b_huge VALUES (generate_series(1,20000000), generate_series(1,20000000));
 COMMIT;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -108,9 +108,9 @@ NOTICE:  drop cascades to 1 other object
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 

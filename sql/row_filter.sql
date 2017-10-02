@@ -63,7 +63,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, 
 -- fail, the membership in repset depends on data column
 ALTER TABLE basic_dml DROP COLUMN data;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -95,21 +95,21 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- update one row
 \c :provider_dsn
 UPDATE basic_dml SET other = '4', data = NULL, "SomeThing" = '3 days'::interval WHERE id = 4;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- update multiple rows
 \c :provider_dsn
 UPDATE basic_dml SET other = id, data = data || id::text;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
@@ -122,7 +122,7 @@ INSERT INTO basic_dml VALUES (7, 100, 'bazbaz', '2 years 1 hour'::interval);
 UPDATE basic_dml SET data = 'baz' WHERE id in (3,7);
 -- This update would be filtered at subscriber
 SELECT id, other, data, "SomeThing" from basic_dml ORDER BY id;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing", subonly, subonly_def FROM basic_dml ORDER BY id;
@@ -135,7 +135,7 @@ DELETE FROM basic_dml WHERE data = 'baz';
 INSERT INTO basic_dml VALUES (6, 100, 'baz', '2 years 1 hour'::interval);
 -- insert would be filtered
 SELECT id, other, data, "SomeThing" from basic_dml ORDER BY id;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing", subonly, subonly_def FROM basic_dml ORDER BY id;
@@ -145,7 +145,7 @@ UPDATE basic_dml SET data = 'bar' WHERE id = 6;
 UPDATE basic_dml SET data = 'abcd' WHERE id = 6;
 -- These updates would continue to be missed on subscriber
 -- as it does not have the primary key
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
@@ -155,14 +155,14 @@ SELECT count(DISTINCT subonly_def_ts) = count(DISTINCT insert_xid) FROM basic_dm
 -- delete multiple rows
 \c :provider_dsn
 DELETE FROM basic_dml WHERE id < 4;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
 -- truncate
 \c :provider_dsn
 TRUNCATE basic_dml;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
@@ -174,7 +174,7 @@ SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 9002,3,ccc,3 minutes
 9003,4,ddd,4 days
 \.
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
 
@@ -193,7 +193,7 @@ INSERT INTO test_jsonb VALUES
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_jsonb', true, row_filter := $rf$test_json ->> 'field2' IS DISTINCT FROM 'val2' $rf$);
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 

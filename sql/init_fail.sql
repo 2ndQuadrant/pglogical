@@ -6,6 +6,7 @@ SELECT * FROM pglogical_regress_variables()
 SET client_min_messages = 'warning';
 DROP ROLE IF EXISTS nonreplica;
 CREATE USER nonreplica;
+
 DO $$
 BEGIN
 	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
@@ -29,7 +30,7 @@ END;$$;
 DO $$
 BEGIN
         IF version() ~ 'Postgres-XL' THEN
-                CREATE EXTENSION IF NOT EXISTS pglogical;
+                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
         ELSE
                 CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
         END IF;

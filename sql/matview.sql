@@ -17,7 +17,7 @@ REFRESH MATERIALIZED VIEW test_mv;
 
 INSERT INTO test_tbl VALUES (2, 'b');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 SELECT * FROM test_tbl;
 SELECT * FROM test_mv;

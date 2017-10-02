@@ -24,9 +24,19 @@ SELECT * FROM pglogical.replication_set_remove_table('default', 'test_tablesampl
 SELECT * FROM pglogical.replication_set_add_table('default', 'test_tablesample', true, row_filter := $rf$id > funcn_get_bernoulli_sample_count(10, 0) $rf$);
 
 SELECT * FROM test_tablesample ORDER BY id limit 5;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
+
+DO $$
+BEGIN
+    FOR i IN 1..100 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r' AND sync_relname IN ('test_tablesample')) THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
 
 SELECT * FROM test_tablesample ORDER BY id limit 5;
 

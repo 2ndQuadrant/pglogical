@@ -2,66 +2,22 @@ SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
-ERROR:  cannot drop node "test_provider" because it still has subscriptions associated with it
-HINT:  drop the subscriptions first
-SELECT plugin, slot_type, active FROM pg_replication_slots;
-      plugin      | slot_type | active 
-------------------+-----------+--------
- pglogical_output | logical   | t
- pglogical_output | logical   | t
- pglogical_output | logical   | t
-(3 rows)
-
-SELECT count(*) FROM pg_stat_replication;
- count 
--------
-     3
-(1 row)
-
-\c :provider1_dsn
-SELECT * FROM pglogical.drop_node(node_name := 'test_provider1');
-ERROR:  cannot drop node "test_provider1" because one or more replication slots for the node are still active
+ERROR:  cannot drop node "test_provider" because one or more replication slots for the node are still active
 HINT:  drop the subscriptions connected to the node first
 SELECT plugin, slot_type, active FROM pg_replication_slots;
       plugin      | slot_type | active 
 ------------------+-----------+--------
  pglogical_output | logical   | t
- pglogical_output | logical   | t
- pglogical_output | logical   | t
-(3 rows)
-
-SELECT count(*) FROM pg_stat_replication;
- count 
--------
-     3
 (1 row)
 
-\c :orig_provider_dsn
-SELECT * FROM pglogical.drop_node(node_name := 'test_orig_provider');
-ERROR:  cannot drop node "test_orig_provider" because one or more replication slots for the node are still active
-HINT:  drop the subscriptions connected to the node first
-SELECT plugin, slot_type, active FROM pg_replication_slots;
-      plugin      | slot_type | active 
-------------------+-----------+--------
- pglogical_output | logical   | t
- pglogical_output | logical   | t
- pglogical_output | logical   | t
-(3 rows)
-
 SELECT count(*) FROM pg_stat_replication;
  count 
 -------
-     3
+     1
 (1 row)
 
 \c :subscriber_dsn
 SELECT * FROM pglogical.drop_subscription('test_subscription');
- drop_subscription 
--------------------
-                 1
-(1 row)
-
-SELECT * FROM pglogical.drop_subscription('test_subscription1');
  drop_subscription 
 -------------------
                  1
@@ -74,40 +30,29 @@ SELECT * FROM pglogical.drop_node(node_name := 'test_subscriber');
 (1 row)
 
 \c :provider_dsn
-SELECT * FROM pglogical.drop_subscription('test_orig_subscription');
- drop_subscription 
--------------------
-                 1
-(1 row)
-
 SELECT * FROM pglogical.drop_node(node_name := 'test_provider');
  drop_node 
 -----------
  t
 (1 row)
 
+\c :subscriber_dsn
+DROP OWNED BY nonsuper, super CASCADE;
+\c :provider_dsn
+DROP OWNED BY nonsuper, super CASCADE;
 \c :provider1_dsn
-SELECT * FROM pglogical.drop_node(node_name := 'test_provider1');
- drop_node 
------------
- t
-(1 row)
-
+DROP OWNED BY nonsuper, super CASCADE;
 \c :orig_provider_dsn
-SELECT * FROM pglogical.drop_node(node_name := 'test_orig_provider');
- drop_node 
------------
- t
-(1 row)
-
-SELECT plugin, slot_type, active FROM pg_replication_slots;
- plugin | slot_type | active 
---------+-----------+--------
-(0 rows)
-
-SELECT count(*) FROM pg_stat_replication;
- count 
--------
-     0
-(1 row)
-
+DROP OWNED BY nonsuper, super CASCADE;
+\c :subscriber_dsn
+SET client_min_messages = 'warning';
+DROP ROLE IF EXISTS nonsuper, super;
+\c :provider_dsn
+SET client_min_messages = 'warning';
+DROP ROLE IF EXISTS nonsuper, super;
+\c :provider1_dsn
+SET client_min_messages = 'warning';
+DROP ROLE IF EXISTS nonsuper, super;
+\c :orig_provider_dsn
+SET client_min_messages = 'warning';
+DROP ROLE IF EXISTS nonsuper, super;

@@ -17,9 +17,9 @@ $$);
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -97,9 +97,9 @@ INSERT INTO public.test_nosync(data) VALUES('a');
 INSERT INTO public.test_nosync(data) VALUES('b');
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAULT, DEFAULT);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(DEFAuLT, DEFAULT);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -169,12 +169,11 @@ SELECT pglogical.synchronize_sequence(c.oid)
  t
  t
  t
- t
-(5 rows)
+(4 rows)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -315,9 +314,9 @@ INSERT INTO "strange.schema-IS".test_diff_repset VALUES(1);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(2);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(5, DEFAULT);
 INSERT INTO "strange.schema-IS".test_strangeschema VALUES(6, DEFAULT);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -350,9 +349,9 @@ INSERT INTO "strange.schema-IS".test_diff_repset VALUES(4);
 UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
 DELETE FROM "strange.schema-IS".test_diff_repset WHERE id < 3;
 TRUNCATE "strange.schema-IS".test_diff_repset;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -373,9 +372,9 @@ SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert :=
 
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -391,9 +390,9 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
 
 \c :provider_dsn
 TRUNCATE "strange.schema-IS".test_diff_repset;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -425,12 +424,11 @@ SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) 
  ORDER BY 1, 2;
     schemaname     |         tablename         | synced 
 -------------------+---------------------------+--------
- public            | some_local_seq            | t
  public            | test_nosync_id_seq        | t
  public            | test_publicschema_id_seq  | t
  strange.schema-IS | test_diff_repset_id_seq   | t
  strange.schema-IS | test_strangeschema_id_seq | t
-(5 rows)
+(4 rows)
 
 \c :provider_dsn
 DO $$
@@ -463,3 +461,49 @@ NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema membershi
  t
 (1 row)
 
+\c :subscriber_dsn
+-- this is to reorder repsets to default order
+BEGIN;
+SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'default');
+ alter_subscription_remove_replication_set 
+-------------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'ddl_sql');
+ alter_subscription_remove_replication_set 
+-------------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'default_insert_only');
+ alter_subscription_remove_replication_set 
+-------------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscription', 'repset_test');
+ alter_subscription_remove_replication_set 
+-------------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'default');
+ alter_subscription_add_replication_set 
+----------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'default_insert_only');
+ alter_subscription_add_replication_set 
+----------------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscription', 'ddl_sql');
+ alter_subscription_add_replication_set 
+----------------------------------------
+ t
+(1 row)
+
+COMMIT;

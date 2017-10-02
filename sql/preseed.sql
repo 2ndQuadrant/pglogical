@@ -55,6 +55,7 @@ SELECT
     current_setting('pglogical.provider1_dsn'),
     current_setting('pglogical.subscriber_dsn')
 $f$;
+
 CREATE DATABASE regression1;
 CREATE DATABASE sourcedb;
 

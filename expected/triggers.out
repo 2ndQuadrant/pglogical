@@ -15,9 +15,9 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'test_trg_data');
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -48,9 +48,9 @@ AFTER INSERT OR UPDATE OR DELETE ON test_trg_data
 FOR EACH ROW EXECUTE PROCEDURE test_trg_data_hist_fn();
 \c :provider_dsn
 INSERT INTO test_trg_data(data) VALUES ('no_history');
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -71,9 +71,9 @@ ALTER TABLE test_trg_data ENABLE REPLICA TRIGGER test_trg_data_hist_trg;
 INSERT INTO test_trg_data(data) VALUES ('yes_history');
 UPDATE test_trg_data SET data = 'yes_history';
 DELETE FROM test_trg_data;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -114,9 +114,9 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -143,9 +143,9 @@ FOR EACH ROW EXECUTE PROCEDURE filter_basic_dml_fn();
 \c :provider_dsn
 -- insert into table at provider
 \COPY basic_dml FROM STDIN WITH CSV
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -171,9 +171,9 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -187,6 +187,11 @@ SELECT * from basic_dml ORDER BY id;
   5 |     1 |      | 
 (3 rows)
 
+\set VERBOSITY terse
+DROP FUNCTION test_trg_data_hist_fn() CASCADE;
+NOTICE:  drop cascades to trigger test_trg_data_hist_trg on table test_trg_data
+DROP FUNCTION filter_basic_dml_fn() CASCADE;
+NOTICE:  drop cascades to trigger filter_basic_dml_trg on table basic_dml
 \c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$

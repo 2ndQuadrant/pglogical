@@ -3,6 +3,10 @@ SELECT * FROM pglogical_regress_variables()
 \gset
 
 \c :provider_dsn
+SELECT E'\'' || current_database() || E'\'' AS pubdb;
+\gset
+
+\c :provider_dsn
 DO $$
 BEGIN
 	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') = 904 THEN
@@ -39,7 +43,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider_dsn
 
@@ -53,14 +57,14 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;
 
 UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider_dsn
 SELECT id, other, data, something FROM basic_dml ORDER BY id;

@@ -31,9 +31,9 @@ SELECT pg_sleep(0.1);
 (1 row)
 
 SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
- subscription_name |   status    | provider_node |                 replication_sets                  | forward_origins 
--------------------+-------------+---------------+---------------------------------------------------+-----------------
- test_subscription | replicating | test_provider | {default_insert_only,ddl_sql,repset_test,default} | 
+ subscription_name |   status    | provider_node |           replication_sets            | forward_origins 
+-------------------+-------------+---------------+---------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default,default_insert_only,ddl_sql} | 
 (1 row)
 
 \c :provider_dsn
@@ -72,9 +72,9 @@ SELECT pg_sleep(0.1);
 (1 row)
 
 SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
- subscription_name |   status    | provider_node |                 replication_sets                  | forward_origins 
--------------------+-------------+---------------+---------------------------------------------------+-----------------
- test_subscription | replicating | test_provider | {default_insert_only,ddl_sql,repset_test,default} | 
+ subscription_name |   status    | provider_node |           replication_sets            | forward_origins 
+-------------------+-------------+---------------+---------------------------------------+-----------------
+ test_subscription | replicating | test_provider | {default,default_insert_only,ddl_sql} | 
 (1 row)
 
 \c :provider_dsn

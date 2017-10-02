@@ -21,9 +21,9 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml');
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -38,29 +38,29 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
 \c :subscriber_dsn
-SELECT id, other, data, something FROM basic_dml ORDER BY id;
- id | other | data |    something     
-----+-------+------+------------------
-  1 |     5 | foo  | @ 1 min
-  2 |     4 | bar  | @ 84 days
-  3 |     3 | baz  | @ 2 years 1 hour
-  4 |     2 | qux  | @ 8 mons 2 days
-  5 |     1 |      | 
+SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
+ id | other | data |    something     | subonly | subonly_def 
+----+-------+------+------------------+---------+-------------
+  1 |     5 | foo  | @ 1 min          |         |          99
+  2 |     4 | bar  | @ 84 days        |         |          99
+  3 |     3 | baz  | @ 2 years 1 hour |         |          99
+  4 |     2 | qux  | @ 8 mons 2 days  |         |          99
+  5 |     1 |      |                  |         |          99
 (5 rows)
 
 -- update one row
 \c :provider_dsn
 UPDATE basic_dml SET other = '4', data = NULL, something = '3 days'::interval WHERE id = 4;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -78,9 +78,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 -- update multiple rows
 \c :provider_dsn
 UPDATE basic_dml SET other = id, data = data || id::text;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -98,9 +98,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 \c :provider_dsn
 UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -118,9 +118,9 @@ SELECT id, other, data, something, subonly, subonly_def FROM basic_dml ORDER BY 
 -- delete one row
 \c :provider_dsn
 DELETE FROM basic_dml WHERE id = 2;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -137,9 +137,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 -- delete multiple rows
 \c :provider_dsn
 DELETE FROM basic_dml WHERE id < 4;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -154,9 +154,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 -- truncate
 \c :provider_dsn
 TRUNCATE basic_dml;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -169,9 +169,9 @@ SELECT id, other, data, something FROM basic_dml ORDER BY id;
 -- copy
 \c :provider_dsn
 \COPY basic_dml FROM STDIN WITH CSV
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 

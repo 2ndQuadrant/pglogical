@@ -21,12 +21,12 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'public.funct2');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.funct2(a,b) VALUES (1,2);--c should be 22
 INSERT INTO public.funct2(a,b,c) VALUES (3,4,5);-- c should be 5
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * from public.funct2;
@@ -48,12 +48,12 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.funct5(a,b) VALUES (1,2);--c should be e.g. 21 for 2015
 INSERT INTO public.funct5(a,b,c) VALUES (3,4,20);-- c should be 20
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * from public.funct5;
@@ -72,13 +72,13 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.funct (a) VALUES (1);
 INSERT INTO public.funct (a) VALUES (2);
 INSERT INTO public.funct (a) VALUES (3);
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.funct;
@@ -88,7 +88,7 @@ SELECT * FROM public.funct;
 BEGIN;
 COMMIT;--empty transaction
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.funct;
@@ -106,12 +106,12 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'nullcheck_tbl');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -126,7 +126,7 @@ SELECT * FROM public.nullcheck_tbl;
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (3,3,'name3');
 INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (4,4,'name4');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -136,7 +136,7 @@ SELECT * FROM public.nullcheck_tbl;
 
 UPDATE public.nullcheck_tbl SET name='name31' where id = 3;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -155,7 +155,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'not_nullcheck_tbl');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -163,15 +163,13 @@ ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null;
 
 \c :provider_dsn
 
+SELECT quote_literal(pg_current_xlog_location()) as curr_lsn
+\gset
+
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
--- This cannot ever apply on the downstream because we check constraints
--- and the new rows will violate the NOT NULL constraint on id2, so
--- it should time out.
-BEGIN;
-SET statement_timeout = '2s';
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
-ROLLBACK;
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, :curr_lsn);
 
 \c :subscriber_dsn
 
@@ -218,7 +216,7 @@ $$;
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (4,4,'name4'); -- id2 will be 99 on subscriber
 ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null default 0;
 INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (5,5,'name5'); -- id2 will be 0 on both
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM public.not_nullcheck_tbl;

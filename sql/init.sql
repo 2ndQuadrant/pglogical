@@ -26,20 +26,19 @@ CREATE USER super SUPERUSER;
 \c :provider_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
 
-CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
-AS $FUNC$
+DO $$
 BEGIN
-    WHILE EXISTS(SELECT true FROM pg_stat_get_wal_senders() s WHERE s.replay_location < i_pos AND (i_pid = 0 OR s.pid = i_pid)) LOOP
-		PERFORM pg_sleep(0.01);
-	END LOOP;
-END;$FUNC$ LANGUAGE plpgsql;
-
-CREATE FUNCTION
-pglogical_wait_slot_confirm_lsn(slotname name, target pg_lsn)
-RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') >= 1000 THEN
+		CREATE OR REPLACE FUNCTION public.pg_current_xlog_location() RETURNS pg_lsn
+		LANGUAGE SQL AS 'SELECT pg_current_wal_lsn()';
+		ALTER FUNCTION public.pg_current_xlog_location() OWNER TO super;
+	END IF;
+END; $$;
 
 \c :subscriber_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
+SELECT E'\'' || current_database() || E'\'' AS subdb;
+\gset
 
 \c :provider_dsn
 SET client_min_messages = 'warning';

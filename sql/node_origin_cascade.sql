@@ -1,22 +1,14 @@
 SELECT * FROM pglogical_regress_variables()
 \gset
 
+\c :provider_dsn
+SELECT E'\'' || current_database() || E'\'' AS pubdb;
+\gset
+
 \c :orig_provider_dsn
 SET client_min_messages = 'warning';
 
 GRANT ALL ON SCHEMA public TO nonsuper;
-
-CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
-AS $FUNC$
-BEGIN
-    WHILE EXISTS(SELECT true FROM pg_stat_get_wal_senders() s WHERE s.replay_location < i_pos AND (i_pid = 0 OR s.pid = i_pid)) LOOP
-		PERFORM pg_sleep(0.01);
-	END LOOP;
-END;$FUNC$ LANGUAGE plpgsql;
-
-CREATE FUNCTION
-pglogical_wait_slot_confirm_lsn(slotname name, target pg_lsn)
-RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
 
 SET client_min_messages = 'warning';
 
@@ -27,15 +19,7 @@ BEGIN
         END IF;
 END;$$;
 
-DO $$
-BEGIN
-        IF version() ~ 'Postgres-XL' THEN
-                CREATE EXTENSION IF NOT EXISTS pglogical;
-        ELSE
-                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
-        END IF;
-END;
-$$;
+CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
 ALTER EXTENSION pglogical UPDATE;
 
 SELECT * FROM pglogical.create_node(node_name := 'test_orig_provider', dsn := (SELECT orig_provider_dsn FROM pglogical_regress_variables()) || ' user=super');
@@ -103,7 +87,7 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :provider_dsn
 SELECT id, other, data, something FROM top_level_tbl ORDER BY id;
@@ -126,7 +110,7 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id, other, data, something FROM mid_level_tbl ORDER BY id;
@@ -144,3 +128,11 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.mid_level_tbl CASCADE;
 $$);
 
+\c :provider_dsn
+SELECT * FROM pglogical.drop_subscription('test_orig_subscription');
+
+\c :orig_provider_dsn
+SELECT * FROM pglogical.drop_node(node_name := 'test_orig_provider');
+
+SELECT plugin, slot_type, active FROM pg_replication_slots;
+SELECT count(*) FROM pg_stat_replication;

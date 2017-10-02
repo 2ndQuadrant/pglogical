@@ -16,7 +16,7 @@ $$);
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'x');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 COPY x (a, b, c, d, e) from stdin;
 9999	\N	\\N	\NN	\N
@@ -53,7 +53,14 @@ COPY x (a, b, c, d, e) from stdin;
 \.
 
 SELECT * FROM x ORDER BY a;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM x ORDER BY a;
+
+\c :provider_dsn
+
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.x CASCADE;
+$$);

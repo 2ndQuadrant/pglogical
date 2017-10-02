@@ -24,7 +24,7 @@ $$);
 SELECT * FROM pglogical.replication_set_add_table('default', 'f1k_products');
 SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'f1k_orders');
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT into public.f1k_products VALUES (1, 1, 'product1', 1.20);
 INSERT into public.f1k_products VALUES (2, 2, 'product2', 2.40);
@@ -34,7 +34,7 @@ INSERT into public.f1k_orders VALUES (22, 2, 14);
 INSERT into public.f1k_orders VALUES (23, 2, 24);
 INSERT into public.f1k_orders VALUES (24, 2, 40);
 
-SELECT pg_xlog_wait_remote_apply(pg_current_xlog_location(), pid) FROM pg_stat_replication;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 

@@ -15,7 +15,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', column
 
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', columns := '{id, data, something}');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -36,14 +36,14 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
 -- update one row
 \c :provider_dsn
 UPDATE basic_dml SET other = '4', data = NULL, something = '3 days'::interval WHERE id = 4;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
@@ -52,42 +52,42 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
 SELECT * FROM basic_dml order by id;
 UPDATE basic_dml SET data = data || other::text;
 SELECT * FROM basic_dml order by id;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 UPDATE basic_dml SET other = id, data = data || id::text;
 SELECT * FROM basic_dml order by id;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
 \c :provider_dsn
 UPDATE basic_dml SET other = id, something = something - '10 seconds'::interval WHERE id < 3;
 UPDATE basic_dml SET other = id, something = something + '10 seconds'::interval WHERE id > 3;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something, subonly, subonly_def FROM basic_dml ORDER BY id;
 
 -- delete one row
 \c :provider_dsn
 DELETE FROM basic_dml WHERE id = 2;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
 -- delete multiple rows
 \c :provider_dsn
 DELETE FROM basic_dml WHERE id < 4;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
 -- truncate
 \c :provider_dsn
 TRUNCATE basic_dml;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
@@ -99,7 +99,7 @@ SELECT id, data, something FROM basic_dml ORDER BY id;
 9002,3,ccc,3 minutes
 9003,4,ddd,4 days
 \.
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT id, data, something FROM basic_dml ORDER BY id;
 

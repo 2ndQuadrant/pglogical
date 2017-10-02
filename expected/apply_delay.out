@@ -1,5 +1,14 @@
 SELECT * FROM pglogical_regress_variables()
 \gset
+\c :subscriber_dsn
+GRANT ALL ON SCHEMA public TO nonsuper;
+SELECT E'\'' || current_database() || E'\'' AS subdb;
+   subdb    
+------------
+ 'postgres'
+(1 row)
+
+\gset
 \c :provider_dsn
 SELECT * FROM pglogical.create_replication_set('delay');
  create_replication_set 
@@ -18,7 +27,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}',
 	synchronize_structure := false,
 	synchronize_data := false,
-	apply_delay := int2interval(1) -- 1 second
+	apply_delay := int2interval(2) -- 2 seconds
 );
  create_subscription 
 ---------------------
@@ -41,12 +50,11 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglog
  f         | 3848008564 |              |              | r
 (2 rows)
 
-SELECT * FROM pglogical.show_subscription_status();
-    subscription_name    |   status    | provider_node |         provider_dsn         |                 slot_name                  |                 replication_sets                  | forward_origins 
--------------------------+-------------+---------------+------------------------------+--------------------------------------------+---------------------------------------------------+-----------------
- test_subscription       | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sube55bf37 | {default_insert_only,ddl_sql,repset_test,default} | 
- test_subscription_delay | replicating | test_provider | dbname=regression user=super | pgl_postgres_test_provider_test_sub5c6f0a6 | {delay}                                           | 
-(2 rows)
+SELECT status FROM pglogical.show_subscription_status() WHERE subscription_name = 'test_subscription_delay';
+   status    
+-------------
+ replicating
+(1 row)
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn
@@ -81,9 +89,9 @@ $$);
 (1 row)
 
 -- clear old applies, from any previous tests etc.
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -94,9 +102,9 @@ SELECT * FROM pglogical.replication_set_add_table('delay', 'basic_dml1');
  t
 (1 row)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
@@ -107,26 +115,24 @@ VALUES (5, 'foo', '1 minute'::interval),
        (3, 'baz', '2 years 1 hour'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
 INSERT INTO timestamps VALUES ('ts3', CURRENT_TIMESTAMP);
-SELECT EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
-       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))
-       BETWEEN 1 AND 2.5 AS ddl_replicate_time_ok;
- ddl_replicate_time_ok 
------------------------
+SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))) :: integer >= 2 as ddl_replication_delayed;
+ ddl_replication_delayed 
+-------------------------
  t
 (1 row)
 
-SELECT EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
-       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))
-       BETWEEN 1 AND 2.5 AS inserts_replicate_time_ok;
- inserts_replicate_time_ok 
----------------------------
+SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))) :: integer >= 2 as inserts_replication_delayed;
+ inserts_replication_delayed 
+-----------------------------
  t
 (1 row)
 

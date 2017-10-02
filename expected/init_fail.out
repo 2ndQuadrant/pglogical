@@ -25,7 +25,7 @@ END;$$;
 DO $$
 BEGIN
         IF version() ~ 'Postgres-XL' THEN
-                CREATE EXTENSION IF NOT EXISTS pglogical;
+                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
         ELSE
                 CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
         END IF;
@@ -57,7 +57,7 @@ SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  could fetch remote node info: ERROR:  local pglogical node not found
+ERROR:  could not fetch remote node info: ERROR:  local pglogical node not found
 
 
 \c :provider_dsn
@@ -75,7 +75,7 @@ SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "[local]", user "nonreplica"
+ERROR:  could not connect to the postgresql server in replication mode: FATAL:  must be superuser or replication role to start walsender
 
 -- cleanup
 SELECT * FROM pglogical.drop_node('test_subscriber');

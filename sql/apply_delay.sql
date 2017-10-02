@@ -1,6 +1,11 @@
 SELECT * FROM pglogical_regress_variables()
 \gset
 
+\c :subscriber_dsn
+GRANT ALL ON SCHEMA public TO nonsuper;
+SELECT E'\'' || current_database() || E'\'' AS subdb;
+\gset
+
 \c :provider_dsn
 
 SELECT * FROM pglogical.create_replication_set('delay');
@@ -18,7 +23,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}',
 	synchronize_structure := false,
 	synchronize_data := false,
-	apply_delay := int2interval(1) -- 1 second
+	apply_delay := int2interval(2) -- 2 seconds
 );
 
 DO $$
@@ -33,7 +38,7 @@ END;$$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
-SELECT * FROM pglogical.show_subscription_status();
+SELECT status FROM pglogical.show_subscription_status() WHERE subscription_name = 'test_subscription_delay';
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn
@@ -54,13 +59,13 @@ SELECT pglogical.replicate_ddl_command($$
     );
 $$);
 -- clear old applies, from any previous tests etc.
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts1', CURRENT_TIMESTAMP);
 
 SELECT * FROM pglogical.replication_set_add_table('delay', 'basic_dml1');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts2', CURRENT_TIMESTAMP);
 
@@ -71,17 +76,14 @@ VALUES (5, 'foo', '1 minute'::interval),
        (2, 'qux', '8 months 2 days'::interval),
        (1, NULL, NULL);
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO timestamps VALUES ('ts3', CURRENT_TIMESTAMP);
 
-SELECT EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
-       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))
-       BETWEEN 1 AND 2.5 AS ddl_replicate_time_ok;
-
-SELECT EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
-       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))
-       BETWEEN 1 AND 2.5 AS inserts_replicate_time_ok;
+SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts1'))) :: integer >= 2 as ddl_replication_delayed;
+SELECT round (EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts3')) -
+       EXTRACT(EPOCH FROM (SELECT ts from timestamps where id = 'ts2'))) :: integer >= 2 as inserts_replication_delayed;
 
 \c :subscriber_dsn
 

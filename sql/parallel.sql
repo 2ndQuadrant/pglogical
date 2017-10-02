@@ -62,7 +62,7 @@ $$);
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml1');
 SELECT * FROM pglogical.replication_set_add_table('parallel', 'basic_dml2');
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 WITH one AS (
 INSERT INTO basic_dml1(other, data, something)
@@ -80,7 +80,7 @@ UPDATE basic_dml1 SET other = id, something = something - '10 seconds'::interval
 DELETE FROM basic_dml2 WHERE id < 3;
 COMMIT;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 SELECT * FROM basic_dml1;
 SELECT * FROM basic_dml2;

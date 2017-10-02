@@ -2,16 +2,13 @@
 SELECT * FROM pglogical_regress_variables()
 \gset
 \c :provider_dsn
-\d some_local_tbl
-                         Table "public.some_local_tbl"
- Column |  Type   |                          Modifiers                          
---------+---------+-------------------------------------------------------------
- id     | integer | not null default nextval('some_local_tbl_id_seq'::regclass)
- key    | text    | not null
- data   | text    | 
-Indexes:
-    "some_local_tbl_pkey" PRIMARY KEY, btree (id)
-    "some_local_tbl_key_key" UNIQUE CONSTRAINT, btree (key)
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | t          | f
+ key     | t          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl ORDER BY id;
  id | key  | data  
@@ -21,15 +18,13 @@ SELECT * FROM some_local_tbl ORDER BY id;
   3 | key3 | data3
 (3 rows)
 
-\d some_local_tbl1
-                         Table "public.some_local_tbl1"
- Column |  Type   |                          Modifiers                           
---------+---------+--------------------------------------------------------------
- id     | integer | not null default nextval('some_local_tbl1_id_seq'::regclass)
- key    | text    | not null
- data   | text    | 
-Indexes:
-    "some_local_tbl1_key_key" UNIQUE CONSTRAINT, btree (key)
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl1'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | t          | f
+ key     | t          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl1 ORDER BY id;
  id | key  | data  
@@ -39,13 +34,13 @@ SELECT * FROM some_local_tbl1 ORDER BY id;
   3 | key3 | data3
 (3 rows)
 
-\d some_local_tbl2
-                         Table "public.some_local_tbl2"
- Column |  Type   |                          Modifiers                           
---------+---------+--------------------------------------------------------------
- id     | integer | not null default nextval('some_local_tbl2_id_seq'::regclass)
- key    | text    | 
- data   | text    | 
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl2'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | t          | f
+ key     | f          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl2 ORDER BY id;
  id | key  | data  
@@ -55,13 +50,13 @@ SELECT * FROM some_local_tbl2 ORDER BY id;
   3 | key3 | data3
 (3 rows)
 
-\d some_local_tbl3
-Table "public.some_local_tbl3"
- Column |  Type   | Modifiers 
---------+---------+-----------
- id     | integer | 
- key    | text    | 
- data   | text    | 
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl3'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | f          | f
+ key     | f          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl3 ORDER BY id;
  id | key  | data  
@@ -72,57 +67,52 @@ SELECT * FROM some_local_tbl3 ORDER BY id;
 (3 rows)
 
 \c :subscriber_dsn
-\d some_local_tbl
-                         Table "public.some_local_tbl"
- Column |  Type   |                          Modifiers                          
---------+---------+-------------------------------------------------------------
- id     | integer | not null default nextval('some_local_tbl_id_seq'::regclass)
- key    | text    | not null
- data   | text    | 
-Indexes:
-    "some_local_tbl_pkey" PRIMARY KEY, btree (id)
-    "some_local_tbl_key_key" UNIQUE CONSTRAINT, btree (key)
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | t          | f
+ key     | t          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl ORDER BY id;
  id | key | data 
 ----+-----+------
 (0 rows)
 
-\d some_local_tbl1
-                         Table "public.some_local_tbl1"
- Column |  Type   |                          Modifiers                           
---------+---------+--------------------------------------------------------------
- id     | integer | not null default nextval('some_local_tbl1_id_seq'::regclass)
- key    | text    | not null
- data   | text    | 
-Indexes:
-    "some_local_tbl1_key_key" UNIQUE CONSTRAINT, btree (key)
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl1'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | t          | f
+ key     | t          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl1 ORDER BY id;
  id | key | data 
 ----+-----+------
 (0 rows)
 
-\d some_local_tbl2
-                         Table "public.some_local_tbl2"
- Column |  Type   |                          Modifiers                           
---------+---------+--------------------------------------------------------------
- id     | integer | not null default nextval('some_local_tbl2_id_seq'::regclass)
- key    | text    | 
- data   | text    | 
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl2'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | t          | f
+ key     | f          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl2 ORDER BY id;
  id | key | data 
 ----+-----+------
 (0 rows)
 
-\d some_local_tbl3
-Table "public.some_local_tbl3"
- Column |  Type   | Modifiers 
---------+---------+-----------
- id     | integer | 
- key    | text    | 
- data   | text    | 
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'some_local_tbl3'::regclass and attnum > 0 order by attnum;
+ attname | attnotnull | attisdropped 
+---------+------------+--------------
+ id      | f          | f
+ key     | f          | f
+ data    | f          | f
+(3 rows)
 
 SELECT * FROM some_local_tbl3 ORDER BY id;
  id | key | data 
@@ -132,10 +122,11 @@ SELECT * FROM some_local_tbl3 ORDER BY id;
 \c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
-        DROP TABLE public.some_local_tbl;
-        DROP TABLE public.some_local_tbl1;
-        DROP TABLE public.some_local_tbl2;
-        DROP TABLE public.some_local_tbl3;
+	DROP SEQUENCE public.some_local_seq;
+	DROP TABLE public.some_local_tbl;
+	DROP TABLE public.some_local_tbl1;
+	DROP TABLE public.some_local_tbl2;
+	DROP TABLE public.some_local_tbl3;
 $$);
  replicate_ddl_command 
 -----------------------

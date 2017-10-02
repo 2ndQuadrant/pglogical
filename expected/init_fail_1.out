@@ -22,14 +22,22 @@ BEGIN
 		CREATE EXTENSION IF NOT EXISTS pglogical_origin;
 	END IF;
 END;$$;
-CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
+DO $$
+BEGIN
+        IF version() ~ 'Postgres-XL' THEN
+                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
+        ELSE
+                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
+        END IF;
+END;
+$$;
 ALTER EXTENSION pglogical UPDATE;
 -- fail (local node not existing)
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  local node not found
+ERROR:  local pglogical node not found
 -- succeed
 SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
  create_node 
@@ -49,7 +57,7 @@ SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  could fetch remote node info: ERROR:  local node not found
+ERROR:  could not fetch remote node info: ERROR:  local pglogical node not found
 
 
 \c :provider_dsn
@@ -67,7 +75,7 @@ SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription',
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
 	forward_origins := '{}');
-ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "127.0.0.1", user "nonreplica"
+ERROR:  could not connect to the postgresql server in replication mode: FATAL:  no pg_hba.conf entry for replication connection from host "[local]", user "nonreplica"
 
 -- cleanup
 SELECT * FROM pglogical.drop_node('test_subscriber');

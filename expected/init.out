@@ -19,18 +19,23 @@ CREATE USER super SUPERUSER;
 --GRANT ALL ON DATABASE regress TO nonsuper;
 \c :provider_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
-CREATE OR REPLACE FUNCTION public.pg_xlog_wait_remote_apply(i_pos pg_lsn, i_pid integer) RETURNS VOID
-AS $FUNC$
+DO $$
 BEGIN
-    WHILE EXISTS(SELECT true FROM pg_stat_get_wal_senders() s WHERE s.replay_location < i_pos AND (i_pid = 0 OR s.pid = i_pid)) LOOP
-		PERFORM pg_sleep(0.01);
-	END LOOP;
-END;$FUNC$ LANGUAGE plpgsql;
-CREATE FUNCTION
-pglogical_wait_slot_confirm_lsn(slotname name, target pg_lsn)
-RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
+	IF (SELECT setting::integer/100 FROM pg_settings WHERE name = 'server_version_num') >= 1000 THEN
+		CREATE OR REPLACE FUNCTION public.pg_current_xlog_location() RETURNS pg_lsn
+		LANGUAGE SQL AS 'SELECT pg_current_wal_lsn()';
+		ALTER FUNCTION public.pg_current_xlog_location() OWNER TO super;
+	END IF;
+END; $$;
 \c :subscriber_dsn
 GRANT ALL ON SCHEMA public TO nonsuper;
+SELECT E'\'' || current_database() || E'\'' AS subdb;
+   subdb    
+------------
+ 'postgres'
+(1 row)
+
+\gset
 \c :provider_dsn
 SET client_min_messages = 'warning';
 DO $$
@@ -53,7 +58,7 @@ ALTER EXTENSION pglogical UPDATE;
                    List of installed extensions
    Name    | Version |  Schema   |          Description           
 -----------+---------+-----------+--------------------------------
- pglogical | 2.0.1   | pglogical | PostgreSQL Logical Replication
+ pglogical | 2.1.0   | pglogical | PostgreSQL Logical Replication
 (1 row)
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');

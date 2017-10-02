@@ -27,8 +27,8 @@ INSERT INTO pk_users VALUES(4,14,2,'User4', 'Address4');
 
 SELECT * FROM pk_users;
 
-\d+ pk_users;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -38,7 +38,7 @@ SELECT * FROM pk_users;
 
 UPDATE pk_users SET address='UpdatedAddress1' WHERE id=1;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -55,18 +55,20 @@ ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
 ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_another_id_key;
 $$);
 
-\d+ pk_users;
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
+
 UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
-\d+ pk_users;
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
+
 SELECT * FROM pk_users;
 
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress3' WHERE another_id=12;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -75,7 +77,7 @@ SELECT * FROM pk_users;
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress4' WHERE a_id=2;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
@@ -86,20 +88,21 @@ SELECT * FROM pk_users;
 \c :provider_dsn
 \set VERBOSITY terse
 
+SELECT quote_literal(pg_current_xlog_location()) as curr_lsn
+\gset
+
 SELECT pglogical.replicate_ddl_command($$
 CREATE UNIQUE INDEX id_temp_idx ON public.pk_users (id);
 ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
     ADD CONSTRAINT pk_users_pkey PRIMARY KEY USING INDEX id_temp_idx;
 $$);
 
-\d+ pk_users;
--- Due to the duplicate PK, subscriber can never apply the change
--- and catch up
-SET statement_timeout = '2s';
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, :curr_lsn);
 
 \c :subscriber_dsn
-\d+ pk_users;
+SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
 
 SELECT pglogical.alter_subscription_disable('test_subscription', true);
 
@@ -140,11 +143,10 @@ BEGIN
 END;
 $$;
 UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT * FROM pk_users;
-
 
 \c :provider_dsn
 
@@ -189,7 +191,7 @@ UPDATE pk_users SET id = 91 WHERE id = 90;
 -- will be lost.
 BEGIN;
 SET statement_timeout = '2s';
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ROLLBACK;
 
 -- To carry on we'll need to make the index on the downstream
@@ -204,7 +206,7 @@ ALTER TABLE public.pk_users
 ALTER TABLE public.pk_users
     ADD CONSTRAINT pk_users_pkey PRIMARY KEY (id) NOT DEFERRABLE;
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 
 
@@ -240,7 +242,7 @@ UPDATE pk_users SET id = 101 WHERE id = 100;
 -- Must time out, apply will fail on downstream due to no replident index
 BEGIN;
 SET statement_timeout = '2s';
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ROLLBACK;
 
 \c :subscriber_dsn
@@ -256,7 +258,7 @@ ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
 \c :provider_dsn
 
 -- then replay
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;

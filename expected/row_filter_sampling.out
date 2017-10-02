@@ -48,13 +48,22 @@ SELECT * FROM test_tablesample ORDER BY id limit 5;
   4 | 44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444
 (5 rows)
 
-SELECT pglogical_wait_slot_confirm_lsn(NULL, NULL);
- pglogical_wait_slot_confirm_lsn 
----------------------------------
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
  
 (1 row)
 
 \c :subscriber_dsn
+DO $$
+BEGIN
+    FOR i IN 1..100 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r' AND sync_relname IN ('test_tablesample')) THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
 SELECT * FROM test_tablesample ORDER BY id limit 5;
  id |                                                                                                   name                                                                                                   
 ----+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
