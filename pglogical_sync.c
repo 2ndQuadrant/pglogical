@@ -93,7 +93,7 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 	StringInfoData	schema_filter;
 	StringInfoData	command;
 
-	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump))
+	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump) != 0)
 		elog(ERROR, "pglogical subscriber init failed to find pg_dump relative to binary %s",
 			 my_exec_path);
 
@@ -133,7 +133,7 @@ restore_structure(PGLogicalSubscription *sub, const char *srcfile,
 	int			res;
 	StringInfoData	command;
 
-	if (find_other_exec_version(my_exec_path, PGRESTORE_BINARY, &version, pg_restore))
+	if (find_other_exec_version(my_exec_path, PGRESTORE_BINARY, &version, pg_restore) != 0)
 		elog(ERROR, "pglogical subscriber init failed to find pg_restore relative to binary %s",
 			 my_exec_path);
 
@@ -744,10 +744,10 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 		origin_conn = pglogical_connect(sub->origin_if->dsn,
 										sub->name, "snap");
-		use_failover_slot = pglogical_remote_function_exists(origin_conn,
-															 "pg_catalog",
-										  "pg_create_logical_replication_slot",
-															 3);
+		use_failover_slot = PQserverVersion(origin_conn) < 100000 &&
+			pglogical_remote_function_exists(origin_conn, "pg_catalog",
+											 "pg_create_logical_replication_slot",
+											 3);
 		PQfinish(origin_conn);
 
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
@@ -769,7 +769,9 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 			PG_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
 									CStringGetDatum(tmpfile));
 			{
+#if PG_VERSION_NUM >= 90500
 				Relation replorigin_rel;
+#endif
 
 				StartTransactionCommand();
 
@@ -940,7 +942,9 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 							PointerGetDatum(sub));
 	{
+#if PG_VERSION_NUM >= 90500
 		Relation replorigin_rel;
+#endif
 
 		StartTransactionCommand();
 		originid = ensure_replication_origin(sub->slot_name);
@@ -1175,10 +1179,7 @@ create_local_sync_status(PGLogicalSyncStatus *sync)
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
-	simple_heap_insert(rel, tup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, tup);
+	CatalogTupleInsert(rel, tup);
 
 	/* Cleanup. */
 	heap_freetuple(tup);
@@ -1344,10 +1345,7 @@ set_subscription_sync_status(Oid subid, char status)
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
-	simple_heap_update(rel, &oldtup->t_self, newtup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, newtup);
+	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
 
 	/* Cleanup. */
 	heap_freetuple(newtup);
@@ -1533,10 +1531,7 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
-	simple_heap_update(rel, &oldtup->t_self, newtup);
-
-	/* Update the indexes. */
-	CatalogUpdateIndexes(rel, newtup);
+	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
 
 	/* Cleanup. */
 	heap_freetuple(newtup);
@@ -1639,10 +1634,7 @@ truncate_table(char *nspname, char *relname)
 			NULL
 			);
 #else
-	standard_ProcessUtility((Node *)truncate,
-			sql.data, PROCESS_UTILITY_TOPLEVEL, NULL, NULL,
-			NULL
-			);
+	ExecuteTruncate(truncate);
 #endif
 	/* release memory allocated to create SQL statement */
 	pfree(sql.data);

@@ -96,8 +96,13 @@ create_estate_for_relation(Relation rel, bool hasTriggers)
 
 		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
 			palloc0(n * sizeof(FmgrInfo));
+#if PG_VERSION_NUM >= 100000
+		resultRelInfo->ri_TrigWhenExprs = (ExprState **)
+			palloc0(n * sizeof(ExprState *));
+#else
 		resultRelInfo->ri_TrigWhenExprs = (List **)
 			palloc0(n * sizeof(List *));
+#endif
 
 		/* Triggers might need a slot */
 		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
@@ -217,16 +222,31 @@ pglogical_finish_truncate(void)
 }
 
 static void
-pglogical_ProcessUtility(Node *parsetree,
+pglogical_ProcessUtility(
+#if PG_VERSION_NUM >= 100000
+						 PlannedStmt *pstmt,
+#else
+						 Node *pstmt,
+#endif
 						 const char *queryString,
 						 ProcessUtilityContext context,
 						 ParamListInfo params,
+#if PG_VERSION_NUM >= 100000
+						 QueryEnvironment *queryEnv,
+#endif
 						 DestReceiver *dest,
 #ifdef XCP
 						 bool sentToRemote,
 #endif
 						 char *completionTag)
 {
+#if PG_VERSION_NUM >= 100000
+	Node	   *parsetree = pstmt->utilityStmt;
+#else
+	Node	   *parsetree = pstmt;
+	#define		queryEnv NULL
+#endif
+
 	dropping_pglogical_obj = false;
 
 	if (nodeTag(parsetree) == T_TruncateStmt)
@@ -236,15 +256,15 @@ pglogical_ProcessUtility(Node *parsetree,
 		pglogical_lastDropBehavior = ((DropStmt *)parsetree)->behavior;
 
 	if (next_ProcessUtility_hook)
-		next_ProcessUtility_hook(parsetree, queryString, context, params,
-								 dest,
+		next_ProcessUtility_hook(pstmt, queryString, context, params,
+								 queryEnv, dest,
 #ifdef XCP
 								 sentToRemote,
 #endif
 								 completionTag);
 	else
-		standard_ProcessUtility(parsetree, queryString, context, params,
-								dest,
+		standard_ProcessUtility(pstmt, queryString, context, params,
+								queryEnv, dest,
 #ifdef XCP
 								sentToRemote,
 #endif

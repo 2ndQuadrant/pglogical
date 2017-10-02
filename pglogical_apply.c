@@ -290,7 +290,9 @@ handle_commit(StringInfo s)
 	if (remote_origin_id != InvalidRepOriginId &&
 		remote_origin_id != replorigin_session_origin)
 	{
+#if PG_VERSION_NUM >= 90500
 		Relation replorigin_rel;
+#endif
 		elog(DEBUG3, "advancing origin oid %u for forwarded row to %X/%X",
 			remote_origin_id,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
@@ -1309,7 +1311,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	{
 		List	   *plantree_list;
 		List	   *querytree_list;
-		Node	   *command = (Node *) lfirst(command_i);
+		RawStmt	   *command = (RawStmt *) lfirst(command_i);
 		const char *commandTag;
 		Portal		portal;
 		int			save_nestlevel;

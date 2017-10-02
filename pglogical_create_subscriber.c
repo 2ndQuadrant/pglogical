@@ -844,7 +844,7 @@ get_remote_info(PGconn* conn)
 
 	res = PQexec(conn, "SELECT node_id, node_name, sysid, dbname, replication_sets FROM pglogical.pglogical_node_info()");
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		die(_("could fetch remote node info: %s\n"), PQerrorMessage(conn));
+		die(_("could not fetch remote node info: %s\n"), PQerrorMessage(conn));
 
 	/* No nodes found? */
 	if (PQntuples(res) == 0)

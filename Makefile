@@ -13,7 +13,8 @@ DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--1.2.0--1.2.1.sql pglogical--1.2.1--1.2.2.sql \
 	   pglogical--1.2.2--2.0.0.sql \
 	   pglogical--2.0.0--2.0.1.sql \
-	   pglogical--2.0.1.sql
+	   pglogical--2.0.0--2.1.0.sql pglogical--2.0.1--2.1.0.sql \
+	   pglogical--2.1.0.sql
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical.o pglogical_node.o pglogical_relcache.o \
@@ -48,7 +49,7 @@ NO_TEMP_INSTALL = yes
 
 PG_CONFIG ?= pg_config
 
-PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9\.]//g' | awk -F . '{ print $$1$$2 }')
+PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9]//g' | cut -c 1-2)
 
 PG_CPPFLAGS += -I$(libpq_srcdir) -I$(realpath $(srcdir)/compat$(PGVER))
 SHLIB_LINK += $(libpq)

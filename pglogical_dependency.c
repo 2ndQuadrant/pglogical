@@ -288,7 +288,6 @@ pglogical_recordMultipleDependencies(const ObjectAddress *depender,
 						   DependencyType behavior)
 {
 	Relation	dependDesc;
-	CatalogIndexState indstate;
 	HeapTuple	tup;
 	int			i;
 	bool		nulls[Natts_pglogical_depend];
@@ -299,9 +298,6 @@ pglogical_recordMultipleDependencies(const ObjectAddress *depender,
 
 	dependDesc = heap_open(get_pglogical_depend_rel_oid(),
 						   RowExclusiveLock);
-
-	/* Don't open indexes unless we need to make an update */
-	indstate = NULL;
 
 	memset(nulls, false, sizeof(nulls));
 
@@ -323,19 +319,10 @@ pglogical_recordMultipleDependencies(const ObjectAddress *depender,
 
 		tup = heap_form_tuple(dependDesc->rd_att, values, nulls);
 
-		simple_heap_insert(dependDesc, tup);
-
-		/* keep indexes current */
-		if (indstate == NULL)
-			indstate = CatalogOpenIndexes(dependDesc);
-
-		CatalogIndexInsert(indstate, tup);
+		CatalogTupleInsert(dependDesc, tup);
 
 		heap_freetuple(tup);
 	}
-
-	if (indstate != NULL)
-		CatalogCloseIndexes(indstate);
 
 	heap_close(dependDesc, RowExclusiveLock);
 }

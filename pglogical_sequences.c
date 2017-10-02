@@ -304,10 +304,7 @@ pglogical_create_sequence_state_record(Oid seqoid)
 		tuple = heap_form_tuple(tupDesc, values, nulls);
 
 		/* Insert the tuple to the catalog. */
-		simple_heap_insert(rel, tuple);
-
-		/* Update the indexes. */
-		CatalogUpdateIndexes(rel, tuple);
+		CatalogTupleInsert(rel, tuple);
 	}
 
 	/* Cleanup. */

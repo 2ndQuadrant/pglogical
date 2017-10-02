@@ -270,7 +270,7 @@ pglogical_remote_node_info(PGconn *conn, Oid *nodeid, char **node_name, char **s
 
 	res = PQexec(conn, "SELECT node_id, node_name, sysid, dbname, replication_sets FROM pglogical.pglogical_node_info()");
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		elog(ERROR, "could fetch remote node info: %s\n", PQerrorMessage(conn));
+		elog(ERROR, "could not fetch remote node info: %s\n", PQerrorMessage(conn));
 
 	/* No nodes found? */
 	if (PQntuples(res) == 0)
@@ -319,7 +319,7 @@ pglogical_remote_function_exists(PGconn *conn, const char *nspname,
 
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		elog(ERROR, "could fetch remote function info: %s\n",
+		elog(ERROR, "could not fetch remote function info: %s\n",
 			PQerrorMessage(conn));
 
 	ret = PQntuples(res) > 0;

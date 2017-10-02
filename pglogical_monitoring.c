@@ -22,6 +22,8 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
+#include "pgstat.h"
+
 #include "pglogical.h"
 
 PG_FUNCTION_INFO_V1(pglogical_wait_slot_confirm_lsn);
