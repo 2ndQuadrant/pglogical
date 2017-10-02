@@ -283,7 +283,7 @@ pglogical_apply_spi_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 
 /* We currently can't support multi insert using COPY on windows. */
-#ifndef WIN32
+#if !defined(WIN32) && !defined(PGL_NO_STDIN_ASSIGN)
 
 bool
 pglogical_apply_spi_can_mi(PGLogicalRelation *rel)
