@@ -59,12 +59,26 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 	}
 
 	initStringInfo(&query);
-	appendStringInfo(&query,
-					 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-					 "       i.has_row_filter"
-					 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
-					 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
-					 repsetarr.data, repsetarr.data);
+	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2))
+	{
+		/* PGLogical 2.0+ */
+		appendStringInfo(&query,
+						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
+						 "       i.has_row_filter"
+						 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
+						 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
+						 repsetarr.data, repsetarr.data);
+	}
+	else
+	{
+		/* PGLogical 1.x */
+		appendStringInfo(&query,
+						 "SELECT r.oid AS relid, t.nspname, t.relname, ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = r.oid AND NOT attisdropped AND attnum > 0) AS att_list,"
+						 "       false AS has_row_filter"
+						 "  FROM pglogical.tables t, pg_catalog.pg_class r, pg_catalog.pg_namespace n"
+						 " WHERE t.set_name = ANY(ARRAY[%s]) AND r.relname = t.relname AND n.oid = r.relnamespace AND n.nspname = t.nspname",
+						 repsetarr.data);
+	}
 
 	res = PQexec(conn, query.data);
 	/* TODO: better error message? */
@@ -126,12 +140,27 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	}
 
 	initStringInfo(&query);
-	appendStringInfo(&query,
-					 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-					 "       i.has_row_filter"
-					 "  FROM pglogical.show_repset_table_info(%s::regclass, ARRAY[%s]) i",
-					 PQescapeLiteral(conn, relname.data, relname.len),
-					 repsetarr.data);
+	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2))
+	{
+		/* PGLogical 2.0+ */
+		appendStringInfo(&query,
+						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
+						 "       i.has_row_filter"
+						 "  FROM pglogical.show_repset_table_info(%s::regclass, ARRAY[%s]) i",
+						 PQescapeLiteral(conn, relname.data, relname.len),
+						 repsetarr.data);
+	}
+	else
+	{
+		/* PGLogical 1.x */
+		appendStringInfo(&query,
+						 "SELECT r.oid AS relid, t.nspname, t.relname, ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = r.oid AND NOT attisdropped AND attnum > 0) AS att_list,"
+						 "       false AS has_row_filter"
+						 "  FROM pglogical.tables t, pg_catalog.pg_class r, pg_catalog.pg_namespace n"
+						 " WHERE r.oid = %s::regclass AND t.set_name = ANY(ARRAY[%s]) AND r.relname = t.relname AND n.oid = r.relnamespace AND n.nspname = t.nspname",
+						 PQescapeLiteral(conn, relname.data, relname.len),
+						 repsetarr.data);
+	}
 
 	res = PQexec(conn, query.data);
 	/* TODO: better error message? */
