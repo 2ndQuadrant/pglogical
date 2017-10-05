@@ -13,11 +13,21 @@
 
 #define	PGLDoCopy(stmt, queryString, processed) DoCopy(stmt, queryString, processed)
 
-#define standard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, completionTag) \
-	standard_ProcessUtility((Node *)pstmt, queryString, context, params, dest, completionTag)
+#ifdef PGXC
+#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
+	standard_ProcessUtility(pstmt, queryString, context, params, dest, sentToRemote, completionTag)
 
-#define next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, completionTag) \
-	next_ProcessUtility_hook((Node *)pstmt, queryString, context, params, dest, completionTag)
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
+	next_ProcessUtility_hook(pstmt, queryString, context, params, dest, sentToRemote, completionTag)
+
+#else
+
+#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
+	standard_ProcessUtility(pstmt, queryString, context, params, dest, completionTag)
+
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
+	next_ProcessUtility_hook(pstmt, queryString, context, params, dest, completionTag)
+#endif
 
 extern Oid CatalogTupleInsert(Relation heapRel, HeapTuple tup);
 extern void CatalogTupleUpdate(Relation heapRel, ItemPointer otid, HeapTuple tup);

@@ -246,6 +246,10 @@ pglogical_ProcessUtility(
 	Node	   *parsetree = pstmt;
 	#define		queryEnv NULL
 #endif
+#ifndef XCP
+	#define		sentToRemote NULL
+#endif
+
 
 	dropping_pglogical_obj = false;
 
@@ -256,19 +260,15 @@ pglogical_ProcessUtility(
 		pglogical_lastDropBehavior = ((DropStmt *)parsetree)->behavior;
 
 	if (next_ProcessUtility_hook)
-		next_ProcessUtility_hook(pstmt, queryString, context, params,
-								 queryEnv, dest,
-#ifdef XCP
-								 sentToRemote,
-#endif
-								 completionTag);
+		PGLnext_ProcessUtility_hook(pstmt, queryString, context, params,
+									queryEnv, dest,
+									sentToRemote,
+									completionTag);
 	else
-		standard_ProcessUtility(pstmt, queryString, context, params,
-								queryEnv, dest,
-#ifdef XCP
-								sentToRemote,
-#endif
-								completionTag);
+		PGLstandard_ProcessUtility(pstmt, queryString, context, params,
+								   queryEnv, dest,
+								   sentToRemote,
+								   completionTag);
 
 	if (nodeTag(parsetree) == T_TruncateStmt)
 		pglogical_finish_truncate();

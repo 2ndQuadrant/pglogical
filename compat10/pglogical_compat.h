@@ -55,4 +55,10 @@
 
 #define makeDefElem(name, arg) makeDefElem(name, arg, -1)
 
+#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
+	standard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, completionTag)
+
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
+	next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, completionTag)
+
 #endif
