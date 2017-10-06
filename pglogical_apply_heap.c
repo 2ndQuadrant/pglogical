@@ -233,7 +233,7 @@ init_apply_exec_state(PGLogicalRelation *rel)
 	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
 
 	/* Initialize the executor state. */
-	aestate->estate = create_estate_for_relation(rel->rel, rel->hasTriggers);
+	aestate->estate = create_estate_for_relation(rel->rel, true);
 	aestate->resultRelInfo = aestate->estate->es_result_relation_info;
 
 	aestate->slot = ExecInitExtraTupleSlot(aestate->estate);

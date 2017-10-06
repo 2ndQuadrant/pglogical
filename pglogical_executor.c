@@ -61,7 +61,7 @@ static object_access_hook_type next_object_access_hook = NULL;
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
 
 EState *
-create_estate_for_relation(Relation rel, bool hasTriggers)
+create_estate_for_relation(Relation rel, bool forwrite)
 {
 	EState	   *estate;
 	ResultRelInfo *resultRelInfo;
@@ -87,7 +87,7 @@ create_estate_for_relation(Relation rel, bool hasTriggers)
 	estate->es_result_relation_info = resultRelInfo;
 	estate->es_range_table = list_make1(rte);
 
-	if (hasTriggers)
+	if (forwrite)
 		resultRelInfo->ri_TrigDesc = CopyTriggerDesc(rel->trigdesc);
 
 	if (resultRelInfo->ri_TrigDesc)
@@ -104,8 +104,6 @@ create_estate_for_relation(Relation rel, bool hasTriggers)
 			palloc0(n * sizeof(List *));
 #endif
 
-		estate->es_output_cid = GetCurrentCommandId(for_write);
-
 		/* Triggers might need a slot */
 		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
 	}
@@ -114,6 +112,8 @@ create_estate_for_relation(Relation rel, bool hasTriggers)
 		resultRelInfo->ri_TrigFunctions = NULL;
 		resultRelInfo->ri_TrigWhenExprs = NULL;
 	}
+
+	estate->es_output_cid = GetCurrentCommandId(forwrite);
 
 	return estate;
 }
