@@ -104,6 +104,8 @@ create_estate_for_relation(Relation rel, bool hasTriggers)
 			palloc0(n * sizeof(List *));
 #endif
 
+		estate->es_output_cid = GetCurrentCommandId(for_write);
+
 		/* Triggers might need a slot */
 		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
 	}
