@@ -123,9 +123,11 @@ pglogical_apply_spi_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 			continue;
 
 		if (narg > 0)
-			appendStringInfo(&cmd, ", %s", NameStr(desc->attrs[att]->attname));
+			appendStringInfo(&cmd, ", %s",
+					quote_identifier(NameStr(desc->attrs[att]->attname)));
 		else
-			appendStringInfo(&cmd, "%s", NameStr(desc->attrs[att]->attname));
+			appendStringInfo(&cmd, "%s",
+					quote_identifier(NameStr(desc->attrs[att]->attname)));
 		narg++;
 	}
 
@@ -193,10 +195,12 @@ pglogical_apply_spi_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 		if (narg > 0)
 			appendStringInfo(&cmd, ", %s = $%u",
-							 NameStr(desc->attrs[att]->attname), narg + 1);
+							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 narg + 1);
 		else
 			appendStringInfo(&cmd, "%s = $%u",
-							 NameStr(desc->attrs[att]->attname), narg + 1);
+							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 narg + 1);
 
 		argtypes[narg] = desc->attrs[att]->atttypid;
 		values[narg] = newtup->values[att];
@@ -215,10 +219,12 @@ pglogical_apply_spi_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 		if (narg > firstarg)
 			appendStringInfo(&cmd, " AND %s = $%u",
-							 NameStr(desc->attrs[att]->attname), narg + 1);
+							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 narg + 1);
 		else
 			appendStringInfo(&cmd, " %s = $%u",
-							 NameStr(desc->attrs[att]->attname), narg + 1);
+							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 narg + 1);
 
 		argtypes[narg] = desc->attrs[att]->atttypid;
 		values[narg] = oldtup->values[att];
@@ -263,10 +269,12 @@ pglogical_apply_spi_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 		if (narg > 0)
 			appendStringInfo(&cmd, " AND %s = $%u",
-							 NameStr(desc->attrs[att]->attname), narg + 1);
+							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 narg + 1);
 		else
 			appendStringInfo(&cmd, " %s = $%u",
-							 NameStr(desc->attrs[att]->attname), narg + 1);
+							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 narg + 1);
 
 		argtypes[narg] = desc->attrs[att]->atttypid;
 		values[narg] = oldtup->values[att];
