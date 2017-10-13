@@ -576,7 +576,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	if (pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot))
 	{
 		if (aestate->resultRelInfo->ri_TrigDesc &&
-			aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
+			aestate->resultRelInfo->ri_TrigDesc->trig_delete_before_row)
 		{
 			bool dodelete = ExecBRDeleteTriggers(aestate->estate,
 												 &aestate->epqstate,
