@@ -212,7 +212,7 @@ format_action_description(
 
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
-		appendStringInfo(si, " from node %u",
+		appendStringInfo(si, " from node replorigin %u",
 			replorigin_session_origin);
 	}
 
