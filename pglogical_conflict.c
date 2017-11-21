@@ -507,8 +507,17 @@ void
 pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 						  HeapTuple localtuple, HeapTuple remotetuple,
 						  HeapTuple applytuple,
-						  PGLogicalConflictResolution resolution)
+						  PGLogicalConflictResolution resolution,
+						  TransactionId local_tuple_xid,
+						  RepOriginId local_tuple_origin,
+						  TimestampTz local_tuple_commit_ts)
 {
+	char local_tup_ts_str[MAXDATELEN];
+	memset(local_tup_ts_str, 0, MAXDATELEN);
+	if (local_tuple_commit_ts != 0)
+		strcpy(local_tup_ts_str,
+			timestamptz_to_str(local_tuple_commit_ts));
+
 	switch (conflict_type)
 	{
 		case CONFLICT_INSERT_INSERT:
@@ -519,7 +528,14 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 							CONFLICT_INSERT_INSERT ? "INSERT" : "UPDATE",
 							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
 													   RelationGetRelationName(rel)),
-							conflict_resolution_to_string(resolution))));
+							conflict_resolution_to_string(resolution)),
+					 errdetail("existing tuple xid=%u,origin=%u,timestamp=%s; remote xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
+								local_tuple_xid, local_tuple_origin,
+								local_tup_ts_str,
+								replorigin_session_origin,
+								timestamptz_to_str(replorigin_session_origin_timestamp),
+								(uint32)(replorigin_session_origin_lsn<<32),
+								(uint32)replorigin_session_origin_lsn)));
 			break;
 		case CONFLICT_UPDATE_DELETE:
 		case CONFLICT_DELETE_DELETE:
@@ -529,7 +545,12 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 							CONFLICT_UPDATE_DELETE ? "UPDATE" : "DELETE",
 							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
 													   RelationGetRelationName(rel)),
-							conflict_resolution_to_string(resolution))));
+							conflict_resolution_to_string(resolution)),
+					 errdetail("remote xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
+							   replorigin_session_origin,
+							   timestamptz_to_str(replorigin_session_origin_timestamp),
+							   (uint32)(replorigin_session_origin_lsn<<32),
+							   (uint32)replorigin_session_origin_lsn)));
 			break;
 	}
 }
