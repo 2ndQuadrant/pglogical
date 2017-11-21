@@ -120,6 +120,13 @@ static PGLogicalRelation   *last_insert_rel = NULL;
 static int					last_insert_rel_cnt = 0;
 static bool					use_multi_insert = false;
 
+/*
+ * A message counter for the xact, for debugging. We don't send
+ * the remote change LSN with messages, so this aids identification
+ * of which change causes an error.
+ */
+static uint32			xact_action_counter;
+
 typedef struct PGLFlushPosition
 {
 	dlist_node node;
@@ -136,6 +143,17 @@ typedef struct ApplyExecState
 	ResultRelInfo	   *resultRelInfo;
 	TupleTableSlot	   *slot;
 } ApplyExecState;
+
+struct ActionErrCallbackArg
+{
+	const char * action_name;
+	PGLogicalRelation *rel;
+	bool is_ddl_or_drop;
+	bool suppress_output;
+};
+
+struct ActionErrCallbackArg errcallback_arg;
+static TransactionId remote_xid;
 
 static void multi_insert_finish(void);
 
@@ -155,6 +173,74 @@ check_syncing_relation(const char *nspname, const char *relname)
 {
 	return list_length(SyncingTables) &&
 		list_member(SyncingTables, makeRangeVar((char *)nspname, (char *)relname, -1));
+}
+
+/*
+ * Prepare apply state details for errcontext or direct logging.
+ *
+ * This callback could be invoked at all sorts of weird times
+ * so it should assume as little as psosible about the invoking
+ * context.
+ */
+static void
+format_action_description(
+	StringInfo si,
+	const char * action_name,
+	PGLogicalRelation *rel,
+	bool is_ddl_or_drop)
+{
+	appendStringInfoString(si, "apply ");
+	appendStringInfoString(si,
+		action_name == NULL ? "(unknown action)" : action_name);
+
+	if (rel != NULL && 
+		rel->nspname != NULL
+		&& rel->relname != NULL
+		&& !is_ddl_or_drop)
+	{
+		appendStringInfo(si, " from remote relation %s.%s",
+				rel->nspname, rel->relname);
+	}
+
+	appendStringInfo(si,
+			" in commit before %X/%X, xid %u commited at %s (action #%u)",
+			(uint32)(replorigin_session_origin_lsn>>32),
+			(uint32)replorigin_session_origin_lsn,
+			remote_xid,
+			timestamptz_to_str(replorigin_session_origin_timestamp),
+			xact_action_counter);
+
+	if (replorigin_session_origin != InvalidRepOriginId)
+	{
+		appendStringInfo(si, " from node %u",
+			replorigin_session_origin);
+	}
+
+	if (remote_origin_id != InvalidRepOriginId)
+	{
+		appendStringInfo(si, " forwarded from commit %X/%X on node %u",
+				(uint32)(remote_origin_lsn>>32),
+				(uint32)remote_origin_lsn,
+				remote_origin_id);
+	}
+}
+
+static void
+action_error_callback(void *arg)
+{
+	StringInfoData si;
+
+	if (!errcallback_arg.suppress_output)
+	{
+		initStringInfo(&si);
+
+		format_action_description(&si,
+			errcallback_arg.action_name,
+			errcallback_arg.rel,
+			errcallback_arg.is_ddl_or_drop);
+
+		errcontext("%s", si.data);
+	}
 }
 
 static bool
@@ -188,7 +274,9 @@ handle_begin(StringInfo s)
 {
 	XLogRecPtr		commit_lsn;
 	TimestampTz		commit_time;
-	TransactionId	remote_xid;
+
+	xact_action_counter = 1;
+	errcallback_arg.action_name = "BEGIN";
 
 	pglogical_read_begin(s, &commit_lsn, &commit_time, &remote_xid);
 
@@ -232,6 +320,9 @@ handle_commit(StringInfo s)
 	XLogRecPtr		commit_lsn;
 	XLogRecPtr		end_lsn;
 	TimestampTz		commit_time;
+
+	errcallback_arg.action_name = "COMMIT";
+	xact_action_counter++;
 
 	pglogical_read_commit(s, &commit_lsn, &end_lsn, &commit_time);
 
@@ -347,6 +438,9 @@ handle_commit(StringInfo s)
 		proc_exit(0);
 	}
 
+	xact_action_counter = 0;
+	remote_xid = InvalidTransactionId;
+
 	process_syncing_tables(end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
@@ -395,7 +489,11 @@ handle_insert(StringInfo s)
 	PGLogicalRelation  *rel;
 	bool				started_tx = ensure_transaction();
 
+	errcallback_arg.action_name = "INSERT";
+	xact_action_counter++;
+
 	rel = pglogical_read_insert(s, RowExclusiveLock, &newtup);
+	errcallback_arg.rel = rel;
 
 	/* If in list of relations which are being synchronized, skip. */
 	if (check_syncing_relation(rel->nspname, rel->relname))
@@ -483,11 +581,19 @@ multi_insert_finish(void)
 {
 	if (use_multi_insert && last_insert_rel_cnt)
 	{
+		const char *old_action = errcallback_arg.action_name;
+		PGLogicalRelation *old_rel = errcallback_arg.rel;
+		errcallback_arg.action_name = "multi INSERT";
+		errcallback_arg.rel = last_insert_rel;
+
 		apply_api.multi_insert_finish(last_insert_rel);
 		pglogical_relation_close(last_insert_rel, NoLock);
 		use_multi_insert = false;
 		last_insert_rel = NULL;
 		last_insert_rel_cnt = 0;
+
+		errcallback_arg.rel = old_rel;
+		errcallback_arg.action_name = old_action;
 	}
 }
 
@@ -499,12 +605,16 @@ handle_update(StringInfo s)
 	PGLogicalRelation  *rel;
 	bool				hasoldtup;
 
+	errcallback_arg.action_name = "UPDATE";
+	xact_action_counter++;
+
 	ensure_transaction();
 
 	multi_insert_finish();
 
 	rel = pglogical_read_update(s, RowExclusiveLock, &hasoldtup, &oldtup,
 								&newtup);
+	errcallback_arg.rel = rel;
 
 	/* If in list of relations which are being synchronized, skip. */
 	if (check_syncing_relation(rel->nspname, rel->relname))
@@ -524,11 +634,15 @@ handle_delete(StringInfo s)
 	PGLogicalTupleData	oldtup;
 	PGLogicalRelation  *rel;
 
+	memset(&errcallback_arg, 0, sizeof(struct ActionErrCallbackArg));
+	xact_action_counter++;
+
 	ensure_transaction();
 
 	multi_insert_finish();
 
 	rel = pglogical_read_delete(s, RowExclusiveLock, &oldtup);
+	errcallback_arg.rel = rel;
 
 	/* If in list of relations which are being synchronized, skip. */
 	if (check_syncing_relation(rel->nspname, rel->relname))
@@ -904,32 +1018,52 @@ handle_sql(QueuedMessage *queued_message, bool tx_just_started)
 static void
 handle_queued_message(HeapTuple msgtup, bool tx_just_started)
 {
-	QueuedMessage  *queued_message = queued_message_from_tuple(msgtup);
+	QueuedMessage  *queued_message;
+	const char	   *old_action_name;
+
+	old_action_name = errcallback_arg.action_name;
+	errcallback_arg.is_ddl_or_drop = true;
+	
+	queued_message = queued_message_from_tuple(msgtup);
 
 	switch (queued_message->message_type)
 	{
 		case QUEUE_COMMAND_TYPE_SQL:
+			errcallback_arg.action_name = "QUEUED_SQL";
 			handle_sql(queued_message, tx_just_started);
 			break;
 		case QUEUE_COMMAND_TYPE_TRUNCATE:
+			errcallback_arg.action_name = "QUEUED_TRUNCATE";
 			handle_truncate(queued_message);
 			break;
 		case QUEUE_COMMAND_TYPE_TABLESYNC:
+			errcallback_arg.action_name = "QUEUED_TABLESYNC";
 			handle_table_sync(queued_message);
 			break;
 		case QUEUE_COMMAND_TYPE_SEQUENCE:
+			errcallback_arg.action_name = "QUEUED_SEQUENCE";
 			handle_sequence(queued_message);
 			break;
 		default:
 			elog(ERROR, "unknown message type '%c'",
 				 queued_message->message_type);
 	}
+
+	errcallback_arg.action_name = old_action_name;
+	errcallback_arg.is_ddl_or_drop = false;
 }
 
 static void
 replication_handler(StringInfo s)
 {
+	ErrorContextCallback errcallback;
 	char action = pq_getmsgbyte(s);
+
+	memset(&errcallback_arg, 0, sizeof(struct ActionErrCallbackArg));
+	errcallback.callback = action_error_callback;
+	errcallback.arg = &errcallback_arg;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
 
 	switch (action)
 	{
@@ -968,6 +1102,9 @@ replication_handler(StringInfo s)
 		default:
 			elog(ERROR, "unknown action of type %c", action);
 	}
+
+	if (error_context_stack == &errcallback)
+		error_context_stack = errcallback.previous;
 }
 
 /*
