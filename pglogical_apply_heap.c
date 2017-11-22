@@ -329,14 +329,23 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 	if (OidIsValid(conflicts))
 	{
+		TransactionId		xmin;
+		TimestampTz			local_ts;
+		RepOriginId			local_origin;
+		bool				apply;
+
+		(void) get_tuple_origin(localslot->tts_tuple, &xmin,
+								&local_origin, &local_ts);
+
 		/* Tuple already exists, try resolving conflict. */
-		bool apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
-										  remotetuple, &applytuple,
-										  &resolution);
+		apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
+									 remotetuple, &applytuple,
+									 &resolution);
 
 		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
 								  localslot->tts_tuple, remotetuple,
-								  applytuple, resolution);
+								  applytuple, resolution, xmin,
+								  local_origin, local_ts);
 
 		if (apply)
 		{
@@ -496,7 +505,8 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 			pglogical_report_conflict(CONFLICT_UPDATE_UPDATE, rel->rel,
 									  localslot->tts_tuple, remotetuple,
-									  applytuple, resolution);
+									  applytuple, resolution, xmin,
+									  local_origin, local_ts);
 
 			if (applytuple != remotetuple)
 				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
@@ -547,7 +557,9 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 									  newtup->values,
 									  newtup->nulls);
 		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel->rel, NULL,
-								  remotetuple, NULL, PGLogicalResolution_Skip);
+								  remotetuple, NULL, PGLogicalResolution_Skip,
+								  InvalidTransactionId, InvalidRepOriginId,
+								  (TimestampTz)0);
 	}
 
 	/* Cleanup. */
@@ -606,7 +618,9 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 		HeapTuple remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 												oldtup->values, oldtup->nulls);
 		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel->rel, NULL,
-								  remotetuple, NULL, PGLogicalResolution_Skip);
+								  remotetuple, NULL, PGLogicalResolution_Skip,
+								  InvalidTransactionId, InvalidRepOriginId,
+								  (TimestampTz)0);
 	}
 
 	/* Cleanup. */
