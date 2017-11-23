@@ -39,7 +39,8 @@ find_other_exec_version(const char *argv0, const char *target,
 	snprintf(retpath + strlen(retpath), MAXPGPATH - strlen(retpath),
 			 "/%s%s", target, EXE);
 
-	snprintf(cmd, sizeof(cmd), "\"%s\" -V", retpath);
+	/* And request the version from the program */
+	snprintf(cmd, sizeof(cmd), "\"%s\" --version", retpath);
 
 	if ((output = popen(cmd, "r")) == NULL)
 		return -1;
@@ -54,7 +55,14 @@ find_other_exec_version(const char *argv0, const char *target,
 	if (sscanf(cmd_output, "%*s %*s %d.%d", &pre_dot, &post_dot) < 1)
 		return -2;
 
-	*version = (pre_dot * 100 + post_dot) * 100;
+	/*
+	  similar to version number exposed by "server_version_num" but without
+	  the minor :
+	  9.6.1 -> 90601  -> 90600
+	  10.1  -> 100001 -> 100000)
+	*/
+	*version = (pre_dot < 10) ?
+	  (pre_dot * 100 + post_dot) * 100 : pre_dot * 100 * 100;
 
 	return 0;
 }
