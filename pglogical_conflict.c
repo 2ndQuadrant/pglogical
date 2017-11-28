@@ -235,6 +235,18 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
 
 /*
  * Find the tuple in a table using any index.
+ *
+ * This is not wholly safe. It does not consider the table's upstream replica
+ * identity, and may choose to resolve the conflict on a unique index that
+ * isn't part of the replica identity.
+ *
+ * Order-of-apply issues between multiple upstreams can lead to
+ * non-deterministic behaviour in cases where we resolve one conflict using one
+ * index, then a second conflict using a different index.
+ *
+ * We should really respect the replica identity here, and ERROR if we find
+ * a conflict on a non-replica-identity index. Or at least raise a WARNING
+ * that an inconsistency may arise.
  */
 Oid
 pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
