@@ -28,6 +28,30 @@ SELECT * FROM test_tbl;
 SELECT * FROM test_mv;
 
 \c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+  CREATE UNIQUE INDEX ON public.test_mv(id);
+);
+INSERT INTO test_tbl VALUES (3, 'c');
+
+REFRESH MATERIALIZED VIEW CONCURRENTLY test_mv;
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
+INSERT INTO test_tbl VALUES (4, 'd');
+
+SELECT pglogical.replicate_ddl_command($$
+  REFRESH MATERIALIZED VIEW test_mv;
+$$);
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
+INSERT INTO test_tbl VALUES (5, 'e');
+
+SELECT pglogical.replicate_ddl_command($$
+  REFRESH MATERIALIZED VIEW CONCURRENTLY test_mv;
+$$);
+
+\c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;

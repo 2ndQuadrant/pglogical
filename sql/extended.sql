@@ -545,6 +545,13 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT a, b, c FROM tst_range_array ORDER BY a;
 
+\c :provider_dsn
+-- Verify that swap_relation_files(...) breaks replication
+-- as invoked by CLUSTER, VACUUM FULL, or REFRESH MATERIALIZED VIEW
+VACUUM FULL tst_one_array;
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
 
 \c :provider_dsn
 \set VERBOSITY terse
