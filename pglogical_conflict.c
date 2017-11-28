@@ -47,7 +47,8 @@ int		pglogical_conflict_log_level = LOG;
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
  * is setup to match 'rel' (*NOT* idxrel!).
  *
- * Returns whether any column contains NULLs.
+ * Returns whether any column in the passed tuple contains a NULL for an
+ * indexed field.
  */
 static bool
 build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, PGLogicalTupleData *tup)
@@ -70,6 +71,10 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, PGLogicalTuple
 	Assert(!isnull);
 	indkey = (int2vector *) DatumGetPointer(indkeyDatum);
 
+	/*
+	 * Examine each indexed attribute to ensure the passed tuple's matching
+	 * value isn't NULL and we have an equality operator for it.
+	 */
 	for (attoff = 0; attoff < RelationGetNumberOfAttributes(idxrel); attoff++)
 	{
 		Oid			operator;
@@ -126,6 +131,11 @@ find_index_tuple(ScanKey skey, Relation rel, Relation idxrel,
 	SnapshotData snap;
 	TransactionId xwait;
 
+	/*
+	 * We need SnapshotDirty because we're doing uniqueness lookups that must
+	 * consider rows added/updated by concurrent transactions, just like a
+	 * normal UNIQUE check does.
+	 */
 	InitDirtySnapshot(snap);
 	scan = index_beginscan(rel, idxrel, &snap,
 						   RelationGetNumberOfAttributes(idxrel),
@@ -143,16 +153,22 @@ retry:
 		ExecStoreTuple(scantuple, slot, InvalidBuffer, false);
 		ExecMaterializeSlot(slot);
 
+		/*
+		 * Did any concurrent txn affect the tuple? (See
+		 * HeapTupleSatisfiesDirty for how we get this).
+		 */
 		xwait = TransactionIdIsValid(snap.xmin) ?
 			snap.xmin : snap.xmax;
 
 		if (TransactionIdIsValid(xwait))
 		{
+			/* Wait for the specified transaction to commit or abort */
 			XactLockTableWait(xwait, NULL, NULL, XLTW_None);
 			goto retry;
 		}
 	}
 
+	/* Matching tuple found, no concurrent txns modifying it */
 	if (found)
 	{
 		Buffer buf;
@@ -177,9 +193,16 @@ retry:
 		switch (res)
 		{
 			case HeapTupleMayBeUpdated:
+				/* lock was successfully acquired */
 				break;
 			case HeapTupleUpdated:
-				/* XXX: Improve handling here */
+				/*
+				 * We lost a race between when we looked up the tuple and
+				 * checked for concurrent modifying txns and when we tried to
+				 * lock the matched tuple.
+				 *
+				 * XXX: Improve handling here.
+				 */
 				ereport(LOG,
 						(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 						 errmsg("concurrent update, retrying")));
@@ -244,9 +267,9 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
  * non-deterministic behaviour in cases where we resolve one conflict using one
  * index, then a second conflict using a different index.
  *
- * We should really respect the replica identity here, and ERROR if we find
- * a conflict on a non-replica-identity index. Or at least raise a WARNING
- * that an inconsistency may arise.
+ * We should really respect the replica identity more (i.e. use
+ * pglogical_tuple_find_replidx). Or at least raise a WARNING that an
+ * inconsistency may arise.
  */
 Oid
 pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
@@ -530,6 +553,17 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 		strcpy(local_tup_ts_str,
 			timestamptz_to_str(local_tuple_commit_ts));
 
+	/*
+	 * We try to provide a lot of information about conflicting tuples because
+	 * the conflicts are often transient and timing-sensitive. It's rare that
+	 * we can examine a stopped system or reproduce them at leisure. So the
+	 * more info we have in the logs, the better chance we have of diagnosing
+	 * application issues. It's worth paying the price of some log spam.
+	 *
+	 * This deliberately somewhat overlaps with the context info we log with
+	 * log_error_verbosity=verbose because we don't necessarily have all that
+	 * info enabled.
+	 */
 	switch (conflict_type)
 	{
 		case CONFLICT_INSERT_INSERT:
