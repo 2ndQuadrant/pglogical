@@ -50,7 +50,8 @@ typedef enum PGLogicalConflictType
 
 extern bool pglogical_tuple_find_replidx(EState *estate,
 										 PGLogicalTupleData *tuple,
-										 TupleTableSlot *oldslot);
+										 TupleTableSlot *oldslot,
+										 Oid *idxrelid);
 
 extern Oid pglogical_tuple_find_conflict(EState *estate,
 										 PGLogicalTupleData *tuple,
@@ -70,7 +71,8 @@ extern void pglogical_report_conflict(PGLogicalConflictType conflict_type, Relat
 						  PGLogicalConflictResolution resolution,
 						  TransactionId local_tuple_xid,
 						  RepOriginId local_tuple_origin,
-						  TimestampTz local_tuple_timestamp);
+						  TimestampTz local_tuple_timestamp,
+						  Oid conflict_idx_id);
 
 extern bool pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 									   GucSource source);

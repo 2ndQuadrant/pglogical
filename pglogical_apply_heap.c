@@ -273,7 +273,7 @@ void
 pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 {
 	ApplyExecState	   *aestate;
-	Oid					conflicts;
+	Oid					conflicts_idx_id;
 	TupleTableSlot	   *localslot;
 	HeapTuple			remotetuple;
 	HeapTuple			applytuple;
@@ -296,9 +296,9 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 					);
 
 	/* Check for existing tuple with same key */
-	conflicts = pglogical_tuple_find_conflict(aestate->estate,
-											  newtup,
-											  localslot);
+	conflicts_idx_id = pglogical_tuple_find_conflict(aestate->estate,
+													 newtup,
+													 localslot);
 
 	/* Process and store remote tuple in the slot */
 	oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(aestate->estate));
@@ -327,7 +327,8 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	/* trigger might have changed tuple */
 	remotetuple = ExecMaterializeSlot(aestate->slot);
 
-	if (OidIsValid(conflicts))
+	/* Did we find matching key in any candidate-key index? */
+	if (OidIsValid(conflicts_idx_id))
 	{
 		TransactionId		xmin;
 		TimestampTz			local_ts;
@@ -345,7 +346,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
 								  localslot->tts_tuple, remotetuple,
 								  applytuple, resolution, xmin,
-								  local_origin, local_ts);
+								  local_origin, local_ts, conflicts_idx_id);
 
 		if (apply)
 		{
@@ -429,6 +430,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	HeapTuple			remotetuple;
 	List			   *recheckIndexes = NIL;
 	MemoryContext		oldctx;
+	Oid					replident_idx_id;
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
@@ -438,7 +440,8 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	/* Search for existing tuple with same key */
-	found = pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot);
+	found = pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot,
+										 &replident_idx_id);
 
 	/*
 	 * Tuple found.
@@ -506,7 +509,8 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 			pglogical_report_conflict(CONFLICT_UPDATE_UPDATE, rel->rel,
 									  localslot->tts_tuple, remotetuple,
 									  applytuple, resolution, xmin,
-									  local_origin, local_ts);
+									  local_origin, local_ts,
+									  replident_idx_id);
 
 			if (applytuple != remotetuple)
 				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
@@ -559,7 +563,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel->rel, NULL,
 								  remotetuple, NULL, PGLogicalResolution_Skip,
 								  InvalidTransactionId, InvalidRepOriginId,
-								  (TimestampTz)0);
+								  (TimestampTz)0, replident_idx_id);
 	}
 
 	/* Cleanup. */
@@ -577,6 +581,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 {
 	ApplyExecState	   *aestate;
 	TupleTableSlot	   *localslot;
+	Oid					replident_idx_id;
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
@@ -585,7 +590,8 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot))
+	if (pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot,
+									 &replident_idx_id))
 	{
 		if (aestate->resultRelInfo->ri_TrigDesc &&
 			aestate->resultRelInfo->ri_TrigDesc->trig_delete_before_row)
@@ -620,7 +626,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel->rel, NULL,
 								  remotetuple, NULL, PGLogicalResolution_Skip,
 								  InvalidTransactionId, InvalidRepOriginId,
-								  (TimestampTz)0);
+								  (TimestampTz)0, replident_idx_id);
 	}
 
 	/* Cleanup. */

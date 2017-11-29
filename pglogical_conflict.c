@@ -22,6 +22,8 @@
 #include "access/transam.h"
 #include "access/xact.h"
 
+#include "catalog/pg_type.h"
+
 #include "executor/executor.h"
 
 #include "parser/parse_relation.h"
@@ -36,6 +38,7 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
+#include "utils/typcache.h"
 
 #include "pglogical_conflict.h"
 #include "pglogical_proto_native.h"
@@ -119,7 +122,7 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, PGLogicalTuple
  * Search the index 'idxrel' for a tuple identified by 'skey' in 'rel'.
  *
  * If a matching tuple is found lock it with lockmode, fill the slot with its
- * contents and return true, return false is returned otherwise.
+ * contents and return true, false is returned otherwise.
  */
 static bool
 find_index_tuple(ScanKey skey, Relation rel, Relation idxrel,
@@ -219,11 +222,14 @@ retry:
 }
 
 /*
- * Find tuple using REPLICA IDENTITY index.
+ * Find tuple using REPLICA IDENTITY index and output it in 'oldslot'
+ * if found.
+ *
+ * The index oid is also output.
  */
 bool
 pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
-							 TupleTableSlot *oldslot)
+							 TupleTableSlot *oldslot, Oid *idxrelid)
 {
 	ResultRelInfo  *relinfo = estate->es_result_relation_info;
 	Oid				idxoid;
@@ -241,12 +247,13 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
 						RelationGetRelid(relinfo->ri_RelationDesc)),
 				 errhint("The REPLICA IDENTITY index is usually the PRIMARY KEY. See the PostgreSQL docs for ALTER TABLE ... REPLICA IDENTITY")));
 	}
+	*idxrelid = idxoid;
 	idxrel = index_open(idxoid, RowExclusiveLock);
 
-	/* Buold scan key for just opened index*/
+	/* Build scan key for just opened index*/
 	build_index_scan_key(index_key, relinfo->ri_RelationDesc, idxrel, tuple);
 
-	/* Try to find the row. */
+	/* Try to find the row and store any matching row in 'oldslot'. */
 	found = find_index_tuple(index_key, relinfo->ri_RelationDesc, idxrel,
 							 LockTupleExclusive, oldslot);
 
@@ -257,7 +264,8 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
 }
 
 /*
- * Find the tuple in a table using any index.
+ * Find the tuple in a table using any index and returns the conflicting
+ * index's oid, if any conflict found.
  *
  * This is not wholly safe. It does not consider the table's upstream replica
  * identity, and may choose to resolve the conflict on a unique index that
@@ -306,7 +314,7 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 								 idxrel, tuple))
 			continue;
 
-		/* Try to find conflicting row. */
+		/* Try to find conflicting row and store in 'oldslot' */
 		found = find_index_tuple(index_key, relinfo->ri_RelationDesc,
 								 idxrel, LockTupleExclusive, oldslot);
 
@@ -535,8 +543,6 @@ conflict_resolution_to_string(PGLogicalConflictResolution resolution)
 
 /*
  * Log the conflict to server log.
- *
- * TODO: provide more detail.
  */
 void
 pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
@@ -545,7 +551,8 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 						  PGLogicalConflictResolution resolution,
 						  TransactionId local_tuple_xid,
 						  RepOriginId local_tuple_origin,
-						  TimestampTz local_tuple_commit_ts)
+						  TimestampTz local_tuple_commit_ts,
+						  Oid conflict_idx_oid)
 {
 	char local_tup_ts_str[MAXDATELEN];
 	memset(local_tup_ts_str, 0, MAXDATELEN);
@@ -570,10 +577,11 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 		case CONFLICT_UPDATE_UPDATE:
 			ereport(pglogical_conflict_log_level,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
-					 errmsg("CONFLICT: remote %s on relation %s. Resolution: %s.",
+					 errmsg("CONFLICT: remote %s on relation %s index %s. Resolution: %s.",
 							CONFLICT_INSERT_INSERT ? "INSERT" : "UPDATE",
 							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
 													   RelationGetRelationName(rel)),
+							OidIsValid(conflict_idx_oid) ? get_rel_name(conflict_idx_oid) : "(unknown)",
 							conflict_resolution_to_string(resolution)),
 					 errdetail("existing tuple xid=%u,origin=%u,timestamp=%s; remote xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
 								local_tuple_xid, local_tuple_origin,
@@ -587,10 +595,11 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 		case CONFLICT_DELETE_DELETE:
 			ereport(pglogical_conflict_log_level,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
-					 errmsg("CONFLICT: remote %s on relation %s (tuple not found). Resolution: %s.",
+					 errmsg("CONFLICT: remote %s on relation %s replica identity index %s (tuple not found). Resolution: %s.",
 							CONFLICT_UPDATE_DELETE ? "UPDATE" : "DELETE",
 							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
 													   RelationGetRelationName(rel)),
+							OidIsValid(conflict_idx_oid) ? get_rel_name(conflict_idx_oid) : "(unknown)",
 							conflict_resolution_to_string(resolution)),
 					 errdetail("remote xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
 							   replorigin_session_origin,
