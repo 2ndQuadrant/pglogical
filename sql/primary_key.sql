@@ -25,14 +25,14 @@ INSERT INTO pk_users VALUES(2,12,1,'User2', 'Address2');
 INSERT INTO pk_users VALUES(3,13,2,'User3', 'Address3');
 INSERT INTO pk_users VALUES(4,14,2,'User4', 'Address4');
 
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
 
 SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
 
 \c :provider_dsn
 
@@ -42,9 +42,25 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
+
+-- Set up for secondary unique index and two-index
+-- conflict handling cases.
+INSERT INTO pk_users VALUES (5000,5000,0,'sub1',NULL);
+INSERT INTO pk_users VALUES (6000,6000,0,'sub2',NULL);
+\c :provider_dsn
+-- Resolve a conflict on the secondary unique constraint
+INSERT INTO pk_users VALUES (5001,5000,1,'pub1',NULL);
+-- And a conflict that violates two constraints
+INSERT INTO pk_users VALUES (6000,6000,1,'pub2',NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
+\c :subscriber_dsn
+SELECT * FROM pk_users WHERE id IN (5000,5001,6000) ORDER BY id;
 
 \c :provider_dsn
+DELETE FROM pk_users WHERE id IN (5000,5001,6000);
+
 \set VERBOSITY terse
 
 SELECT pglogical.replicate_ddl_command($$
@@ -63,7 +79,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 SELECT attname, attnotnull, attisdropped from pg_attribute where attrelid = 'pk_users'::regclass and attnum > 0 order by attnum;
 
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
 
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress3' WHERE another_id=12;
@@ -72,7 +88,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
 
 \c :provider_dsn
 UPDATE pk_users SET address='UpdatedAddress4' WHERE a_id=2;
@@ -83,7 +99,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 INSERT INTO pk_users VALUES(4,15,2,'User5', 'Address5');
 -- subscriber now has duplicated value in id field while provider does not
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
 
 \c :provider_dsn
 \set VERBOSITY terse
@@ -146,7 +162,7 @@ UPDATE pk_users SET address='UpdatedAddress2' WHERE id=2;
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
-SELECT * FROM pk_users;
+SELECT * FROM pk_users ORDER BY id;
 
 \c :provider_dsn
 
@@ -255,9 +271,12 @@ SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;
 ALTER TABLE public.pk_users DROP CONSTRAINT pk_users_pkey,
     ADD CONSTRAINT pk_users_pkey PRIMARY KEY (id) NOT DEFERRABLE;
 
-\c :provider_dsn
 
--- then replay
+-- then replay. Toggle the subscription's enabled state
+-- to make it recover faster for a quicker test run.
+SELECT pglogical.alter_subscription_disable('test_subscription', true);
+SELECT pglogical.alter_subscription_enable('test_subscription', true);
+\c :provider_dsn
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
@@ -268,6 +287,22 @@ SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;
 -- the UPDATEs
 SELECT id FROM pk_users WHERE id IN (90, 91, 100, 101) ORDER BY id;
 
+-- Demonstrate that we properly handle wide conflict rows
+\c :subscriber_dsn
+INSERT INTO pk_users (id, another_id, address)
+VALUES (200,2000,repeat('waah daah sooo mooo', 1000));
+
+\c :provider_dsn
+INSERT INTO pk_users (id, another_id, address)
+VALUES (200,2000,repeat('boop boop doop boop', 1000));
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
+\c :subscriber_dsn
+SELECT id, another_id, left(address,30) AS address_abbrev
+FROM pk_users WHERE another_id = 2000;
+
+\c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.pk_users CASCADE;
