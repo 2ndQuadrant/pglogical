@@ -280,6 +280,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	PGLogicalConflictResolution resolution;
 	List			   *recheckIndexes = NIL;
 	MemoryContext		oldctx;
+	bool				has_before_triggers = false;
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
@@ -295,7 +296,10 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 #endif
 					);
 
-	/* Check for existing tuple with same key */
+	/*
+	 * Check for existing tuple with same key in any unique index containing
+	 * only normal columns. This doesn't just check the replica identity index.
+	 */
 	conflicts_idx_id = pglogical_tuple_find_conflict(aestate->estate,
 													 newtup,
 													 localslot);
@@ -311,6 +315,8 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	if (aestate->resultRelInfo->ri_TrigDesc &&
 		aestate->resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
+		has_before_triggers = true;
+
 		aestate->slot = ExecBRInsertTriggers(aestate->estate,
 											 aestate->resultRelInfo,
 											 aestate->slot);
@@ -334,19 +340,22 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 		TimestampTz			local_ts;
 		RepOriginId			local_origin;
 		bool				apply;
+		bool				local_origin_found;
 
-		(void) get_tuple_origin(localslot->tts_tuple, &xmin,
-								&local_origin, &local_ts);
+		local_origin_found = get_tuple_origin(localslot->tts_tuple, &xmin,
+											  &local_origin, &local_ts);
 
 		/* Tuple already exists, try resolving conflict. */
 		apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
 									 remotetuple, &applytuple,
 									 &resolution);
 
-		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel->rel,
-								  localslot->tts_tuple, remotetuple,
+		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel,
+								  localslot->tts_tuple, NULL, remotetuple,
 								  applytuple, resolution, xmin,
-								  local_origin, local_ts, conflicts_idx_id);
+								  local_origin_found, local_origin,
+								  local_ts, conflicts_idx_id,
+								  has_before_triggers);
 
 		if (apply)
 		{
@@ -431,6 +440,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	List			   *recheckIndexes = NIL;
 	MemoryContext		oldctx;
 	Oid					replident_idx_id;
+	bool				has_before_triggers = false;
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
@@ -444,9 +454,10 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 										 &replident_idx_id);
 
 	/*
-	 * Tuple found.
+	 * Tuple found, update the local tuple.
 	 *
-	 * Note this will fail if there are other conflicting unique indexes.
+	 * Note this will fail if there are other unique indexes and one or more of
+	 * them would be violated by the new tuple.
 	 */
 	if (found)
 	{
@@ -472,6 +483,8 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		if (aestate->resultRelInfo->ri_TrigDesc &&
 			aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
 		{
+			has_before_triggers = true;
+
 			aestate->slot = ExecBRUpdateTriggers(aestate->estate,
 												 &aestate->epqstate,
 												 aestate->resultRelInfo,
@@ -506,11 +519,12 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 										 remotetuple, &applytuple,
 										 &resolution);
 
-			pglogical_report_conflict(CONFLICT_UPDATE_UPDATE, rel->rel,
-									  localslot->tts_tuple, remotetuple,
-									  applytuple, resolution, xmin,
-									  local_origin, local_ts,
-									  replident_idx_id);
+			pglogical_report_conflict(CONFLICT_UPDATE_UPDATE, rel,
+									  localslot->tts_tuple, oldtup,
+									  remotetuple, applytuple, resolution,
+									  xmin, local_origin_found, local_origin,
+									  local_ts, replident_idx_id,
+									  has_before_triggers);
 
 			if (applytuple != remotetuple)
 				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
@@ -560,10 +574,11 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 									  newtup->values,
 									  newtup->nulls);
-		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel->rel, NULL,
+		pglogical_report_conflict(CONFLICT_UPDATE_DELETE, rel, NULL, oldtup,
 								  remotetuple, NULL, PGLogicalResolution_Skip,
-								  InvalidTransactionId, InvalidRepOriginId,
-								  (TimestampTz)0, replident_idx_id);
+								  InvalidTransactionId, false,
+								  InvalidRepOriginId, (TimestampTz)0,
+								  replident_idx_id, has_before_triggers);
 	}
 
 	/* Cleanup. */
@@ -582,6 +597,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	ApplyExecState	   *aestate;
 	TupleTableSlot	   *localslot;
 	Oid					replident_idx_id;
+	bool				has_before_triggers = false;
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
@@ -601,6 +617,8 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 												 aestate->resultRelInfo,
 												 &localslot->tts_tuple->t_self,
 												 NULL);
+
+			has_before_triggers = true;
 
 			if (!dodelete)		/* "do nothing" */
 			{
@@ -623,10 +641,11 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 		/* The tuple to be deleted could not be found. */
 		HeapTuple remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 												oldtup->values, oldtup->nulls);
-		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel->rel, NULL,
+		pglogical_report_conflict(CONFLICT_DELETE_DELETE, rel, NULL, oldtup,
 								  remotetuple, NULL, PGLogicalResolution_Skip,
-								  InvalidTransactionId, InvalidRepOriginId,
-								  (TimestampTz)0, replident_idx_id);
+								  InvalidTransactionId, false,
+								  InvalidRepOriginId, (TimestampTz)0,
+								  replident_idx_id, has_before_triggers);
 	}
 
 	/* Cleanup. */

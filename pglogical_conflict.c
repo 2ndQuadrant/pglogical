@@ -46,6 +46,9 @@
 int		pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
 int		pglogical_conflict_log_level = LOG;
 
+static void tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc,
+	HeapTuple tuple);
+
 /*
  * Setup a ScanKey for a search in the relation 'rel' for a tuple 'key' that
  * is setup to match 'rel' (*NOT* idxrel!).
@@ -417,16 +420,15 @@ get_tuple_origin(HeapTuple local_tuple, TransactionId *xmin,
 				 RepOriginId *local_origin, TimestampTz *local_ts)
 {
 
+	*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
 	if (!track_commit_timestamp)
 	{
-		*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
 		*local_origin = replorigin_session_origin;
 		*local_ts = replorigin_session_origin_timestamp;
 		return false;
 	}
 	else
 	{
-		*xmin = HeapTupleHeaderGetXmin(local_tuple->t_data);
 		if (TransactionIdIsValid(*xmin) && !TransactionIdIsNormal(*xmin))
 		{
 			/*
@@ -543,22 +545,67 @@ conflict_resolution_to_string(PGLogicalConflictResolution resolution)
 
 /*
  * Log the conflict to server log.
+ *
+ * There are number of tuples passed:
+ *
+ * - The local tuple we conflict with or NULL if not found [localtuple];
+ *
+ * - If the remote tuple was an update, the key of the old tuple
+ *   as a PGLogicalTuple [oldkey]
+ *
+ * - The remote tuple, after we fill any defaults and apply any local
+ *   BEFORE triggers but before conflict resolution [remotetuple];
+ *
+ * - The tuple we'll actually apply if any, after conflict resolution
+ *   [applytuple]
+ *
+ * The PGLogicalRelation's name info is for the remote rel. If we add relation
+ * mapping we'll need to get the name/namespace of the local relation too.
+ *
+ * This runs in MessageContext so we don't have to worry about leaks, but
+ * we still try to free the big chunks as we go.
  */
 void
-pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
-						  HeapTuple localtuple, HeapTuple remotetuple,
+pglogical_report_conflict(PGLogicalConflictType conflict_type,
+						  PGLogicalRelation *rel,
+						  HeapTuple localtuple,
+						  PGLogicalTupleData *oldkey,
+						  HeapTuple remotetuple,
 						  HeapTuple applytuple,
 						  PGLogicalConflictResolution resolution,
 						  TransactionId local_tuple_xid,
+						  bool found_local_origin,
 						  RepOriginId local_tuple_origin,
 						  TimestampTz local_tuple_commit_ts,
-						  Oid conflict_idx_oid)
+						  Oid conflict_idx_oid,
+						  bool has_before_triggers)
 {
-	char local_tup_ts_str[MAXDATELEN];
+	char local_tup_ts_str[MAXDATELEN] = "(unset)";
+	StringInfoData localtup, remotetup;
+	TupleDesc desc = RelationGetDescr(rel->rel);
+	const char *idxname = "(unknown)";
+	const char *qualrelname;
+
 	memset(local_tup_ts_str, 0, MAXDATELEN);
-	if (local_tuple_commit_ts != 0)
+	if (found_local_origin)
 		strcpy(local_tup_ts_str,
 			timestamptz_to_str(local_tuple_commit_ts));
+
+	initStringInfo(&remotetup);
+	tuple_to_stringinfo(&remotetup, desc, remotetuple);
+
+	if (localtuple != NULL)
+	{
+		initStringInfo(&localtup);
+		tuple_to_stringinfo(&localtup, desc, localtuple);
+	}
+
+	if (OidIsValid(conflict_idx_oid))
+		idxname = get_rel_name(conflict_idx_oid);
+
+	qualrelname = quote_qualified_identifier(
+		get_namespace_name(RelationGetNamespace(rel->rel)),
+		RelationGetRelationName(rel->rel));
 
 	/*
 	 * We try to provide a lot of information about conflicting tuples because
@@ -577,19 +624,19 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 		case CONFLICT_UPDATE_UPDATE:
 			ereport(pglogical_conflict_log_level,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
-					 errmsg("CONFLICT: remote %s on relation %s index %s. Resolution: %s.",
+					 errmsg("CONFLICT: remote %s on relation %s (local index %s). Resolution: %s.",
 							CONFLICT_INSERT_INSERT ? "INSERT" : "UPDATE",
-							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
-													   RelationGetRelationName(rel)),
-							OidIsValid(conflict_idx_oid) ? get_rel_name(conflict_idx_oid) : "(unknown)",
+							qualrelname, idxname,
 							conflict_resolution_to_string(resolution)),
-					 errdetail("existing tuple xid=%u,origin=%u,timestamp=%s; remote xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
-								local_tuple_xid, local_tuple_origin,
-								local_tup_ts_str,
-								replorigin_session_origin,
-								timestamptz_to_str(replorigin_session_origin_timestamp),
-								(uint32)(replorigin_session_origin_lsn<<32),
-								(uint32)replorigin_session_origin_lsn)));
+					 errdetail("existing local tuple {%s} xid=%u,origin=%d,timestamp=%s; remote tuple {%s}%s in xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
+							   localtup.data, local_tuple_xid,
+							   found_local_origin ? (int)local_tuple_origin : -1,
+							   local_tup_ts_str,
+							   remotetup.data, has_before_triggers ? "*":"",
+							   replorigin_session_origin,
+							   timestamptz_to_str(replorigin_session_origin_timestamp),
+							   (uint32)(replorigin_session_origin_lsn<<32),
+							   (uint32)replorigin_session_origin_lsn)));
 			break;
 		case CONFLICT_UPDATE_DELETE:
 		case CONFLICT_DELETE_DELETE:
@@ -597,11 +644,10 @@ pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
 					(errcode(ERRCODE_INTEGRITY_CONSTRAINT_VIOLATION),
 					 errmsg("CONFLICT: remote %s on relation %s replica identity index %s (tuple not found). Resolution: %s.",
 							CONFLICT_UPDATE_DELETE ? "UPDATE" : "DELETE",
-							quote_qualified_identifier(get_namespace_name(RelationGetNamespace(rel)),
-													   RelationGetRelationName(rel)),
-							OidIsValid(conflict_idx_oid) ? get_rel_name(conflict_idx_oid) : "(unknown)",
+							qualrelname, idxname,
 							conflict_resolution_to_string(resolution)),
-					 errdetail("remote xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
+					 errdetail("remote tuple {%s}%s in xact origin=%u,timestamp=%s,commit_lsn=%X/%X",
+							   remotetup.data, has_before_triggers ? "*":"",
 							   replorigin_session_origin,
 							   timestamptz_to_str(replorigin_session_origin_timestamp),
 							   (uint32)(replorigin_session_origin_lsn<<32),
@@ -629,4 +675,112 @@ pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 	}
 
 	return true;
+}
+
+
+/*
+ * print the tuple 'tuple' into the StringInfo s
+ *
+ * (Based on bdr2)
+ */
+static void
+tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple)
+{
+	int			natt;
+	Oid			oid;
+	bool		first = true;
+
+	static const int MAX_CONFLICT_LOG_ATTR_LEN = 20;
+
+	/* print oid of tuple, it's not included in the TupleDesc */
+	if ((oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
+	{
+		appendStringInfo(s, "oid[oid]:%u", oid);
+	}
+
+	/* print all columns individually */
+	for (natt = 0; natt < tupdesc->natts; natt++)
+	{
+		Form_pg_attribute attr; /* the attribute itself */
+		Oid			typid;		/* type of current attribute */
+		HeapTuple	type_tuple; /* information about a type */
+		Form_pg_type type_form;
+		Oid			typoutput;	/* output function */
+		bool		typisvarlena;
+		Datum		origval;	/* possibly toasted Datum */
+		Datum		val	= PointerGetDatum(NULL); /* definitely detoasted Datum */
+		char	   *outputstr = NULL;
+		bool		isnull;		/* column is null? */
+
+		attr = tupdesc->attrs[natt];
+
+		/*
+		 * don't print dropped columns, we can't be sure everything is
+		 * available for them
+		 */
+		if (attr->attisdropped)
+			continue;
+
+		/*
+		 * Don't print system columns
+		 */
+		if (attr->attnum < 0)
+			continue;
+
+		typid = attr->atttypid;
+
+		/* gather type name */
+		type_tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
+		if (!HeapTupleIsValid(type_tuple))
+			elog(ERROR, "cache lookup failed for type %u", typid);
+		type_form = (Form_pg_type) GETSTRUCT(type_tuple);
+
+		/* print attribute name */
+		if (first)
+			first = false;
+		else
+			appendStringInfoChar(s, ' ');
+		appendStringInfoString(s, NameStr(attr->attname));
+
+		/* print attribute type */
+		appendStringInfoChar(s, '[');
+		appendStringInfoString(s, NameStr(type_form->typname));
+		appendStringInfoChar(s, ']');
+
+		/* query output function */
+		getTypeOutputInfo(typid,
+						  &typoutput, &typisvarlena);
+
+		ReleaseSysCache(type_tuple);
+
+		/* get Datum from tuple */
+		origval = heap_getattr(tuple, natt + 1, tupdesc, &isnull);
+
+		if (isnull)
+			outputstr = "(null)";
+		else if (typisvarlena && VARATT_IS_EXTERNAL_ONDISK(origval))
+			outputstr = "(unchanged-toast-datum)";
+		else if (typisvarlena)
+			val = PointerGetDatum(PG_DETOAST_DATUM(origval));
+		else
+			val = origval;
+
+		/* print data */
+		if (outputstr == NULL)
+			outputstr = OidOutputFunctionCall(typoutput, val);
+
+		/*
+		 * Abbreviate the Datum if it's too long. This may make it syntatically
+		 * invalid, but it's not like we're writing out a valid ROW(...) as it
+		 * is.
+		 */
+		if (strlen(outputstr) > MAX_CONFLICT_LOG_ATTR_LEN)
+		{
+			/* The null written at the end of strcpy will truncate the string */
+			strcpy(&outputstr[MAX_CONFLICT_LOG_ATTR_LEN-5], "...");
+		}
+
+		appendStringInfoChar(s, ':');
+		appendStringInfoString(s, outputstr);
+	}
 }

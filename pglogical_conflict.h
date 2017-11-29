@@ -65,14 +65,19 @@ extern bool try_resolve_conflict(Relation rel, HeapTuple localtuple,
 								 PGLogicalConflictResolution *resolution);
 
 
-extern void pglogical_report_conflict(PGLogicalConflictType conflict_type, Relation rel,
-						  HeapTuple localtuple, HeapTuple remotetuple,
+extern void pglogical_report_conflict(PGLogicalConflictType conflict_type,
+						  PGLogicalRelation *rel,
+						  HeapTuple localtuple,
+						  PGLogicalTupleData *oldkey,
+						  HeapTuple remotetuple,
 						  HeapTuple applytuple,
 						  PGLogicalConflictResolution resolution,
 						  TransactionId local_tuple_xid,
+						  bool found_local_origin,
 						  RepOriginId local_tuple_origin,
 						  TimestampTz local_tuple_timestamp,
-						  Oid conflict_idx_id);
+						  Oid conflict_idx_id,
+						  bool has_before_triggers);
 
 extern bool pglogical_conflict_resolver_check_hook(int *newval, void **extra,
 									   GucSource source);
