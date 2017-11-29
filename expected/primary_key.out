@@ -502,6 +502,159 @@ FROM pk_users WHERE another_id = 2000;
  200 |       2000 | boop boop doop boopboop boop d
 (1 row)
 
+-- DELETE conflicts; the DELETE is discarded
+\c :subscriber_dsn
+DELETE FROM pk_users WHERE id = 1;
+\c :provider_dsn
+DELETE FROM pk_users WHERE id = 1;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+-- UPDATE conflicts violating multiple constraints.
+-- For this one we need to put the secondary unique
+-- constraint back.
+TRUNCATE TABLE pk_users;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+SELECT pglogical.replicate_ddl_command($$
+  CREATE UNIQUE INDEX pk_users_another_id_idx ON public.pk_users(another_id);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+\c :subscriber_dsn
+INSERT INTO pk_users VALUES
+(1,10,0,'sub',NULL),
+(2,20,0,'sub',NULL);
+\c :provider_dsn
+INSERT INTO pk_users VALUES
+(3,11,1,'pub',NULL),
+(4,22,1,'pub',NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM pk_users ORDER BY id;
+ id | another_id | a_id | name | address 
+----+------------+------+------+---------
+  1 |         10 |    0 | sub  | 
+  2 |         20 |    0 | sub  | 
+  3 |         11 |    1 | pub  | 
+  4 |         22 |    1 | pub  | 
+(4 rows)
+
+\c :provider_dsn
+-- UPDATE one of our upstream tuples to violate both constraints on the
+-- downstream. The constraints are independent but there's only one existing
+-- downstream tuple that violates both constraints. We'll match it by replica
+-- identity, replace it, and satisfy the other constraint in the process.
+UPDATE pk_users SET id=1, another_id = 10, name='should_error' WHERE id = 3 AND another_id = 11;
+SELECT * FROM pk_users ORDER BY id;
+ id | another_id | a_id |     name     | address 
+----+------------+------+--------------+---------
+  1 |         10 |    1 | should_error | 
+  4 |         22 |    1 | pub          | 
+(2 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+-- UPDATEs to missing rows could either resurrect the row or conclude it
+-- shouldn't exist and discard it. Currently pgl unconditionally discards, so
+-- this row's name is a misnomer.
+\c :subscriber_dsn
+DELETE FROM pk_users WHERE id = 4 AND another_id = 22;
+\c :provider_dsn
+UPDATE pk_users SET name = 'jesus' WHERE id = 4;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+-- No resurrection here
+SELECT * FROM pk_users ORDER BY id;
+ id | another_id | a_id |     name     | address 
+----+------------+------+--------------+---------
+  1 |         10 |    1 | should_error | 
+  2 |         20 |    0 | sub          | 
+  3 |         11 |    1 | pub          | 
+(3 rows)
+
+-- But if the UPDATE would create a row that violates
+-- a secondary unique index (but doesn't match the replident)
+-- we'll ERROR on the secondary index.
+INSERT INTO pk_users VALUES (5,55,0,'sub',NULL);
+\c :provider_dsn
+INSERT INTO pk_users VALUES (6,66,0,'sub',NULL);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+-- The new row (6,55) will conflict with (5,55)
+UPDATE pk_users SET another_id = 55, name = 'pub_should_error' WHERE id = 6;
+SELECT * FROM pk_users ORDER BY id;
+ id | another_id | a_id |       name       | address 
+----+------------+------+------------------+---------
+  1 |         10 |    1 | should_error     | 
+  4 |         22 |    1 | jesus            | 
+  6 |         55 |    0 | pub_should_error | 
+(3 rows)
+
+-- We'll time out due to apply errors
+BEGIN;
+SET statement_timeout = '2s';
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ERROR:  canceling statement due to statement timeout
+ROLLBACK;
+-- This time we'll fix it by deleting the conflicting row
+\c :subscriber_dsn
+SELECT * FROM pk_users ORDER BY id;
+ id | another_id | a_id |     name     | address 
+----+------------+------+--------------+---------
+  1 |         10 |    1 | should_error | 
+  2 |         20 |    0 | sub          | 
+  3 |         11 |    1 | pub          | 
+  5 |         55 |    0 | sub          | 
+  6 |         66 |    0 | sub          | 
+(5 rows)
+
+DELETE FROM pk_users WHERE id = 5;
+\c :provider_dsn
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM pk_users ORDER BY id;
+ id | another_id | a_id |       name       | address 
+----+------------+------+------------------+---------
+  1 |         10 |    1 | should_error     | 
+  2 |         20 |    0 | sub              | 
+  3 |         11 |    1 | pub              | 
+  6 |         55 |    0 | pub_should_error | 
+(4 rows)
+
 \c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
