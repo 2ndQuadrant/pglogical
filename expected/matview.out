@@ -26,28 +26,28 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
  
 (1 row)
 
-SELECT * FROM test_tbl;
+SELECT * FROM test_tbl ORDER BY id;
  id | data 
 ----+------
   1 | a
   2 | b
 (2 rows)
 
-SELECT * FROM test_mv;
+SELECT * FROM test_mv ORDER BY id;
  id | data 
 ----+------
   1 | a
 (1 row)
 
 \c :subscriber_dsn
-SELECT * FROM test_tbl;
+SELECT * FROM test_tbl ORDER BY id;
  id | data 
 ----+------
   1 | a
   2 | b
 (2 rows)
 
-SELECT * FROM test_mv;
+SELECT * FROM test_mv ORDER BY id;
  id | data 
 ----+------
 (0 rows)
@@ -55,32 +55,100 @@ SELECT * FROM test_mv;
 \c :provider_dsn
 SELECT pglogical.replicate_ddl_command($$
   CREATE UNIQUE INDEX ON public.test_mv(id);
-);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
 INSERT INTO test_tbl VALUES (3, 'c');
-
 REFRESH MATERIALIZED VIEW CONCURRENTLY test_mv;
-
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
 
 INSERT INTO test_tbl VALUES (4, 'd');
-
 SELECT pglogical.replicate_ddl_command($$
-  REFRESH MATERIALIZED VIEW test_mv;
+  REFRESH MATERIALIZED VIEW public.test_mv;
 $$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
 
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
 
 INSERT INTO test_tbl VALUES (5, 'e');
-
 SELECT pglogical.replicate_ddl_command($$
-  REFRESH MATERIALIZED VIEW CONCURRENTLY test_mv;
+  REFRESH MATERIALIZED VIEW CONCURRENTLY public.test_mv;
 $$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+SELECT * FROM test_tbl ORDER BY id;
+ id | data 
+----+------
+  1 | a
+  2 | b
+  3 | c
+  4 | d
+  5 | e
+(5 rows)
+
+SELECT * FROM test_mv ORDER BY id;
+ id | data 
+----+------
+  1 | a
+  2 | b
+  3 | c
+  4 | d
+  5 | e
+(5 rows)
+
+\c :subscriber_dsn
+SELECT * FROM test_tbl ORDER BY id;
+ id | data 
+----+------
+  1 | a
+  2 | b
+  3 | c
+  4 | d
+  5 | e
+(5 rows)
+
+SELECT * FROM test_mv ORDER BY id;
+ id | data 
+----+------
+  1 | a
+  2 | b
+  3 | c
+  4 | d
+  5 | e
+(5 rows)
 
 \c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_tbl CASCADE;
 $$);
-ERROR:  syntax error at or near "REFRESH"
-LINE 13:   REFRESH MATERIALIZED VIEW test_mv;
-           ^
+NOTICE:  drop cascades to materialized view public.test_mv
+NOTICE:  drop cascades to table public.test_tbl membership in replication set default
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
