@@ -77,10 +77,7 @@ static const struct config_enum_entry server_message_level_options[] = {
 	{"info", INFO, false},
 	{"notice", NOTICE, false},
 	{"warning", WARNING, false},
-	{"error", ERROR, false},
 	{"log", LOG, false},
-	{"fatal", FATAL, false},
-	{"panic", PANIC, false},
 	{NULL, 0, false}
 };
 
