@@ -25,6 +25,7 @@
 #endif
 
 #include "access/xact.h"
+#include "dirent.h"
 #include "executor/executor.h"
 #include "catalog/namespace.h"
 #include "utils/inval.h"
