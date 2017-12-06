@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include "pglogical_output_plugin.h"
 
@@ -25,9 +26,9 @@
 #endif
 
 #include "access/xact.h"
-#include "dirent.h"
 #include "executor/executor.h"
 #include "catalog/namespace.h"
+#include "storage/fd.h"
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -951,7 +952,7 @@ relmetacache_prune(void)
 static void
 pglReorderBufferCleanSerializedTXNs(const char *slotname)
 {
-	DIR		   *spill_dir;
+	DIR		   *spill_dir = NULL;
 	struct dirent *spill_de;
 	struct stat statbuf;
 	char		path[MAXPGPATH * 2 + 12];
