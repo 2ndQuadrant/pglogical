@@ -285,63 +285,82 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
  */
 Oid
 pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
-							  TupleTableSlot *oldslot)
+							  TupleTableSlot *outslot)
 {
-	Oid		conflict_idx = InvalidOid;
-	ScanKeyData	index_key[INDEX_MAX_KEYS];
-	int			i;
-	ResultRelInfo *relinfo;
-	ItemPointerData conflicting_tid;
+	Oid				conflict_idx = InvalidOid;
+	ScanKeyData		index_key[INDEX_MAX_KEYS];
+	int				i;
+	ItemPointerData	conflicting_tid;
+	Oid				replidxoid;
+	bool			found = false;
+	ResultRelInfo  *relinfo = estate->es_result_relation_info;
 
 	ItemPointerSetInvalid(&conflicting_tid);
 
 	relinfo = estate->es_result_relation_info;
 
-	/* Do a SnapshotDirty search for conflicting tuples. */
+	/*
+	 * Check the replica identity index with a SnapshotDirty scan first, like
+	 * pglogical_tuple_find_replidx, but without ERRORing if we don't find
+	 * a replica identity index.
+	 */
+	replidxoid = RelationGetReplicaIndex(relinfo->ri_RelationDesc);
+	if (OidIsValid(replidxoid))
+	{
+		ScanKeyData	index_key[INDEX_MAX_KEYS];
+		Relation	idxrel = index_open(replidxoid, RowExclusiveLock);
+		build_index_scan_key(index_key, relinfo->ri_RelationDesc, idxrel, tuple);
+		found = find_index_tuple(index_key, relinfo->ri_RelationDesc, idxrel,
+							 LockTupleExclusive, outslot);
+		index_close(idxrel, NoLock);
+		if (found)
+			return replidxoid;
+	}
+
+	/*
+	 * Do a SnapshotDirty search for conflicting tuples. If any is found
+	 * store it in outslot and return the oid of the matching index. We
+	 * don't continue scanning for matches in other indexes, so we won't
+	 * notice if the tuple conflicts with another index, and it'll
+	 * raise a unique violation on apply instead.
+	 *
+	 * We could carry on here even if (found) and look for secondary conflicts,
+	 * but all we'd be able to do would be ERROR here instead of later. The
+	 * rest of the time we'd just pay a useless performance cost for extra
+	 * index scans.
+	 */
 	for (i = 0; i < relinfo->ri_NumIndices; i++)
 	{
 		IndexInfo  *ii = relinfo->ri_IndexRelationInfo[i];
 		Relation	idxrel;
-		bool found = false;
 
 		/*
 		 * Only unique indexes are of interest here, and we can't deal with
-		 * expression indexes so far. FIXME: predicates should be handled
-		 * better.
+		 * expression indexes so far.
+		 *
+		 * TODO: predicates should be handled better. There's no point scanning
+		 * an index where the predicates show it could never match anyway.
 		 */
 		if (!ii->ii_Unique || ii->ii_Expressions != NIL)
 			continue;
 
 		idxrel = relinfo->ri_IndexRelationDescs[i];
 
+		/* No point re-scanning the replica identity index */
+		if (RelationGetRelid(idxrel) == replidxoid)
+			continue;
+
 		if (build_index_scan_key(index_key, relinfo->ri_RelationDesc,
 								 idxrel, tuple))
 			continue;
 
-		/* Try to find conflicting row and store in 'oldslot' */
+		/* Try to find conflicting row and store in 'outslot' */
 		found = find_index_tuple(index_key, relinfo->ri_RelationDesc,
-								 idxrel, LockTupleExclusive, oldslot);
+								 idxrel, LockTupleExclusive, outslot);
 
-		/* Alert if there's more than one conflicting unique key, we can't
-		 * currently handle that situation. */
-		if (found &&
-			ItemPointerIsValid(&conflicting_tid) &&
-			!ItemPointerEquals(&oldslot->tts_tuple->t_self,
-							   &conflicting_tid))
+		if (found)
 		{
-			/* TODO: Report tuple identity in log */
-			ereport(ERROR,
-				(errcode(ERRCODE_UNIQUE_VIOLATION),
-				errmsg("multiple unique constraints violated by remote tuple"),
-				errdetail("cannot apply transaction because remotely tuple "
-						  "conflicts with a local tuple on more than one "
-						  "UNIQUE constraint and/or PRIMARY KEY"),
-				errhint("Resolve the conflict by removing or changing the "
-						"conflicting local tuple")));
-		}
-		else if (found)
-		{
-			ItemPointerCopy(&oldslot->tts_tuple->t_self, &conflicting_tid);
+			ItemPointerCopy(&outslot->tts_tuple->t_self, &conflicting_tid);
 			conflict_idx = RelationGetRelid(idxrel);
 			break;
 		}

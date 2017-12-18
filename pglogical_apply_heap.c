@@ -298,7 +298,8 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 	/*
 	 * Check for existing tuple with same key in any unique index containing
-	 * only normal columns. This doesn't just check the replica identity index.
+	 * only normal columns. This doesn't just check the replica identity index,
+	 * but it'll prefer it and use it first.
 	 */
 	conflicts_idx_id = pglogical_tuple_find_conflict(aestate->estate,
 													 newtup,
