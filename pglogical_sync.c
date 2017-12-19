@@ -70,13 +70,13 @@
 #endif
 #define PGRESTORE_BINARY "pg_restore"
 
-#define Natts_local_sync_state	5
+#define Natts_local_sync_state	6
 #define Anum_sync_kind			1
 #define Anum_sync_subid			2
 #define Anum_sync_nspname		3
 #define Anum_sync_relname		4
 #define Anum_sync_status		5
-
+#define Anum_sync_statuslsn		6
 
 void pglogical_sync_main(Datum main_arg);
 
@@ -840,7 +840,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 						{
 							set_table_sync_status(sub->id, remoterel->nspname,
 												  remoterel->relname,
-												  SYNC_STATUS_READY);
+												  SYNC_STATUS_READY,
+												  lsn);
 						}
 						else
 						{
@@ -848,9 +849,10 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 							newsync.kind = SYNC_KIND_FULL;
 							newsync.subid = sub->id;
-							newsync.nspname = remoterel->nspname;
-							newsync.relname = remoterel->relname;
+							namestrcpy(&newsync.nspname, remoterel->nspname);
+							namestrcpy(&newsync.relname, remoterel->relname);
 							newsync.status = SYNC_STATUS_READY;
+							newsync.statuslsn = lsn;
 							create_local_sync_status(&newsync);
 						}
 					}
@@ -901,9 +903,9 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 }
 
 char
-pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
+pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table,
+					 XLogRecPtr *status_lsn)
 {
-	XLogRecPtr	lsn;
 	PGconn	   *origin_conn_repl;
 	RepOriginId	originid;
 	char	   *snapshot;
@@ -921,14 +923,17 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 
 	/* Check current state of the table. */
 	sync = get_table_sync_status(sub->id, table->schemaname, table->relname, false);
+	*status_lsn = sync->statuslsn;
 
 	/* Already synchronized, nothing to do here. */
-	if (sync->status == SYNC_STATUS_READY)
-		return SYNC_STATUS_READY;
+	if (sync->status == SYNC_STATUS_READY ||
+		sync->status == SYNC_STATUS_SYNCDONE)
+		return sync->status;
 
 	/* If previous sync attempt failed, we need to start from beginning. */
 	if (sync->status != SYNC_STATUS_INIT)
-		set_table_sync_status(sub->id, table->schemaname, table->relname, SYNC_STATUS_INIT);
+		set_table_sync_status(sub->id, table->schemaname, table->relname,
+							  SYNC_STATUS_INIT, InvalidXLogRecPtr);
 
 	CommitTransactionCommand();
 
@@ -936,7 +941,8 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 												 sub->name, "copy");
 
 	snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
-												sub->slot_name, false, &lsn);
+												sub->slot_name, false,
+												status_lsn);
 
 	/* Make sure we cleanup the slot if something goes wrong. */
 	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
@@ -955,13 +961,14 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table)
 #if PG_VERSION_NUM >= 90500
 		replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
 #endif
-		replorigin_advance(originid, lsn, XactLastCommitEnd, true, true);
+		replorigin_advance(originid, *status_lsn, XactLastCommitEnd, true,
+						   true);
 #if PG_VERSION_NUM >= 90500
 		heap_close(replorigin_rel, RowExclusiveLock);
 #endif
 
 		set_table_sync_status(sub->id, table->schemaname, table->relname,
-							  SYNC_STATUS_DATA);
+							  SYNC_STATUS_DATA, *status_lsn);
 		CommitTransactionCommand();
 
 		/* Copy data. */
@@ -982,13 +989,20 @@ pglogical_sync_worker_finish(void)
 {
 	PGLogicalWorker	   *apply;
 
-	StartTransactionCommand();
-	/* Mark local table as ready. */
-	set_table_sync_status(MyApplyWorker->subid,
-						  NameStr(MyPGLogicalWorker->worker.sync.nspname),
-						  NameStr(MyPGLogicalWorker->worker.sync.relname),
-						  SYNC_STATUS_READY);
+	/*
+	 * Commit any outstanding transaction. This is the usual case, unless
+	 * there was nothing to do for the table.
+	 */
+	if (IsTransactionState())
+	{
+		CommitTransactionCommand();
+		pgstat_report_stat(false);
+	}
 
+	/* And flush all writes. */
+	XLogFlush(GetXLogWriteRecPtr());
+
+	StartTransactionCommand();
 	pglogical_sync_worker_cleanup(MySubscription);
 	CommitTransactionCommand();
 
@@ -1014,11 +1028,13 @@ pglogical_sync_main(Datum main_arg)
 	int				slot = DatumGetInt32(main_arg);
 	PGconn		   *streamConn;
 	RepOriginId		originid;
-	XLogRecPtr		origin_startpos;
+	XLogRecPtr		lsn;
+	XLogRecPtr		status_lsn;
 	StringInfoData	slot_name;
 	RangeVar	   *copytable = NULL;
 	MemoryContext	saved_ctx;
 	char		   *tablename;
+	char			status;
 
 	/* Setup shmem. */
 	pglogical_worker_attach(slot, PGLOGICAL_WORKER_SYNC);
@@ -1078,7 +1094,8 @@ pglogical_sync_main(Datum main_arg)
 		 MySubscription->origin_if->name, MySubscription->origin_if->dsn);
 
 	/* Do the initial sync first. */
-	if (pglogical_sync_table(MySubscription, copytable) == SYNC_STATUS_READY)
+	status = pglogical_sync_table(MySubscription, copytable, &status_lsn);
+	if (status == SYNC_STATUS_SYNCDONE || status == SYNC_STATUS_READY)
 	{
 		pglogical_sync_worker_finish();
 		proc_exit(0);
@@ -1087,11 +1104,14 @@ pglogical_sync_main(Datum main_arg)
 	/* Wait for ack from the main apply thread. */
 	StartTransactionCommand();
 	set_table_sync_status(MySubscription->id, copytable->schemaname,
-						  copytable->relname, SYNC_STATUS_SYNCWAIT);
+						  copytable->relname, SYNC_STATUS_SYNCWAIT,
+						  status_lsn);
 	CommitTransactionCommand();
 
 	wait_for_sync_status_change(MySubscription->id, copytable->schemaname,
-								copytable->relname, SYNC_STATUS_CATCHUP);
+								copytable->relname, SYNC_STATUS_CATCHUP,
+								&lsn);
+	Assert(lsn == status_lsn);
 
 	/* Setup the origin and get the starting position for the replication. */
 	StartTransactionCommand();
@@ -1100,15 +1120,24 @@ pglogical_sync_main(Datum main_arg)
 		MySubscription->slot_name, originid);
 	replorigin_session_setup(originid);
 	replorigin_session_origin = originid;
-	origin_startpos = replorigin_session_get_progress(false);
-	CommitTransactionCommand();
+	Assert(status_lsn == replorigin_session_get_progress(false));
 
-	/* In case there is nothing to catchup, finish immediately. */
-	if (origin_startpos >= MyApplyWorker->replay_stop_lsn)
+	/*
+	 * In case there is nothing to catchup, finish immediately.
+	 * Note pglogical_sync_worker_finish() will commit.
+	 */
+	if (status_lsn >= MyApplyWorker->replay_stop_lsn)
 	{
+		/* Mark local table as done. */
+		set_table_sync_status(MyApplyWorker->subid,
+							  NameStr(MyPGLogicalWorker->worker.sync.nspname),
+							  NameStr(MyPGLogicalWorker->worker.sync.relname),
+							  SYNC_STATUS_SYNCDONE, status_lsn);
 		pglogical_sync_worker_finish();
 		proc_exit(0);
 	}
+
+	CommitTransactionCommand();
 
 	/* Start the replication. */
 	streamConn = pglogical_connect_replica(MySubscription->origin_if->dsn,
@@ -1121,7 +1150,7 @@ pglogical_sync_main(Datum main_arg)
 	pglogical_identify_system(streamConn, NULL, NULL, NULL, NULL);
 
 	pglogical_start_replication(streamConn, MySubscription->slot_name,
-								origin_startpos, "all", NULL, tablename);
+								status_lsn, "all", NULL, tablename);
 
 	/* Leave it to standard apply code to do the replication. */
 	apply_work(streamConn);
@@ -1148,8 +1177,6 @@ create_local_sync_status(PGLogicalSyncStatus *sync)
 	HeapTuple	tup;
 	Datum		values[Natts_local_sync_state];
 	bool		nulls[Natts_local_sync_state];
-	NameData	nspname;
-	NameData	relname;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
@@ -1160,21 +1187,19 @@ create_local_sync_status(PGLogicalSyncStatus *sync)
 
 	values[Anum_sync_kind - 1] = CharGetDatum(sync->kind);
 	values[Anum_sync_subid - 1] = ObjectIdGetDatum(sync->subid);
-	if (sync->nspname)
-	{
-		namestrcpy(&nspname, sync->nspname);
-		values[Anum_sync_nspname - 1] = NameGetDatum(&nspname);
-	}
+
+	if (sync->nspname.data[0])
+		values[Anum_sync_nspname - 1] = NameGetDatum(&sync->nspname);
 	else
 		nulls[Anum_sync_nspname - 1] = true;
-	if (sync->relname)
-	{
-		namestrcpy(&relname, sync->relname);
-		values[Anum_sync_relname - 1] = NameGetDatum(&relname);
-	}
+
+	if (sync->relname.data[0])
+		values[Anum_sync_relname - 1] = NameGetDatum(&sync->relname);
 	else
 		nulls[Anum_sync_relname - 1] = true;
+
 	values[Anum_sync_status - 1] = CharGetDatum(sync->status);
+	values[Anum_sync_statuslsn - 1] = LSNGetDatum(sync->statuslsn);
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -1223,7 +1248,7 @@ syncstatus_fromtuple(HeapTuple tuple, TupleDesc desc)
 	Datum					d;
 	bool					isnull;
 
-	sync = (PGLogicalSyncStatus *) palloc(sizeof(PGLogicalSyncStatus));
+	sync = (PGLogicalSyncStatus *) palloc0(sizeof(PGLogicalSyncStatus));
 
 	d = fastgetattr(tuple, Anum_sync_kind, desc, &isnull);
 	Assert(!isnull);
@@ -1234,20 +1259,20 @@ syncstatus_fromtuple(HeapTuple tuple, TupleDesc desc)
 	sync->subid = DatumGetObjectId(d);
 
 	d = fastgetattr(tuple, Anum_sync_nspname, desc, &isnull);
-	if (isnull)
-		sync->nspname = NULL;
-	else
-		sync->nspname = pstrdup(NameStr(*DatumGetName(d)));
+	if (!isnull)
+		namestrcpy(&sync->nspname, NameStr(*DatumGetName(d)));
 
 	d = fastgetattr(tuple, Anum_sync_relname, desc, &isnull);
-	if (isnull)
-		sync->relname = NULL;
-	else
-		sync->relname = pstrdup(NameStr(*DatumGetName(d)));
+	if (!isnull)
+		namestrcpy(&sync->relname, NameStr(*DatumGetName(d)));
 
 	d = fastgetattr(tuple, Anum_sync_status, desc, &isnull);
 	Assert(!isnull);
 	sync->status = DatumGetChar(d);
+
+	d = fastgetattr(tuple, Anum_sync_statuslsn, desc, &isnull);
+	Assert(!isnull);
+	sync->statuslsn = DatumGetLSN(d);
 
 	return sync;
 }
@@ -1341,6 +1366,8 @@ set_subscription_sync_status(Oid subid, char status)
 
 	values[Anum_sync_status - 1] = CharGetDatum(status);
 	replaces[Anum_sync_status - 1] = true;
+	values[Anum_sync_statuslsn - 1] = LSNGetDatum(InvalidXLogRecPtr);
+	replaces[Anum_sync_statuslsn - 1] = true;
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -1473,7 +1500,7 @@ get_unsynced_tables(Oid subid)
 
 		sync = syncstatus_fromtuple(tuple, tupDesc);
 		if (sync->status != SYNC_STATUS_READY)
-			res = lappend(res, makeRangeVar(sync->nspname, sync->relname, -1));
+			res = lappend(res, sync);
 	}
 
 	systable_endscan(scan);
@@ -1485,7 +1512,7 @@ get_unsynced_tables(Oid subid)
 /* Set the sync status for a table. */
 void
 set_table_sync_status(Oid subid, const char *nspname, const char *relname,
-					  char status)
+					  char status, XLogRecPtr statuslsn)
 {
 	RangeVar	   *rv;
 	Relation		rel;
@@ -1527,6 +1554,8 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
 
 	values[Anum_sync_status - 1] = CharGetDatum(status);
 	replaces[Anum_sync_status - 1] = true;
+	values[Anum_sync_statuslsn - 1] = LSNGetDatum(statuslsn);
+	replaces[Anum_sync_statuslsn - 1] = true;
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -1547,9 +1576,11 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
  */
 bool
 wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
-							char desired_state)
+							char desired_state, XLogRecPtr *lsn)
 {
 	int rc;
+
+	*lsn = InvalidXLogRecPtr;
 
 	while (!got_SIGTERM)
 	{
@@ -1565,6 +1596,7 @@ wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
 		}
 		if (sync->status == desired_state)
 		{
+			*lsn = sync->statuslsn;
 			CommitTransactionCommand();
 			return true;
 		}

@@ -59,7 +59,7 @@ BEGIN
     END LOOP;
 END;$$;
 
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 -- Make sure we see the slot and active connection
 \c :orig_provider_dsn

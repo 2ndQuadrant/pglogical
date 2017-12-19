@@ -29,14 +29,14 @@ SELECT * FROM pglogical.create_subscription(
 DO $$
 BEGIN
     FOR i IN 1..300 LOOP
-        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r') THEN
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status NOT IN ('y', 'r')) THEN
             EXIT;
         END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
 
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 SELECT status FROM pglogical.show_subscription_status() WHERE subscription_name = 'test_subscription_delay';
 

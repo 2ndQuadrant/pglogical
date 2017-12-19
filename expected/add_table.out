@@ -134,19 +134,19 @@ DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_publicschema', 'test_strangeschema')) > 1 THEN
+		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('test_publicschema', 'test_strangeschema')) > 1 THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);
 	END LOOP;
 END;
 $$;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
------------+------------+-------------------+--------------------+-------------
- d         | 3848008564 | public            | test_publicschema  | r
- d         | 3848008564 | strange.schema-IS | test_strangeschema | r
- f         | 3848008564 |                   |                    | r
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | ?column? 
+-----------+------------+-------------------+--------------------+----------
+ d         | 3848008564 | public            | test_publicschema  | t
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | t
+ f         | 3848008564 |                   |                    | t
 (3 rows)
 
 \c :provider_dsn
@@ -206,20 +206,20 @@ DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_nosync')) THEN
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('test_nosync')) THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);
 	END LOOP;
 END;
 $$;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
------------+------------+-------------------+--------------------+-------------
- d         | 3848008564 | public            | test_nosync        | r
- d         | 3848008564 | public            | test_publicschema  | r
- d         | 3848008564 | strange.schema-IS | test_strangeschema | r
- f         | 3848008564 |                   |                    | r
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | ?column? 
+-----------+------------+-------------------+--------------------+----------
+ d         | 3848008564 | public            | test_nosync        | t
+ d         | 3848008564 | public            | test_publicschema  | t
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | t
+ f         | 3848008564 |                   |                    | t
 (4 rows)
 
 SELECT * FROM public.test_nosync;
@@ -246,20 +246,20 @@ DO $$
 -- give it 10 seconds to syncrhonize the tabes
 BEGIN
 	FOR i IN 1..100 LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r' AND sync_relname IN ('test_publicschema')) THEN
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('test_publicschema')) THEN
 			RETURN;
 		END IF;
 		PERFORM pg_sleep(0.1);
 	END LOOP;
 END;
 $$;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status 
------------+------------+-------------------+--------------------+-------------
- d         | 3848008564 | public            | test_nosync        | r
- d         | 3848008564 | public            | test_publicschema  | r
- d         | 3848008564 | strange.schema-IS | test_strangeschema | r
- f         | 3848008564 |                   |                    | r
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | ?column? 
+-----------+------------+-------------------+--------------------+----------
+ d         | 3848008564 | public            | test_nosync        | t
+ d         | 3848008564 | public            | test_publicschema  | t
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | t
+ f         | 3848008564 |                   |                    | t
 (4 rows)
 
 SELECT * FROM public.test_publicschema;
@@ -456,6 +456,84 @@ NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to table "strange.schema-IS".test_diff_repset membership in replication set repset_test
 NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema membership in replication set default
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT pglogical.replicate_ddl_command($$
+	CREATE TABLE public.synctest(a int primary key, b text);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_test', 'synctest', synchronize_data := false);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO synctest VALUES (1, '1');
+-- no way to see if this worked currently, but if one can manually check
+-- if there is conflict in log or not (conflict = bad here)
+SELECT pglogical.replicate_ddl_command($$
+	SELECT pg_sleep(5);
+	UPDATE public.synctest SET b = md5(a::text);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+INSERT INTO synctest VALUES (2, '2');
+\c :subscriber_dsn
+SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', 'synctest');
+ alter_subscription_resynchronize_table 
+----------------------------------------
+ t
+(1 row)
+
+DO $$
+-- give it 10 seconds to syncrhonize the tabes
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('synctest')) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+\c :provider_dsn
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+SELECT * FROM synctest;
+ a |                b                 
+---+----------------------------------
+ 1 | c4ca4238a0b923820dcc509a6f75849b
+ 2 | 2
+(2 rows)
+
+\c :subscriber_dsn
+SELECT * FROM synctest;
+ a |                b                 
+---+----------------------------------
+ 1 | c4ca4238a0b923820dcc509a6f75849b
+ 2 | 2
+(2 rows)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.synctest CASCADE;
+$$);
+NOTICE:  drop cascades to table public.synctest membership in replication set repset_test
  replicate_ddl_command 
 -----------------------
  t

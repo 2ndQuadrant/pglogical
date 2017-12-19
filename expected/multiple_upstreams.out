@@ -102,13 +102,13 @@ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid | sync_nspname | sync_relname  | sync_status 
------------+------------+--------------+---------------+-------------
- f         | 3102546391 | public       | multi_ups_tbl | r
- d         | 3102546391 |              |               | r
- d         | 3848008564 | public       | multi_ups_tbl | r
- f         | 3848008564 |              |               | r
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname  | ?column? 
+-----------+------------+--------------+---------------+----------
+ f         | 3102546391 | public       | multi_ups_tbl | t
+ d         | 3102546391 |              |               | t
+ d         | 3848008564 | public       | multi_ups_tbl | t
+ f         | 3848008564 |              |               | t
 (4 rows)
 
 SELECT * from multi_ups_tbl ORDER BY id;

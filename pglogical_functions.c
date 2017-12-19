@@ -486,6 +486,8 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	create_subscription(&sub);
 
 	/* Create synchronization status for the subscription. */
+	memset(&sync, 0, sizeof(PGLogicalSyncStatus));
+
 	if (sync_structure && sync_data)
 		sync.kind = SYNC_KIND_FULL;
 	else if (sync_structure)
@@ -496,8 +498,6 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 		sync.kind = SYNC_KIND_INIT;
 
 	sync.subid = sub.id;
-	sync.nspname = NULL;
-	sync.relname = NULL;
 	sync.status = SYNC_STATUS_INIT;
 	create_local_sync_status(&sync);
 
@@ -791,10 +791,11 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 		{
 			PGLogicalSyncStatus	   newsync;
 
+			memset(&newsync, 0, sizeof(PGLogicalSyncStatus));
 			newsync.kind = SYNC_KIND_DATA;
 			newsync.subid = sub->id;
-			newsync.nspname = remoterel->nspname;
-			newsync.relname = remoterel->relname;
+			namestrcpy(&newsync.nspname, remoterel->nspname);
+			namestrcpy(&newsync.relname, remoterel->relname);
 			newsync.status = SYNC_STATUS_INIT;
 			create_local_sync_status(&newsync);
 
@@ -845,16 +846,18 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 			elog(ERROR, "table %s.%s is already being synchronized",
 				 nspname, relname);
 
-		set_table_sync_status(sub->id, nspname, relname, SYNC_STATUS_INIT);
+		set_table_sync_status(sub->id, nspname, relname, SYNC_STATUS_INIT,
+							  InvalidXLogRecPtr);
 	}
 	else
 	{
 		PGLogicalSyncStatus	   newsync;
 
+		memset(&newsync, 0, sizeof(PGLogicalSyncStatus));
 		newsync.kind = SYNC_KIND_DATA;
 		newsync.subid = sub->id;
-		newsync.nspname = nspname;
-		newsync.relname = relname;
+		namestrcpy(&newsync.nspname, nspname);
+		namestrcpy(&newsync.relname, relname);
 		newsync.status = SYNC_STATUS_INIT;
 		create_local_sync_status(&newsync);
 	}
@@ -909,8 +912,10 @@ sync_status_to_string(char status)
 			return "sync_waiting";
 		case SYNC_STATUS_CATCHUP:
 			return "catchup";
+		case SYNC_STATUS_SYNCDONE:
+			return "synchronized";
 		case SYNC_STATUS_READY:
-      return "synchronized";
+			return "replicating";
 		default:
 			return "unknown";
 	}

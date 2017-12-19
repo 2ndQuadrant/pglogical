@@ -47,7 +47,7 @@ END;$$;
 DO $$
 BEGIN
 	IF version() ~ 'Postgres-XL' THEN
-		CREATE EXTENSION IF NOT EXISTS pglogical;
+		CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
 	ELSE
 		CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
 	END IF;
@@ -58,7 +58,7 @@ ALTER EXTENSION pglogical UPDATE;
                    List of installed extensions
    Name    | Version |  Schema   |          Description           
 -----------+---------+-----------+--------------------------------
- pglogical | 2.1.0   | pglogical | PostgreSQL Logical Replication
+ pglogical | 2.1.1   | pglogical | PostgreSQL Logical Replication
 (1 row)
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
@@ -119,16 +119,16 @@ SELECT subscription_name, status, provider_node, replication_sets, forward_origi
 DO $$
 BEGIN
     FOR i IN 1..300 LOOP
-        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
+        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r')) THEN
             EXIT;
         END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
------------+------------+--------------+--------------+-------------
- f         | 3848008564 |              |              | r
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname | ?column? 
+-----------+------------+--------------+--------------+----------
+ f         | 3848008564 |              |              | t
 (1 row)
 
 -- Make sure we see the slot and active connection

@@ -20,11 +20,13 @@
 
 typedef struct PGLogicalSyncStatus
 {
-	char	kind;
-	Oid		subid;
-	char   *nspname;
-	char   *relname;
-	char	status;
+	char		kind;
+	Oid			subid;
+	NameData	nspname;
+	NameData	relname;
+	char		status;
+	XLogRecPtr	statuslsn;		/* remote lsn of the state change used for
+								 * synchronization coordination */
 } PGLogicalSyncStatus;
 
 #define SYNC_KIND_INIT		'i'
@@ -45,12 +47,13 @@ typedef struct PGLogicalSyncStatus
 #define SYNC_STATUS_CONSTAINTS	'c'		/* Constraint sync (post-data structure). */
 #define SYNC_STATUS_SYNCWAIT	'w'		/* Table sync is waiting to get OK from main thread. */
 #define SYNC_STATUS_CATCHUP		'u'		/* Catching up. */
+#define SYNC_STATUS_SYNCDONE	'y'		/* Synchronization finished (at lsn). */
 #define SYNC_STATUS_READY		'r'		/* Done. */
 
 extern void pglogical_sync_worker_finish(void);
 
 extern void pglogical_sync_subscription(PGLogicalSubscription *sub);
-extern char pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table);
+extern char pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table, XLogRecPtr *status_lsn);
 
 extern void create_local_sync_status(PGLogicalSyncStatus *sync);
 extern void drop_subscription_sync_status(Oid subid);
@@ -65,11 +68,13 @@ extern PGLogicalSyncStatus *get_table_sync_status(Oid subid,
 												  const char *relname,
 												  bool missing_ok);
 extern void set_table_sync_status(Oid subid, const char *schemaname,
-								  const char *relname, char status);
+								  const char *relname, char status,
+								  XLogRecPtr status_lsn);
 extern List *get_unsynced_tables(Oid subid);
 
 extern bool wait_for_sync_status_change(Oid subid, char *nspname,
-										char *relname, char desired_state);
+										char *relname, char desired_state,
+										XLogRecPtr *status_lsn);
 
 extern void truncate_table(char *nspname, char *relname);
 

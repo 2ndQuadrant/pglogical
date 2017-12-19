@@ -66,10 +66,10 @@ BEGIN
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid | sync_nspname | sync_relname | sync_status 
------------+------------+--------------+--------------+-------------
- d         | 3575176667 |              |              | r
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid | sync_nspname | sync_relname | ?column? 
+-----------+------------+--------------+--------------+----------
+ d         | 3575176667 |              |              | t
 (1 row)
 
 -- Make sure we see the slot and active connection

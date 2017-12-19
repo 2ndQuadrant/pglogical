@@ -41,7 +41,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 DO $$
 BEGIN
     FOR i IN 1..100 LOOP
-        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r' AND sync_relname IN ('basic_dml')) THEN
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status NOT IN ('y', 'r') AND sync_relname IN ('basic_dml')) THEN
             EXIT;
         END IF;
         PERFORM pg_sleep(0.1);

@@ -80,7 +80,7 @@ BEGIN
     END LOOP;
 END;$$;
 
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 SELECT * from multi_ups_tbl ORDER BY id;
 

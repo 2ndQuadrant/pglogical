@@ -53,7 +53,7 @@ END;$$;
 DO $$
 BEGIN
 	IF version() ~ 'Postgres-XL' THEN
-		CREATE EXTENSION IF NOT EXISTS pglogical;
+		CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
 	ELSE
 		CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
 	END IF;
@@ -109,14 +109,14 @@ SELECT subscription_name, status, provider_node, replication_sets, forward_origi
 DO $$
 BEGIN
     FOR i IN 1..300 LOOP
-        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
+        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r')) THEN
             EXIT;
         END IF;
         PERFORM pg_sleep(0.1);
     END LOOP;
 END;$$;
 
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 -- Make sure we see the slot and active connection
 \c :provider_dsn

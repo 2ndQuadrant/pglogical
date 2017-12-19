@@ -161,7 +161,7 @@ static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
 static void handle_startup_param(const char *key, const char *value);
 static bool parse_bool_param(const char *key, const char *value);
 static void process_syncing_tables(XLogRecPtr end_lsn);
-static void start_sync_worker(RangeVar *rv);
+static void start_sync_worker(Name nspname, Name relname);
 
 /*
  * Check if given relation is in process of being synchronized.
@@ -169,10 +169,26 @@ static void start_sync_worker(RangeVar *rv);
  * TODO: performance
  */
 static bool
-check_syncing_relation(const char *nspname, const char *relname)
+should_apply_changes_for_rel(const char *nspname, const char *relname)
 {
-	return list_length(SyncingTables) &&
-		list_member(SyncingTables, makeRangeVar((char *)nspname, (char *)relname, -1));
+	if (list_length(SyncingTables) > 0)
+	{
+		ListCell	   *lc;
+
+		foreach (lc, SyncingTables)
+		{
+			PGLogicalSyncStatus	   *sync = (PGLogicalSyncStatus *) lfirst(lc);
+
+			if (namestrcmp(&sync->nspname, nspname) == 0 &&
+				namestrcmp(&sync->relname, relname) == 0 &&
+				(sync->status != SYNC_STATUS_READY &&
+				 !(sync->status == SYNC_STATUS_SYNCDONE &&
+				   sync->statuslsn <= replorigin_session_origin_lsn)))
+				return false;
+		}
+	}
+
+	return true;
 }
 
 /*
@@ -415,6 +431,19 @@ handle_commit(StringInfo s)
 				 (uint32)MyApplyWorker->replay_stop_lsn)));
 
 		/*
+		 * If this is sync worker, update syncing table state to done.
+		 */
+		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC)
+		{
+			StartTransactionCommand();
+			set_table_sync_status(MyApplyWorker->subid,
+							  NameStr(MyPGLogicalWorker->worker.sync.nspname),
+							  NameStr(MyPGLogicalWorker->worker.sync.relname),
+							  SYNC_STATUS_SYNCDONE, end_lsn);
+			CommitTransactionCommand();
+		}
+
+		/*
 		 * Flush all writes so the latest position can be reported back to the
 		 * sender.
 		 */
@@ -496,7 +525,7 @@ handle_insert(StringInfo s)
 	errcallback_arg.rel = rel;
 
 	/* If in list of relations which are being synchronized, skip. */
-	if (check_syncing_relation(rel->nspname, rel->relname))
+	if (!should_apply_changes_for_rel(rel->nspname, rel->relname))
 	{
 		pglogical_relation_close(rel, NoLock);
 		return;
@@ -617,7 +646,7 @@ handle_update(StringInfo s)
 	errcallback_arg.rel = rel;
 
 	/* If in list of relations which are being synchronized, skip. */
-	if (check_syncing_relation(rel->nspname, rel->relname))
+	if (!should_apply_changes_for_rel(rel->nspname, rel->relname))
 	{
 		pglogical_relation_close(rel, NoLock);
 		return;
@@ -645,7 +674,7 @@ handle_delete(StringInfo s)
 	errcallback_arg.rel = rel;
 
 	/* If in list of relations which are being synchronized, skip. */
-	if (check_syncing_relation(rel->nspname, rel->relname))
+	if (!should_apply_changes_for_rel(rel->nspname, rel->relname))
 	{
 		pglogical_relation_close(rel, NoLock);
 		return;
@@ -832,7 +861,7 @@ handle_truncate(QueuedMessage *queued_message)
 	rv = parse_relation_message(queued_message->message);
 
 	/* If in list of relations which are being synchronized, skip. */
-	if (check_syncing_relation(rv->schemaname, rv->relname))
+	if (!should_apply_changes_for_rel(rv->schemaname, rv->relname))
 		return;
 
 	truncate_table(rv->schemaname, rv->relname);
@@ -844,10 +873,10 @@ handle_truncate(QueuedMessage *queued_message)
 static void
 handle_table_sync(QueuedMessage *queued_message)
 {
-	RangeVar	   *rv;
+	RangeVar			   *rv;
 	MemoryContext			oldcontext;
-	PGLogicalSyncStatus		*oldsync;
-	PGLogicalSyncStatus		newsync;
+	PGLogicalSyncStatus	   *oldsync;
+	PGLogicalSyncStatus	   *newsync;
 
 	rv = parse_relation_message(queued_message->message);
 
@@ -863,22 +892,20 @@ handle_table_sync(QueuedMessage *queued_message)
 		return;
 	}
 
-	/*
-	 * Create synchronization status for the subscription.
-	 * Currently we only support data sync for tables.
-	 */
-	newsync.kind = SYNC_KIND_DATA;
-	newsync.subid = MyApplyWorker->subid;
-	newsync.nspname = rv->schemaname;
-	newsync.relname = rv->relname;
-	newsync.status = SYNC_STATUS_INIT;
-	create_local_sync_status(&newsync);
-
 	/* Keep the lists persistent. */
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-	SyncingTables = lappend(SyncingTables,
-							makeRangeVar(pstrdup(rv->schemaname),
-										 pstrdup(rv->relname), -1));
+	newsync = palloc0(sizeof(PGLogicalSyncStatus));
+	MemoryContextSwitchTo(oldcontext);
+
+	newsync->kind = SYNC_KIND_DATA;
+	newsync->subid = MyApplyWorker->subid;
+	newsync->status = SYNC_STATUS_INIT;
+	namestrcpy(&newsync->nspname, rv->schemaname);
+	namestrcpy(&newsync->relname, rv->relname);
+	create_local_sync_status(newsync);
+
+	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+	SyncingTables = lappend(SyncingTables, newsync);
 	MemoryContextSwitchTo(oldcontext);
 }
 
@@ -1023,7 +1050,7 @@ handle_queued_message(HeapTuple msgtup, bool tx_just_started)
 
 	old_action_name = errcallback_arg.action_name;
 	errcallback_arg.is_ddl_or_drop = true;
-	
+
 	queued_message = queued_message_from_tuple(msgtup);
 
 	switch (queued_message->message_type)
@@ -1534,19 +1561,16 @@ reread_unsynced_tables(Oid subid)
 
 		for (lc = list_head(SyncingTables); lc; lc = next)
 		{
-			RangeVar	   *rv = (RangeVar *) lfirst(lc);
+			PGLogicalSyncStatus	   *sync = (PGLogicalSyncStatus *) lfirst(lc);
 
 			next = lnext(lc);
 
-			pfree(rv->schemaname);
-			pfree(rv->relname);
-			pfree(rv);
+			pfree(sync);
 			pfree(lc);
 		}
 
 		pfree(SyncingTables);
 		SyncingTables = NIL;
-
 	}
 
 	/* Read new state. */
@@ -1554,10 +1578,9 @@ reread_unsynced_tables(Oid subid)
 	saved_ctx = MemoryContextSwitchTo(TopMemoryContext);
 	foreach (lc, unsynced_tables)
 	{
-		RangeVar	   *rv = lfirst(lc);
-		SyncingTables = lappend(SyncingTables,
-								makeRangeVar(pstrdup(rv->schemaname),
-											 pstrdup(rv->relname), -1));
+		PGLogicalSyncStatus	   *sync = palloc(sizeof(PGLogicalSyncStatus));
+		memcpy(sync, lfirst(lc), sizeof(PGLogicalSyncStatus));
+		SyncingTables = lappend(SyncingTables, sync);
 	}
 
 	MemoryContextSwitchTo(saved_ctx);
@@ -1566,6 +1589,8 @@ reread_unsynced_tables(Oid subid)
 static void
 process_syncing_tables(XLogRecPtr end_lsn)
 {
+	ListCell	   *lc;
+
 	/* First check if we need to update the cached information. */
 	if (MyApplyWorker->sync_pending)
 	{
@@ -1578,51 +1603,63 @@ process_syncing_tables(XLogRecPtr end_lsn)
 	/* Process currently pending sync tables. */
 	if (list_length(SyncingTables) > 0)
 	{
-		ListCell	   *lc,
-					   *prev,
+		ListCell	   *prev,
 					   *next;
 
 		prev = NULL;
 		for (lc = list_head(SyncingTables); lc; lc = next)
 		{
-			RangeVar	   *rv = (RangeVar *) lfirst(lc);
-			PGLogicalSyncStatus	   *sync;
-			char					status;
+			PGLogicalSyncStatus	   *sync = (PGLogicalSyncStatus *) lfirst(lc);
+			PGLogicalSyncStatus	   *newsync;
 
 			/* We might delete the cell so advance it now. */
 			next = lnext(lc);
 
 			StartTransactionCommand();
-			sync = get_table_sync_status(MyApplyWorker->subid, rv->schemaname,
-										 rv->relname, true);
+			newsync = get_table_sync_status(MyApplyWorker->subid,
+										 NameStr(sync->nspname),
+										 NameStr(sync->relname), true);
 
 			/*
 			 * TODO: what to do here? We don't really want to die,
 			 * but this can mean many things, for now we just assume table is
 			 * not relevant for us anymore and leave fixing to the user.
+			 *
+			 * The reason why this part happens in transaction is that the
+			 * memory allocated for sync info will get automatically cleaned
+			 * afterwards.
 			 */
-			if (!sync)
-				status = SYNC_STATUS_READY;
+			if (!newsync)
+			{
+				sync->status = SYNC_STATUS_READY;
+				sync->statuslsn = InvalidXLogRecPtr;
+			}
 			else
-				status = sync->status;
+				memcpy(sync, newsync, sizeof(PGLogicalSyncStatus));
 			CommitTransactionCommand();
 
-			if (status == SYNC_STATUS_SYNCWAIT)
+			if (sync->status == SYNC_STATUS_SYNCWAIT)
 			{
 				PGLogicalWorker *worker;
 
 				LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 				worker = pglogical_sync_find(MyDatabaseId,
 											 MyApplyWorker->subid,
-											 rv->schemaname, rv->relname);
+											 NameStr(sync->nspname),
+											 NameStr(sync->relname));
+
 				if (pglogical_worker_running(worker) &&
 					end_lsn >= worker->worker.apply.replay_stop_lsn)
 				{
 					worker->worker.apply.replay_stop_lsn = end_lsn;
+					sync->status = SYNC_STATUS_CATCHUP;
 
 					StartTransactionCommand();
-					set_table_sync_status(MyApplyWorker->subid, rv->schemaname,
-										  rv->relname, SYNC_STATUS_CATCHUP);
+					set_table_sync_status(MyApplyWorker->subid,
+										  NameStr(sync->nspname),
+										  NameStr(sync->relname),
+										  sync->status,
+										  sync->statuslsn);
 					CommitTransactionCommand();
 
 					if (pglogical_worker_running(worker))
@@ -1630,22 +1667,36 @@ process_syncing_tables(XLogRecPtr end_lsn)
 					LWLockRelease(PGLogicalCtx->lock);
 
 					if (wait_for_sync_status_change(MyApplyWorker->subid,
-													rv->schemaname,
-													rv->relname,
-													SYNC_STATUS_READY))
-						status = SYNC_STATUS_READY;
+													NameStr(sync->nspname),
+													NameStr(sync->relname),
+													SYNC_STATUS_SYNCDONE,
+													&sync->statuslsn))
+						sync->status = SYNC_STATUS_SYNCDONE;
 				}
 				else
 					LWLockRelease(PGLogicalCtx->lock);
 			}
 
+			if (sync->status == SYNC_STATUS_SYNCDONE &&
+				end_lsn >= sync->statuslsn)
+			{
+				sync->status = SYNC_STATUS_READY;
+				sync->statuslsn = end_lsn;
+
+				StartTransactionCommand();
+				set_table_sync_status(MyApplyWorker->subid,
+									  NameStr(sync->nspname),
+									  NameStr(sync->relname),
+									  sync->status,
+									  sync->statuslsn);
+				CommitTransactionCommand();
+			}
+
 			/* Ready? Remove it from local cache. */
-			if (status == SYNC_STATUS_READY)
+			if (sync->status == SYNC_STATUS_READY)
 			{
 				SyncingTables = list_delete_cell(SyncingTables, lc, prev);
-				pfree(rv->schemaname);
-				pfree(rv->relname);
-				pfree(rv);
+				pfree(sync);
 			}
 			else
 				prev = lc;
@@ -1656,17 +1707,21 @@ process_syncing_tables(XLogRecPtr end_lsn)
 	 * If there are still pending tables for syncrhonization, launch the sync
 	 * worker.
 	 */
-	if (list_length(SyncingTables) > 0)
+	foreach (lc, SyncingTables)
 	{
 		List		   *workers;
-		ListCell	   *lc;
+		ListCell	   *wlc;
 		int				nworkers = 0;
+		PGLogicalSyncStatus	   *sync = (PGLogicalSyncStatus *) lfirst(lc);
+
+		if (sync->status == SYNC_STATUS_SYNCDONE || sync->status == SYNC_STATUS_READY)
+			continue;
 
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		workers = pglogical_sync_find_all(MyDatabaseId, MyApplyWorker->subid);
-		foreach (lc, workers)
+		foreach (wlc, workers)
 		{
-			PGLogicalWorker	   *worker = (PGLogicalWorker *) lfirst(lc);
+			PGLogicalWorker	   *worker = (PGLogicalWorker *) lfirst(wlc);
 
 			if (pglogical_worker_running(worker))
 				nworkers++;
@@ -1675,15 +1730,14 @@ process_syncing_tables(XLogRecPtr end_lsn)
 
 		if (nworkers < 1)
 		{
-			RangeVar	   *rv = linitial(SyncingTables);
-
-			start_sync_worker(rv);
+			start_sync_worker(&sync->nspname, &sync->relname);
+			break;
 		}
 	}
 }
 
 static void
-start_sync_worker(RangeVar *rv)
+start_sync_worker(Name nspname, Name relname)
 {
 	PGLogicalWorker			worker;
 
@@ -1696,8 +1750,8 @@ start_sync_worker(RangeVar *rv)
 
 	/* Tell the worker to stop at current position. */
 	worker.worker.sync.apply.replay_stop_lsn = replorigin_session_origin_lsn;
-	namestrcpy(&worker.worker.sync.nspname, rv->schemaname);
-	namestrcpy(&worker.worker.sync.relname, rv->relname);
+	memcpy(&worker.worker.sync.nspname, nspname, sizeof(NameData));
+	memcpy(&worker.worker.sync.relname, relname, sizeof(NameData));
 
 	(void) pglogical_worker_register(&worker);
 }
