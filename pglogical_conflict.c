@@ -710,7 +710,7 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple)
 	Oid			oid;
 	bool		first = true;
 
-	static const int MAX_CONFLICT_LOG_ATTR_LEN = 20;
+	static const int MAX_CONFLICT_LOG_ATTR_LEN = 40;
 
 	/* print oid of tuple, it's not included in the TupleDesc */
 	if ((oid = HeapTupleHeaderGetOid(tuple->t_data)) != InvalidOid)
