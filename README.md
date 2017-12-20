@@ -262,8 +262,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 
 - `pglogical.alter_subscription_resynchronize_table(subscription_name name,
   relation regclass)`
-  Resynchronize one existing table.
-  **WARNING: This function will truncate the table first.**
+  Resynchronize one existing table. The table may not be the target of any
+  foreign key constraints.
+  **WARNING: This function will truncate the table immediately, and only then
+  begin synchronising it, so it will be empty while being synced**
 
   Parameters:
   - `subscription_name` - name of the existing subscription
