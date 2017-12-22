@@ -792,6 +792,14 @@ Also any DDL limitations apply so extra care need to be taken when using
 The Postgre-XL changes defaults and available settings for
 `pglogical.conflict_resolution` and `pglogical.use_spi` configuration options.
 
+### BDR
+
+`pglogical` does not currently interoperate well with BDR. BDR nodes will not
+forward writes made by pglogical subscribers. And pglogical providers will not
+decode and send writes made on other BDR nodes to the pglogical subscriber.
+
+This restriction may be lifted at a later time.
+
 ## Credits and Licence
 
 pglogical has been designed, developed and tested by the 2ndQuadrant team
