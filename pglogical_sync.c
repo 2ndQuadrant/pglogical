@@ -39,6 +39,8 @@
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
 
+#include "pgstat.h"
+
 #include "replication/origin.h"
 
 #include "storage/fd.h"
