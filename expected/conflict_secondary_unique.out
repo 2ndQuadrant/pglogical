@@ -1,0 +1,98 @@
+--PRIMARY KEY
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+-- Test conflicts where a secondary unique constraint with a predicate exits,
+-- ensuring we don't generate false conflicts.
+SELECT pglogical.replicate_ddl_command($$
+CREATE TABLE public.secondary_unique_pred (
+    a integer PRIMARY KEY,
+    b integer NOT NULL,
+    check_unique boolean NOT NULL
+);
+
+CREATE UNIQUE INDEX ON public.secondary_unique_pred (b) WHERE (check_unique);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'secondary_unique_pred');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO secondary_unique_pred (a, b, check_unique) VALUES (1, 1, false);
+INSERT INTO secondary_unique_pred (a, b, check_unique) VALUES (2, 1, false);
+INSERT INTO secondary_unique_pred (a, b, check_unique) VALUES (3, 2, true);
+-- must fail
+INSERT INTO secondary_unique_pred (a, b, check_unique) VALUES (5, 2, true);
+ERROR:  duplicate key value violates unique constraint "secondary_unique_pred_b_idx"
+DETAIL:  Key (b)=(2) already exists.
+SELECT * FROM secondary_unique_pred ORDER BY a;
+ a | b | check_unique 
+---+---+--------------
+ 1 | 1 | f
+ 2 | 1 | f
+ 3 | 2 | t
+(3 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM secondary_unique_pred ORDER BY a;
+ a | b | check_unique 
+---+---+--------------
+ 1 | 1 | f
+ 2 | 1 | f
+ 3 | 2 | t
+(3 rows)
+
+\c :provider_dsn
+-- This line doesn't conflict on the provider. On the subscriber
+-- we must not detect a conflict on (b), since the existing local
+-- row matches (check_unique) but the new remote row doesn't. So
+-- this must get applied.
+INSERT INTO secondary_unique_pred (a, b, check_unique) VALUES (4, 2, false);
+SELECT * FROM secondary_unique_pred ORDER BY a;
+ a | b | check_unique 
+---+---+--------------
+ 1 | 1 | f
+ 2 | 1 | f
+ 3 | 2 | t
+ 4 | 2 | f
+(4 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM secondary_unique_pred ORDER BY a;
+ a | b | check_unique 
+---+---+--------------
+ 1 | 1 | f
+ 2 | 1 | f
+ 3 | 2 | t
+ 4 | 2 | f
+(4 rows)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.secondary_unique_pred CASCADE;
+$$);
+NOTICE:  drop cascades to table public.secondary_unique_pred membership in replication set default
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+

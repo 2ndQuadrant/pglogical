@@ -662,6 +662,9 @@ It's fine to have extra unique constraints on an upstream if the downstream only
 gets writes from that upstream and nowhere else. The rule is that the downstream
 constraints must *not be more restrictive* than those on the upstream(s).
 
+Partial secondary unique indexes are permitted, but will be ignored for
+conflict resolution purposes.
+
 ### Unique constraints must not be deferrable
 
 On the downstream end pglogical does not support index-based constraints
@@ -725,7 +728,7 @@ not replicated to the replica.
 The state of sequences added to replication sets is replicated periodically
 and not in real-time. Dynamic buffer is used for the value being replicated so
 that the subscribers actually receive future state of the sequence. This
-minimizes the chance of subscriber's notion of sequence's last_value falling
+minimizes the chance of subscriber's notion of sequence's `last_value` falling
 behind but does not completely eliminate the possibility.
 
 It might be desirable to call `synchronize_sequence` to ensure all subscribers

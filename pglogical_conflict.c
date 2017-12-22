@@ -337,11 +337,24 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 		/*
 		 * Only unique indexes are of interest here, and we can't deal with
 		 * expression indexes so far.
-		 *
-		 * TODO: predicates should be handled better. There's no point scanning
-		 * an index where the predicates show it could never match anyway.
 		 */
 		if (!ii->ii_Unique || ii->ii_Expressions != NIL)
+			continue;
+
+		/*
+		 * TODO: predicates should be handled better. There's no point scanning
+		 * an index where the predicates show it could never match anyway, and
+		 * it can produce false conflicts if the predicate includes non-indexed
+		 * columns. We could find a local tuple that matches the predicate in
+		 * the index, but there's only a true conflict if the remote tuple also
+		 * matches the predicate. If we ignore the predicate we generate a false
+		 * conflict. See RM#1839.
+		 *
+		 * For now we reject conflict resolution on indexes with predicates
+		 * entirely. If there's a conflict it'll be raised on apply with a
+		 * unique violation.
+		 */
+		if (ii->ii_Predicate != NIL)
 			continue;
 
 		idxrel = relinfo->ri_IndexRelationDescs[i];

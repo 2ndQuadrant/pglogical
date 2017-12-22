@@ -29,7 +29,7 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 
 SCRIPTS_built = pglogical_create_subscriber
 
-REGRESS = preseed infofuncs init_fail init preseed_check basic extended \
+REGRESS = preseed infofuncs init_fail init preseed_check basic extended conflict_secondary_unique \
 		  toasted replication_set add_table matview bidirectional primary_key \
 		  interfaces foreign_key functions copy triggers parallel row_filter \
 		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
