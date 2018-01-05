@@ -3,7 +3,12 @@ use warnings;
 use Cwd;
 use Config;
 use TestLib;
-use Test::More tests => 6;
+use Test::More;
+#use Test::More tests => 6;
+# This is a special test, that tries to modify system time 
+# Not required to run in usual suite tests
+TODO: {
+todo_skip 'Whole test need rewriting using the new framework, with no sudo etc', 1;
 
 my $PGPORT=65432; #subscriber's port
 my $PROVIDER_PORT=65431;
@@ -200,3 +205,6 @@ system("pg_ctl stop -D /tmp/tmp_030_pdatadir -m immediate &");
 command_ok([ 'sudo', 'sntp', '-s', '24.56.178.140' ], 'sync time with ntp server check');
 system("timedatectl set-timezone $timezone");
 
+}
+
+done_testing();
