@@ -22,7 +22,7 @@ END;$$;
 DO $$
 BEGIN
         IF version() ~ 'Postgres-XL' THEN
-                CREATE EXTENSION IF NOT EXISTS pglogical VERSION '2.0.0';
+                CREATE EXTENSION IF NOT EXISTS pglogical;
         ELSE
                 CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';
         END IF;
