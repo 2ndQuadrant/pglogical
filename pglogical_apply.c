@@ -219,7 +219,7 @@ format_action_description(
 	}
 
 	appendStringInfo(si,
-			" in commit before %X/%X, xid %u commited at %s (action #%u)",
+			" in commit before %X/%X, xid %u committed at %s (action #%u)",
 			(uint32)(replorigin_session_origin_lsn>>32),
 			(uint32)replorigin_session_origin_lsn,
 			remote_xid,
