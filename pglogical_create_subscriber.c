@@ -784,7 +784,7 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		die(_("Could fetch existing slot information: %s\n"), PQerrorMessage(provider_conn));
+		die(_("Could not fetch existing slot information: %s\n"), PQerrorMessage(provider_conn));
 
 	/* Drop the existing slot when asked for it or error if it already exists. */
 	if (PQntuples(res) > 0)
