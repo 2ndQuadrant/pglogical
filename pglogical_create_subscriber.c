@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 /* Note the order is important for debian here. */
 #if !defined(pg_attribute_printf)
@@ -71,7 +72,6 @@ static char		   *data_dir = NULL;
 static char			pid_file[MAXPGPATH];
 static time_t		start_time;
 static VerbosityLevelEnum	verbosity = VERBOSITY_NORMAL;
-static char *restore_point_name = "pglogical_create_subscription";
 
 /* defined as static so that die() can close them */
 static PGconn		*subscriber_conn = NULL;
@@ -130,6 +130,7 @@ static char *find_other_exec_or_die(const char *argv0, const char *target);
 static bool postmaster_is_alive(pid_t pid);
 static long get_pgpid(void);
 static char **get_database_list(char *databases, int *n_databases);
+static char *generate_restore_point_name(void);
 
 static PGconn *
 connectdb(const char *connstr)
@@ -181,6 +182,7 @@ main(int argc, char **argv)
 	bool		use_existing_data_dir = false;
 	int			pg_ctl_ret,
 				logfd;
+	char	   *restore_point_name = NULL;
 
 	static struct option long_options[] = {
 		{"subscriber-name", required_argument, NULL, 'n'},
@@ -413,7 +415,10 @@ main(int argc, char **argv)
 						postgresql_conf, pg_hba_conf);
 	snprintf(pid_file, MAXPGPATH, "%s/postmaster.pid", data_dir);
 
-	print_msg(VERBOSITY_NORMAL, _("Creating restore point on remote node ...\n"));
+	restore_point_name = generate_restore_point_name();
+
+	print_msg(VERBOSITY_NORMAL, _("Creating restore point \"%s\" on remote node ...\n"),
+		restore_point_name);
 	provider_conn = connectdb(prov_connstr);
 	remote_lsn = create_restore_point(provider_conn, restore_point_name);
 	PQfinish(provider_conn);
@@ -442,6 +447,9 @@ main(int argc, char **argv)
 	appendPQExpBuffer(recoveryconfcontents, "pause_at_recovery_target = false\n");
 #endif
 	WriteRecoveryConf(recoveryconfcontents);
+
+	free(restore_point_name);
+	restore_point_name = NULL;
 
 	/*
 	 * Start subscriber node with pglogical disabled, and wait until it starts
@@ -1724,4 +1732,12 @@ get_database_list(char *databases, int *n_databases)
 	}
 	pfree(databases);
 	return result;
+}
+
+static char *
+generate_restore_point_name(void)
+{
+	char *rpn = malloc(NAMEDATALEN);
+	snprintf(rpn, NAMEDATALEN-1, "pglogical_create_subscriber_%lx", random());
+	return rpn;
 }
