@@ -252,6 +252,9 @@ init_apply_exec_state(PGLogicalRelation *rel)
 static void
 finish_apply_exec_state(ApplyExecState *aestate)
 {
+	/* Close indexes */
+	ExecCloseIndices(aestate->resultRelInfo);
+
 	/* Handle queued AFTER triggers. */
 	AfterTriggerEndQuery(aestate->estate);
 
@@ -418,8 +421,6 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 							 remotetuple, recheckIndexes);
 	}
 
-	ExecCloseIndices(aestate->resultRelInfo);
-
 	PopActiveSnapshot();
 	finish_apply_exec_state(aestate);
 
@@ -556,7 +557,6 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 							   );
 				recheckIndexes = UserTableUpdateOpenIndexes(aestate->estate,
 															aestate->slot);
-				ExecCloseIndices(aestate->resultRelInfo);
 			}
 
 			/* AFTER ROW UPDATE Triggers */
