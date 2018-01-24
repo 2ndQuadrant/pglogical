@@ -28,6 +28,11 @@
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
 
+typedef struct signal_workers_arg
+{
+	Oid		subid;
+	bool	kill;
+} signal_workers_arg;
 
 volatile sig_atomic_t	got_SIGTERM = false;
 
@@ -142,8 +147,8 @@ pglogical_worker_register(PGLogicalWorker *worker)
 		snprintf(bgw.bgw_function_name, BGW_MAXLEN,
 				 "pglogical_sync_main");
 		snprintf(bgw.bgw_name, BGW_MAXLEN,
-				 "pglogical sync %s %u:%u",
-				 NameStr(worker->worker.sync.relname),
+				 "pglogical sync %*s %u:%u", NAMEDATALEN - 37,
+				 shorten_hash(NameStr(worker->worker.sync.relname), NAMEDATALEN - 37),
 				 worker->dboid, worker->worker.sync.apply.subid);
 	}
 	else
@@ -528,11 +533,14 @@ signal_worker_xact_callback(XactEvent event, void *arg)
 
 				if (arg != NULL)
 				{
-					Oid					subid = *(Oid *) arg;
+					signal_workers_arg *swa = (signal_workers_arg *) arg;
 					PGLogicalWorker	   *apply;
 
-					apply = pglogical_apply_find(MyDatabaseId, subid);
-					pglogical_worker_kill(apply);
+					apply = pglogical_apply_find(MyDatabaseId, swa->subid);
+					if (swa->kill)
+						pglogical_worker_kill(apply);
+					else if (pglogical_worker_running(apply))
+						SetLatch(&apply->proc->procLatch);
 				}
 
 				PGLogicalCtx->subscriptions_changed = true;
@@ -563,7 +571,7 @@ signal_worker_xact_callback(XactEvent event, void *arg)
  * Enqueue singal for supervisor/manager at COMMIT.
  */
 void
-pglogical_subscription_changed(Oid subid)
+pglogical_subscription_changed(Oid subid, bool kill)
 {
 	if (!xacthook_signal_workers)
 	{
@@ -571,8 +579,12 @@ pglogical_subscription_changed(Oid subid)
 
 		if (OidIsValid(subid))
 		{
-			arg = MemoryContextAlloc(TopTransactionContext, sizeof(subid));
-			memcpy(arg, &subid, sizeof(subid));
+			signal_workers_arg swa;
+			arg = MemoryContextAlloc(TopTransactionContext,
+									 sizeof(signal_workers_arg));
+			swa.subid = subid;
+			swa.kill = kill;
+			memcpy(arg, &swa, sizeof(signal_workers_arg));
 		}
 
 		RegisterXactCallback(signal_worker_xact_callback, arg);

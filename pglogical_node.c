@@ -179,7 +179,7 @@ create_node(PGLogicalNode *node)
 
 	CommandCounterIncrement();
 
-	pglogical_subscription_changed(InvalidOid);
+	pglogical_subscription_changed(InvalidOid, false);
 }
 
 /*
@@ -218,7 +218,7 @@ drop_node(Oid nodeid)
 
 	CommandCounterIncrement();
 
-	pglogical_subscription_changed(InvalidOid);
+	pglogical_subscription_changed(InvalidOid, false);
 }
 
 static PGLogicalNode *
@@ -751,7 +751,7 @@ create_subscription(PGLogicalSubscription *sub)
 
 	CommandCounterIncrement();
 
-	pglogical_subscription_changed(sub->id);
+	pglogical_subscription_changed(sub->id, true);
 }
 
 /*
@@ -836,7 +836,7 @@ alter_subscription(PGLogicalSubscription *sub)
 
 	CommandCounterIncrement();
 
-	pglogical_subscription_changed(sub->id);
+	pglogical_subscription_changed(sub->id, true);
 }
 
 /*
@@ -875,7 +875,7 @@ drop_subscription(Oid subid)
 
 	CommandCounterIncrement();
 
-	pglogical_subscription_changed(subid);
+	pglogical_subscription_changed(subid, true);
 }
 
 static PGLogicalSubscription*

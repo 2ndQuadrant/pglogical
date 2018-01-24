@@ -87,7 +87,7 @@ extern volatile sig_atomic_t got_SIGTERM;
 
 extern void handle_sigterm(SIGNAL_ARGS);
 
-extern void pglogical_subscription_changed(Oid subid);
+extern void pglogical_subscription_changed(Oid subid, bool kill);
 
 extern void pglogical_worker_shmem_init(void);
 
