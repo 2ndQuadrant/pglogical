@@ -905,8 +905,9 @@ handle_table_sync(QueuedMessage *queued_message)
 	create_local_sync_status(newsync);
 
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-	SyncingTables = lappend(SyncingTables, newsync);
 	MemoryContextSwitchTo(oldcontext);
+
+	MyApplyWorker->sync_pending = true;
 }
 
 /*
