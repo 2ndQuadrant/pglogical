@@ -69,15 +69,15 @@ listed in your `PATH` environment variable. You might have to install a `-dev`
 or `-devel` package for your PostgreSQL release from your package manager if
 you don't have `pg_config`.
 
-Then run `make USE_PGXS=1` to compile, and `make USE_PGXS=1 install` to
+Then run `make` to compile, and `make install` to
 install. You might need to use `sudo` for the install step.
 
 e.g. for a typical Fedora or RHEL 7 install, assuming you're using the
 [yum.postgresql.org](http://yum.postgresql.org) packages for PostgreSQL:
 
     sudo dnf install postgresql95-devel
-    PATH=/usr/pgsql-9.5/bin:$PATH make USE_PGXS=1 clean all
-    sudo PATH=/usr/pgsql-9.5/bin:$PATH make USE_PGXS=1 install
+    PATH=/usr/pgsql-9.5/bin:$PATH make clean all
+    sudo PATH=/usr/pgsql-9.5/bin:$PATH make install
 
 ## Usage
 
