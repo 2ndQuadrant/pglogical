@@ -181,6 +181,10 @@ endef
 $(foreach target,$(if $1,$1,$(standard_targets)),$(foreach subdir,$(if $2,$2,$(SUBDIRS)),$(eval $(call _pgl_create_recursive_target,$(target),$(subdir),$(if $3,$3,$(target))))))
 
 
+#
+# The following hideous hack works around pg_regress's inability to inject
+# prefix commands by using a wrapper 'postgres' that finds the real postgres.
+#
 
 define VALGRIND_WRAPPER
 #!/bin/bash
@@ -198,26 +202,36 @@ set -e -u -x
 #
 SUPP=$(POSTGRES_SRC)/src/tools/valgrind.supp
 
-NEXT_POSTGRES=$$(which -a postgres | uniq | tail -n +2 | head -1)
+# Pop top two elements from path; the first is added by pg_regress
+# and the next is us.
+function join_by { local IFS="$$1"; shift; echo "$$*"; }
+IFS=':' read -r -a PATHA <<< "$$PATH"
+export PATH=$$(join_by ":" "$${PATHA[@]:2}")
+
+NEXT_POSTGRES=$$(which postgres)
+if [ "$${NEXT_POSTGRES}" -ef "./valgrind/postgres" ]; then
+    echo "ERROR: attempt to execute self"
+    exit 1
+fi
 
 echo "Running $${NEXT_POSTGRES} under Valgrind"
 
-
-valgrind --leak-check=full --show-leak-kinds=definite,possible --gen-suppressions=all \
+valgrind --leak-check=full --show-leak-kinds=definite,possible,reachable --gen-suppressions=all \
 	--suppressions="$${SUPP}" --suppressions=pglogical.supp --verbose \
 	--time-stamp=yes  --log-file=valgrind-$$$$-%p.log --trace-children=yes \
 	--track-origins=yes --read-var-info=yes --malloc-fill=8f --free-fill=9f \
 	--num-callers=30 \
-	"$$NEXT_POSTGRES" "$$@"
+	postgres "$$@"
 
 endef
 
 export VALGRIND_WRAPPER
 
 valgrind-check:
-	$(if $(POSTGRES_SRC),,$(error set Makefile variable POSTGRES_SRC to postgres source dir to find valgrind.supp))
+	$(if $(POSTGRES_SRC),,$(error set Make variable POSTGRES_SRC to postgres source dir to find valgrind.supp))
 	$(if $(wildcard $(POSTGRES_SRC)/src/tools/valgrind.supp),,$(error missing valgrind suppressions at $(POSTGRES_SRC)/src/tools/valgrind.supp))
-	echo "$$VALGRIND_WRAPPER" > postgres
-	chmod a+x postgres
-	PATH=.:$(PATH) $(MAKE) check
-	rm postgres
+	mkdir -p valgrind/
+	echo "$$VALGRIND_WRAPPER" > valgrind/postgres
+	chmod a+x valgrind/postgres
+	PATH=./valgrind/:$(PATH) $(MAKE) check
+	rm valgrind/postgres
