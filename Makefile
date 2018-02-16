@@ -179,3 +179,45 @@ $(1)-$(2)-recurse: $(if $(filter check, $(3)), temp-install)
 endef
 
 $(foreach target,$(if $1,$1,$(standard_targets)),$(foreach subdir,$(if $2,$2,$(SUBDIRS)),$(eval $(call _pgl_create_recursive_target,$(target),$(subdir),$(if $3,$3,$(target))))))
+
+
+
+define VALGRIND_WRAPPER
+#!/bin/bash
+
+set -e -u -x
+
+# May also want --expensive-definedness-checks=yes
+#
+# Quicker runs without --track-origins=yes --read-var-info=yes
+#
+# If you don't want leak checking, use --leak-check=no
+#
+# When just doing leak checking and not looking for detailed memory error reports you don't need:
+# 	--track-origins=yes --read-var-info=yes --malloc-fill=8f --free-fill=9f 
+#
+SUPP=$(POSTGRES_SRC)/src/tools/valgrind.supp
+
+NEXT_POSTGRES=$$(which -a postgres | uniq | tail -n +2 | head -1)
+
+echo "Running $${NEXT_POSTGRES} under Valgrind"
+
+
+valgrind --leak-check=full --show-leak-kinds=definite,possible --gen-suppressions=all \
+	--suppressions="$${SUPP}" --suppressions=pglogical.supp --verbose \
+	--time-stamp=yes  --log-file=valgrind-$$$$-%p.log --trace-children=yes \
+	--track-origins=yes --read-var-info=yes --malloc-fill=8f --free-fill=9f \
+	--num-callers=30 \
+	"$$NEXT_POSTGRES" "$$@"
+
+endef
+
+export VALGRIND_WRAPPER
+
+valgrind-check:
+	$(if $(POSTGRES_SRC),,$(error set Makefile variable POSTGRES_SRC to postgres source dir to find valgrind.supp))
+	$(if $(wildcard $(POSTGRES_SRC)/src/tools/valgrind.supp),,$(error missing valgrind suppressions at $(POSTGRES_SRC)/src/tools/valgrind.supp))
+	echo "$$VALGRIND_WRAPPER" > postgres
+	chmod a+x postgres
+	PATH=.:$(PATH) $(MAKE) check
+	rm postgres

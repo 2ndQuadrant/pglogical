@@ -33,6 +33,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
+#include "pglogical.h"
 #include "pglogical_output_config.h"
 #include "pglogical_executor.h"
 #include "pglogical_node.h"
@@ -368,6 +369,11 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 
 		relmetacache_init(ctx->context);
 	}
+
+	/* So we can identify the process type in Valgrind logs */
+	VALGRIND_PRINTF("PGLOGICAL: pglogical worker output_plugin\n");
+	/* For incremental leak checking */
+	VALGRIND_DO_LEAK_CHECK;
 }
 
 /*
@@ -378,6 +384,8 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 	bool send_replication_origin = data->forward_changeset_origins;
+
+	VALGRIND_DO_ADDED_LEAK_CHECK;
 
 	if (!startup_message_sent)
 		send_startup_message(ctx, data, false /* can't be last message */);
@@ -436,6 +444,8 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * at the moment.
 	 */
 	relmetacache_prune();
+
+	VALGRIND_DO_ADDED_LEAK_CHECK;
 }
 
 static bool
@@ -761,6 +771,8 @@ static void
 pg_decode_shutdown(LogicalDecodingContext * ctx)
 {
 	relmetacache_destroy();
+
+	VALGRIND_PRINTF("PGLOGICAL: output plugin shutdown\n");
 
 	/*
 	 * no need to delete data->context as it's child of ctx->context which

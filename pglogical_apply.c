@@ -300,6 +300,8 @@ handle_begin(StringInfo s)
 	replorigin_session_origin_lsn = commit_lsn;
 	remote_origin_id = InvalidRepOriginId;
 
+	VALGRIND_PRINTF("PGLOGICAL_APPLY: begin %u\n", remote_xid);
+
 	/* don't want the overhead otherwise */
 	if (apply_delay > 0)
 	{
@@ -466,6 +468,8 @@ handle_commit(StringInfo s)
 		/* Stop gracefully */
 		proc_exit(0);
 	}
+
+	VALGRIND_PRINTF("PGLOGICAL_APPLY: commit %u\n", remote_xid);
 
 	xact_action_counter = 0;
 	remote_xid = InvalidTransactionId;
@@ -1413,6 +1417,9 @@ apply_work(PGconn *streamConn)
 
 		/* Cleanup the memory. */
 		MemoryContextResetAndDeleteChildren(MessageContext);
+		VALGRIND_DO_ADDED_LEAK_CHECK;
+
+		MemoryContextStatsDetail(MessageContext, 1);
 	}
 }
 
@@ -1899,6 +1906,8 @@ pglogical_apply_main(Datum main_arg)
 	pfree(repsets);
 
 	CommitTransactionCommand();
+
+	VALGRIND_DO_LEAK_CHECK;
 
 	apply_work(streamConn);
 

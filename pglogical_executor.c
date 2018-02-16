@@ -252,7 +252,6 @@ pglogical_ProcessUtility(
 	#define		sentToRemote NULL
 #endif
 
-
 	dropping_pglogical_obj = false;
 
 	if (nodeTag(parsetree) == T_TruncateStmt)

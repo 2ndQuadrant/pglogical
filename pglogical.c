@@ -654,6 +654,8 @@ pglogical_supervisor_main(Datum main_arg)
 
 	elog(LOG, "starting pglogical supervisor");
 
+	VALGRIND_PRINTF("PGLOGICAL: supervisor\n");
+
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
 #if PG_VERSION_NUM >= 90500
 	BackgroundWorkerInitializeConnection(NULL, NULL);
@@ -690,6 +692,7 @@ pglogical_supervisor_main(Datum main_arg)
 			proc_exit(1);
 	}
 
+	VALGRIND_PRINTF("PGLOGICAL: supervisor exit\n");
 	proc_exit(0);
 }
 

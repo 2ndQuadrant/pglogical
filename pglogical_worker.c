@@ -315,6 +315,14 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 		 pglogical_worker_type_name(type), MyProcPid, slot,
 		 MyPGLogicalWorkerGeneration);
 
+	/*
+	 * So we can find workers in valgrind output, send a Valgrind client
+	 * request to print to the Valgrind log.
+	 */
+	VALGRIND_PRINTF("PGLOGICAL: pglogical worker %s (%s)\n",
+		pglogical_worker_type_name(type),
+		MyBgworkerEntry->bgw_name);
+
 	LWLockRelease(PGLogicalCtx->lock);
 
 	/* Make it easy to identify our processes. */
@@ -345,6 +353,9 @@ pglogical_worker_detach(bool crash)
 		 MyProcPid, MyPGLogicalWorker - &PGLogicalCtx->workers[0],
 		 MyPGLogicalWorkerGeneration,
 		 crash ? "exiting with error" : "detaching cleanly");
+
+	VALGRIND_PRINTF("PGLOGICAL: worker detaching, unclean=%d\n",
+		crash);
 
 	/*
 	 * If we crashed we need to report it.

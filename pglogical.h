@@ -77,4 +77,26 @@ extern void pglogical_create_sequence_state_record(Oid seqoid);
 extern void pglogical_drop_sequence_state_record(Oid seqoid);
 extern int64 sequence_get_last_value(Oid seqoid);
 
+#include "utils/memdebug.h"
+
+/*
+ * PostgreSQL exposes stubs for some Valgrind macros, but there are some
+ * others we use that aren't supported by Pg proper yet.
+ */
+#ifndef USE_VALGRIND
+#define VALGRIND_CHECK_VALUE_IS_DEFINED(v) do{} while(0)
+#define VALGRIND_DO_LEAK_CHECK do{} while(0)
+#define VALGRIND_DO_ADDED_LEAK_CHECK do{} while(0)
+#define VALGRIND_DO_CHANGED_LEAK_CHECK do{} while(0)
+#define VALGRIND_DO_QUICK_LEAK_CHECK do{} while(0)
+
+/*
+ * Gives us some error checking when no-op'd. pglogical uses this to report
+ * the worker type, etc, prefixed by PGLOGICAL:, in the Valgrind logs.
+ */
+static inline _discard_vg_printf(const char *msg, ...) pg_attribute_printf(1, 2) { };
+#define VALGRIND_PRINTF(msg, ...) _discard_vg_printf(msg, __VA_ARGS__)
+
+#endif
+
 #endif /* PGLOGICAL_H */
