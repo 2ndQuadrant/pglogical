@@ -77,14 +77,14 @@
 # This may well indicate something unclosed that should be, and needs
 # investigation.
 #
-{
-   pg_index_open
-   Memcheck:Leak
-   match-leak-kinds: possible
-   fun:*lloc*
-   ...
-   fun:relation_open
-}
+#{
+#   pg_index_open
+#   Memcheck:Leak
+#   match-leak-kinds: possible
+#   fun:*lloc*
+#   ...
+#   fun:relation_open
+#}
 
 #
 # XXX IFFY
@@ -92,18 +92,18 @@
 # pglogical's relcache seems to confuse valgrind. But how sure are we that these
 # are real false positives not leaks?
 #
-
-{
-   pgl_relcache
-   Memcheck:Leak
-   match-leak-kinds: possible
-   fun:MemoryContextAlloc*
-   ...
-   fun:pglogical_relation_cache_update
-   ...
-   fun:apply_work
-}
-
+#
+#{
+#   pgl_relcache
+#   Memcheck:Leak
+#   match-leak-kinds: possible
+#   fun:MemoryContextAlloc*
+#   ...
+#   fun:pglogical_relation_cache_update
+#   ...
+#   fun:apply_work
+#}
+#
 #
 # XXX
 # 
@@ -111,16 +111,16 @@
 # but are suppressed for now while I look for other issues. Pg should complain
 # if we fail to close an opened relation. (TODO confirm)
 #
-
-{
-   pgl_relation
-   Memcheck:Leak
-   match-leak-kinds: possible
-   fun:MemoryContextAlloc*
-   ...
-   fun:relation_open
-   fun:index_open
-}
+#
+#{
+#   pgl_relation
+#   Memcheck:Leak
+#   match-leak-kinds: possible
+#   fun:MemoryContextAlloc*
+#   ...
+#   fun:relation_open
+#   fun:index_open
+#}
 
 
 #
