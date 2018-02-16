@@ -92,10 +92,10 @@ extern int64 sequence_get_last_value(Oid seqoid);
 
 /*
  * Gives us some error checking when no-op'd. pglogical uses this to report
- * the worker type, etc, prefixed by PGLOGICAL:, in the Valgrind logs.
+ * the worker type, etc, prefixed by PGLOGICAL:, in the Valgrind logs. We
+ * need to stub it out if we aren't using valgrind.
  */
-static inline _discard_vg_printf(const char *msg, ...) pg_attribute_printf(1, 2) { };
-#define VALGRIND_PRINTF(msg, ...) _discard_vg_printf(msg, __VA_ARGS__)
+pg_attribute_printf(1, 2) pg_attribute_unused() static inline void VALGRIND_PRINTF(const char *format, ...) {}
 
 #endif
 
