@@ -43,17 +43,29 @@ find_other_exec_version(const char *argv0, const char *target,
 	snprintf(cmd, sizeof(cmd), "\"%s\" --version", retpath);
 
 	if ((output = popen(cmd, "r")) == NULL)
+	{
+		fprintf(stderr, "find_other_exec_version: couldn't open cmd: %s\n", strerror(errno));
 		return -1;
+	}
 
 	if (fgets(cmd_output, sizeof(cmd_output), output) == NULL)
 	{
-		pclose(output);
+		int ret = pclose(output);
+		if (WIFEXITED(ret))
+			fprintf(stderr, "find_other_exec_version: couldn't read output of \"%s\": %d (exited with return code %d)\n", cmd, ret, WEXITSTATUS(ret));
+		else if (WIFSIGNALED(ret))
+			fprintf(stderr, "find_other_exec_version: couldn't read output of \"%s\": %d (exited with signal %d)\n", cmd, ret, WTERMSIG(ret));
+		else
+			fprintf(stderr, "find_other_exec_version: couldn't read output of \"%s\": %d\n", cmd, ret);
 		return -1;
 	}
 	pclose(output);
 
 	if (sscanf(cmd_output, "%*s %*s %d.%d", &pre_dot, &post_dot) < 1)
+	{
+		fprintf(stderr, "find_other_exec_version: couldn't scan result \"%s\" as version\n", cmd_output);
 		return -2;
+	}
 
 	/*
 	  similar to version number exposed by "server_version_num" but without
