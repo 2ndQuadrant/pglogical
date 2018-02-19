@@ -217,7 +217,7 @@ fi
 echo "Running $${NEXT_POSTGRES} under Valgrind"
 
 valgrind --leak-check=full --show-leak-kinds=definite,possible,reachable --gen-suppressions=all \
-	--suppressions="$${SUPP}" --suppressions=pglogical.supp --verbose \
+	--suppressions="$${SUPP}" --suppressions=`pwd`/pglogical.supp --verbose \
 	--time-stamp=yes  --log-file=valgrind-$$$$-%p.log --trace-children=yes \
 	--track-origins=yes --read-var-info=yes --malloc-fill=8f --free-fill=9f \
 	--num-callers=30 \
