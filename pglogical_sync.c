@@ -1575,14 +1575,21 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
  *
  * We also exit if the worker is no longer recognized as sync worker as
  * that means something bad happened to it.
+ *
+ * Care with allocations is required here since it typically runs
+ * in TopMemoryContext.
  */
 bool
 wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
 							char desired_state, XLogRecPtr *lsn)
 {
 	int rc;
+	MemoryContext old_ctx = CurrentMemoryContext;
+	bool ret = false;
 
 	*lsn = InvalidXLogRecPtr;
+
+	Assert(!IsTransactionState());
 
 	while (!got_SIGTERM)
 	{
@@ -1594,22 +1601,24 @@ wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
 		if (!sync)
 		{
 			CommitTransactionCommand();
-			return false;
+			break;
 		}
 		if (sync->status == desired_state)
 		{
 			*lsn = sync->statuslsn;
 			CommitTransactionCommand();
-			return true;
+			ret = true;
+			break;
 		}
 		CommitTransactionCommand();
+		(void) MemoryContextSwitchTo(old_ctx);
 
 		/* Check if the worker is still alive - no point waiting if it died. */
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		worker = pglogical_sync_find(MyDatabaseId, subid, nspname, relname);
 		LWLockRelease(PGLogicalCtx->lock);
 		if (!worker)
-			return false;
+			break;
 
 		rc = WaitLatch(&MyProc->procLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
@@ -1622,7 +1631,8 @@ wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
 			proc_exit(1);
 	}
 
-	return false; /* Silence compiler. */
+	(void) MemoryContextSwitchTo(old_ctx);
+	return ret;
 }
 
 /*
