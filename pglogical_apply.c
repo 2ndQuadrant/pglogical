@@ -1605,6 +1605,9 @@ process_syncing_tables(XLogRecPtr end_lsn)
 {
 	ListCell	   *lc;
 
+	Assert(CurrentMemoryContext == MessageContext);
+	Assert(!IsTransactionState());
+
 	/* First check if we need to update the cached information. */
 	if (MyApplyWorker->sync_pending)
 	{
@@ -1612,6 +1615,7 @@ process_syncing_tables(XLogRecPtr end_lsn)
 		MyApplyWorker->sync_pending = false;
 		reread_unsynced_tables(MyApplyWorker->subid);
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(MessageContext);
 	}
 
 	/* Process currently pending sync tables. */
@@ -1651,6 +1655,7 @@ process_syncing_tables(XLogRecPtr end_lsn)
 			else
 				memcpy(sync, newsync, sizeof(PGLogicalSyncStatus));
 			CommitTransactionCommand();
+			MemoryContextSwitchTo(MessageContext);
 
 			if (sync->status == SYNC_STATUS_SYNCWAIT)
 			{
@@ -1675,6 +1680,7 @@ process_syncing_tables(XLogRecPtr end_lsn)
 										  sync->status,
 										  sync->statuslsn);
 					CommitTransactionCommand();
+					MemoryContextSwitchTo(MessageContext);
 
 					if (pglogical_worker_running(worker))
 						SetLatch(&worker->proc->procLatch);
@@ -1704,6 +1710,7 @@ process_syncing_tables(XLogRecPtr end_lsn)
 									  sync->status,
 									  sync->statuslsn);
 				CommitTransactionCommand();
+				MemoryContextSwitchTo(MessageContext);
 			}
 
 			/* Ready? Remove it from local cache. */
@@ -1748,6 +1755,8 @@ process_syncing_tables(XLogRecPtr end_lsn)
 			break;
 		}
 	}
+
+	Assert(CurrentMemoryContext == MessageContext);
 }
 
 static void
