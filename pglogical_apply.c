@@ -1097,6 +1097,8 @@ replication_handler(StringInfo s)
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
+	Assert(CurrentMemoryContext == MessageContext);
+
 	switch (action)
 	{
 		/* BEGIN */
@@ -1134,6 +1136,8 @@ replication_handler(StringInfo s)
 		default:
 			elog(ERROR, "unknown action of type %c", action);
 	}
+
+	Assert(CurrentMemoryContext == MessageContext);
 
 	if (error_context_stack == &errcallback)
 		error_context_stack = errcallback.previous;
@@ -1297,8 +1301,11 @@ apply_work(PGconn *streamConn)
 										   ALLOCSET_DEFAULT_INITSIZE,
 										   ALLOCSET_DEFAULT_MAXSIZE);
 
+	MemoryContextSwitchTo(MessageContext);
+
 	/* mark as idle, before starting to loop */
 	pgstat_report_activity(STATE_IDLE, NULL);
+	Assert(CurrentMemoryContext == MessageContext);
 
 	while (!got_SIGTERM)
 	{
@@ -1318,7 +1325,7 @@ apply_work(PGconn *streamConn)
 
 		ResetLatch(&MyProc->procLatch);
 
-		MemoryContextSwitchTo(MessageContext);
+		Assert(CurrentMemoryContext == MessageContext);
 
 		/* emergency bailout if postmaster has died */
 		if (rc & WL_POSTMASTER_DEATH)
@@ -1332,11 +1339,17 @@ apply_work(PGconn *streamConn)
 		if (rc & WL_SOCKET_READABLE)
 			PQconsumeInput(applyconn);
 
+		Assert(CurrentMemoryContext == MessageContext);
+
 		for (;;)
 		{
 			if (got_SIGTERM)
 				break;
 
+			/* We must not have fallen out of MessageContext by accident */
+			Assert(CurrentMemoryContext == MessageContext);
+
+			Assert(copybuf == NULL);
 			r = PQgetCopyData(applyconn, &copybuf, 1);
 
 			if (r == -1)
@@ -1359,8 +1372,6 @@ apply_work(PGconn *streamConn)
 			{
 				int c;
 				StringInfoData s;
-
-				MemoryContextSwitchTo(MessageContext);
 
 				/*
 				 * We're using a StringInfo to wrap existing data here, as a
@@ -1413,6 +1424,9 @@ apply_work(PGconn *streamConn)
 					copybuf = NULL;
 				}
 			}
+
+			/* We must not have fallen out of MessageContext by accident */
+			Assert(CurrentMemoryContext == MessageContext);
 		}
 
 		/* confirm all writes at once */
@@ -1420,12 +1434,21 @@ apply_work(PGconn *streamConn)
 
 		if (!in_remote_transaction)
 			process_syncing_tables(last_received);
+		
+		/* We must not have switched out of MessageContext by mistake */
+		Assert(CurrentMemoryContext == MessageContext);
 
 		/* Cleanup the memory. */
 		MemoryContextResetAndDeleteChildren(MessageContext);
-		VALGRIND_DO_ADDED_LEAK_CHECK;
 
-		MemoryContextStatsDetail(MessageContext, 1);
+		/*
+		 * Only do a leak check if we're between txns; we don't want lots of
+		 * noise due to resources that only exist in a txn.
+		 */
+		if (!IsTransactionState())
+		{
+			VALGRIND_DO_ADDED_LEAK_CHECK;
+		}
 	}
 }
 

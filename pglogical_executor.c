@@ -42,6 +42,7 @@
 #include "utils/fmgroids.h"
 #include "utils/json.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -259,6 +260,10 @@ pglogical_ProcessUtility(
 
 	if (nodeTag(parsetree) == T_DropStmt)
 		pglogical_lastDropBehavior = ((DropStmt *)parsetree)->behavior;
+
+	/* There's no reason we should be in a long lived context here */
+	Assert(CurrentMemoryContext != TopMemoryContext
+		   && CurrentMemoryContext != CacheMemoryContext);
 
 	if (next_ProcessUtility_hook)
 		PGLnext_ProcessUtility_hook(pstmt, queryString, context, params,
