@@ -5,7 +5,7 @@
 {
    pgl_apply_start_sync_sub
    Memcheck:Leak
-   match-leak-kinds: possible,definite
+   match-leak-kinds: possible,definite,reachable
    fun:*lloc*
    ...
    fun:pglogical_sync_subscription
@@ -15,7 +15,7 @@
 {
    pgl_apply_start_getsub
    Memcheck:Leak
-   match-leak-kinds: possible,definite
+   match-leak-kinds: possible,definite,reachable
    fun:*lloc*
    ...
    fun:get_subscription
@@ -25,7 +25,7 @@
 {
    pgl_apply_start_queuetable
    Memcheck:Leak
-   match-leak-kinds: possible,definite
+   match-leak-kinds: possible,definite,reachable
    fun:*lloc*
    ...
    fun:get_queue_table_oid
@@ -35,7 +35,7 @@
 {
    pgl_apply_start_bgw
    Memcheck:Leak
-   match-leak-kinds: possible,definite
+   match-leak-kinds: possible,definite,reachable
    fun:*lloc*
    ...
    fun:BackgroundWorkerInitializeConnectionByOid
@@ -45,7 +45,7 @@
 {
    pgl_apply_start_replorigin
    Memcheck:Leak
-   match-leak-kinds: possible,definite
+   match-leak-kinds: possible,definite,reachable
    fun:*lloc*
    ...
    fun:replorigin_by_name
@@ -55,7 +55,7 @@
 {
    pgl_apply_start_resowner
    Memcheck:Leak
-   match-leak-kinds: definite,definite
+   match-leak-kinds: definite,definite,reachable
    fun:*lloc*
    ...
    fun:ResourceOwnerCreate
@@ -72,90 +72,120 @@
 }
 
 #
-# XXX IFFY
+# pglogical's relcache persists across txns.
 #
-# This may well indicate something unclosed that should be, and needs
-# investigation.
+# These allocations are in CacheMemoryContext.
 #
-#{
-#   pg_index_open
-#   Memcheck:Leak
-#   match-leak-kinds: possible
-#   fun:*lloc*
-#   ...
-#   fun:relation_open
-#}
 
-#
-# XXX IFFY
-#
-# pglogical's relcache seems to confuse valgrind. But how sure are we that these
-# are real false positives not leaks?
-#
-#
-#{
-#   pgl_relcache
-#   Memcheck:Leak
-#   match-leak-kinds: possible
-#   fun:MemoryContextAlloc*
-#   ...
-#   fun:pglogical_relation_cache_update
-#   ...
-#   fun:apply_work
-#}
-#
-#
-# XXX
-# 
-# These produce a lot of noise. They may be real leaks and need looking into,
-# but are suppressed for now while I look for other issues. Pg should complain
-# if we fail to close an opened relation. (TODO confirm)
-#
-#
-#{
-#   pgl_relation
-#   Memcheck:Leak
-#   match-leak-kinds: possible
-#   fun:MemoryContextAlloc*
-#   ...
-#   fun:relation_open
-#   fun:index_open
-#}
-
-
-#
-# XXX
-#
-# This is also suspect, but we probably don't leak enough to really matter
-# when doing DROPs via queued SQL queries.
-#
 {
-   pgl_drops
+   pgl_relcache_update
    Memcheck:Leak
    match-leak-kinds: possible
-   fun:MemoryContextAlloc*
+   fun:*lloc*
    ...
-   fun:RemoveRelations
+   fun:pglogical_relation_cache_update
    ...
-   fun:handle_sql
+   fun:apply_work
 }
 
+{
+   pgl_relcache_open
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*lloc*
+   ...
+   fun:pglogical_relation_open
+}
+
+
+#
+#
+# These produce a lot of noise. They may be real leaks and need looking into,
+# but are suppressed for now while I look for other issues. Pg should complain
+# if we fail to close an opened relation.
+#
+
+{
+   pgl_relation
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*lloc*
+   ...
+   fun:relation_open
+}
+
+{
+   pgl_relation
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*lloc*
+   ...
+   fun:relation_open
+}
 #
 # XXX
 #
-# For now we're not interested in queued SQL. But problems in it should still be
-# fixed, just lower priority.
+# Valgrind keeps claiming that bms_copy escapes heap_update. I cannot find how
+# that could be happening. We'll suppress the report for now on the assumption
+# that anything happening this deep in Pg should be causing much greater upset
+# than in pgl, but it merits further digging.
 #
+
 {
-   pgl_apply_queued_sql
+   pgl_pg_bms_copy
    Memcheck:Leak
-   match-leak-kinds: possible
-   fun:MemoryContextAlloc*
+   match-leak-kinds: reachable
+   fun:palloc
+   fun:bms_copy
+   fun:RelationGetIndexAttrBitmap
+   fun:heap_update
+   ...
+   fun:standard_ProcessUtility
+   fun:pglogical_ProcessUtility
+   ...
+   fun:handle_sql
+   ...
+   fun:apply_work
+}
+
+# Anything else in standard_ProcessUtility called via pglogical_ProcessUtility
+# during pgl SQL execution.
+#
+# This MUST not be invoked in TopMemoryContext, and so long as txn state is sane
+# cannot then allocate into TopMemoryContext. (Shame Valgrind doesn't let us name
+# mempools for allocations).
+{
+   pgl_sql_processutility
+   Memcheck:Leak
+   match-leak-kinds: reachable,possible
+   fun:*lloc*
+   ...
+   fun:standard_ProcessUtility
+   fun:pglogical_ProcessUtility
    ...
    fun:handle_sql
    ...
    fun:apply_work
    fun:pglogical_apply_main
+}
+
+
+#
+# XXX uncertain
+#
+# We're a bit suss about this one
+#
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:MemoryContextAlloc
+   fun:MemoryContextStrdup
+   fun:pglogical_relation_cache_update
+   fun:pglogical_read_rel
+   fun:handle_relation
+   fun:replication_handler
+   fun:apply_work
 }
 
 
@@ -292,3 +322,165 @@
    fun:InitPostgres
    fun:PostgresMain
 }
+
+
+# "reachable"-only suppressions. These are used when we're looking for memory
+# we can still access but are progressively allocating more of during long
+# running processes like the apply worker our output plugin. To find them
+# we must exclude things we're keeping around on purpose.
+#
+
+# This is allocated once on entry to apply_work
+{
+   pgl_reachable_msgcontext
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:MemoryContextAlloc
+   fun:MemoryContextCreate
+   fun:AllocSetContextCreate
+   fun:apply_work
+   fun:pglogical_apply_main
+}
+
+# This is stashed in a static var on first allocation and reused. It
+# shouldn't grow.
+{
+   pgl_reachable_feedback
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:palloc
+   ...
+   fun:makeStringInfo
+   fun:send_feedback
+   fun:apply_work
+   fun:pglogical_apply_main
+}
+
+# It's typical for syscache and catcache entries to live beyond a single txn.
+# That's kind of the point. If pgl fails to release cache entries that's not
+# something we can detect easily, except maybe with CLOBBER_CACHE_ALWAYS,
+# which runs like treacle under valgrind.
+{
+   pg_reachable_catcache
+   Memcheck:Leak
+   match-leak-kinds: reachable,possible
+   fun:*lloc*
+   ...
+   fun:SearchCatCache
+}
+
+# RelationGetIndexList adds indexes to the relcache. But importantly
+# it returns a list_copy of the result, so we must not filter out the
+# allocation there, only the cached stuff.
+{
+   pg_reachable_indexlist
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:MemoryContextAlloc*
+   ...
+   fun:index_open
+   ...
+   fun:RelationGetIndexList
+}
+
+# GUCs normally have extended lifetimes
+{
+   pg_reachable_guc
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:strdup
+   fun:guc_strdup
+}
+
+{
+   pg_reachable_guc_check
+   Memcheck:Leak
+   match-leak-kinds: reachable,possible
+   fun:*lloc*
+   fun:check_role
+   ...
+   fun:parse_and_validate_value
+   fun:set_config_option
+}
+
+# Lots of things in standard_ProcessUtility mess with the syscache
+# and they're not going to leak.
+{
+   pg_reachable_processutility
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*lloc*
+   ...
+   fun:relation_open
+   ...
+   fun:standard_ProcessUtility
+}
+
+# The smgr and md layer keep track of their own resources. If we fail to close
+# relations we should see it at a higher level. We can see these allocations
+# from random heap operations because smgr relation opening happens lazily, not
+# at heap_open time.
+{
+   pg_mdopen
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*lloc*
+   ...
+   fun:mdopen
+}
+
+#
+# This report looks bogus. There should be no way for the allocated wait-event
+# set to escape WaitLatchOrSocket. In pgl it only arises once anyway.
+#
+{
+   pg_waitlatchorsocket
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:AllocSetAlloc
+   fun:MemoryContextAllocZero
+   fun:CreateWaitEventSet
+   fun:WaitLatchOrSocket
+}
+
+#
+# If we test across a txn boundary we may see pgstat allocations, and
+# that's OK, we clean them later.
+#
+{
+   pg_pgstat
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:MemoryContextAlloc
+   fun:get_tabstat_stack_level
+}
+
+#
+# Again, lock acquisition during heap_openrv can seem to leak if
+# we do a leakcheck during a txn. It's fine, pg will complain
+# if we fail to close relations.
+#
+{
+   pg_heap_openrv
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*lloc*
+   ...
+   fun:heap_openrv
+}
+
+#
+# Tupledescs are refcounted. Any check we do during a txn
+# will show such output.
+#
+#{
+#   pg_tupledesc_count
+#   Memcheck:Leak
+#   match-leak-kinds: reachable
+#   fun:MemoryContextAlloc
+#   fun:ResourceArrayEnlarge.part.4
+#   fun:IncrTupleDescRefCount
+#   fun:ExecSetSlotDescriptor
+#}
