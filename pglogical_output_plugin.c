@@ -373,7 +373,9 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	/* So we can identify the process type in Valgrind logs */
 	VALGRIND_PRINTF("PGLOGICAL: pglogical worker output_plugin\n");
 	/* For incremental leak checking */
+	VALGRIND_DISABLE_ERROR_REPORTING;
 	VALGRIND_DO_LEAK_CHECK;
+	VALGRIND_ENABLE_ERROR_REPORTING;
 }
 
 /*

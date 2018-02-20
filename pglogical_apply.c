@@ -1368,10 +1368,15 @@ apply_work(PGconn *streamConn)
 
 				MemoryContextSwitchTo(MessageContext);
 
-				initStringInfo(&s);
+				/*
+				 * We're using a StringInfo to wrap existing data here, as a
+				 * cursor. We init it manually to avoid a redundant allocation.
+				 */
+				memset(&s, 0, sizeof(StringInfoData));
 				s.data = copybuf;
 				s.len = r;
 				s.maxlen = -1;
+				s.cursor = 0;
 
 				c = pq_getmsgbyte(&s);
 
@@ -1907,7 +1912,13 @@ pglogical_apply_main(Datum main_arg)
 
 	CommitTransactionCommand();
 
+	/*
+	 * Do an initial leak check with reporting off; we don't want to see
+	 * these results, just the later output from ADDED leak checks.
+	 */
+	VALGRIND_DISABLE_ERROR_REPORTING;
 	VALGRIND_DO_LEAK_CHECK;
+	VALGRIND_ENABLE_ERROR_REPORTING;
 
 	apply_work(streamConn);
 
