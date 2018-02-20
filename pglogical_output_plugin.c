@@ -75,6 +75,7 @@ typedef struct PGLRelMetaCacheEntry
 
 #define RELMETACACHE_INITIAL_SIZE 128
 static HTAB *RelMetaCache = NULL;
+static MemoryContext RelMetaCacheContext = NULL;
 static int InvalidRelMetaCacheCnt = 0;
 
 static void relmetacache_init(MemoryContext decoding_context);
@@ -834,13 +835,19 @@ relmetacache_init(MemoryContext decoding_context)
 	{
 		MemoryContext old_ctxt;
 
+		RelMetaCacheContext = AllocSetContextCreate(TopMemoryContext,
+											  "pglogical output relmetacache",
+											  ALLOCSET_DEFAULT_MINSIZE,
+											  ALLOCSET_DEFAULT_INITSIZE,
+											  ALLOCSET_DEFAULT_MAXSIZE);
+
 		/* Make a new hash table for the cache */
 		hash_flags = HASH_ELEM | HASH_CONTEXT;
 
 		MemSet(&ctl, 0, sizeof(ctl));
 		ctl.keysize = sizeof(Oid);
 		ctl.entrysize = sizeof(struct PGLRelMetaCacheEntry);
-		ctl.hcxt = TopMemoryContext;
+		ctl.hcxt = RelMetaCacheContext;
 
 #if PG_VERSION_NUM >= 90500
 		hash_flags |= HASH_BLOBS;
@@ -849,7 +856,7 @@ relmetacache_init(MemoryContext decoding_context)
 		hash_flags |= HASH_FUNCTION;
 #endif
 
-		old_ctxt = MemoryContextSwitchTo(TopMemoryContext);
+		old_ctxt = MemoryContextSwitchTo(RelMetaCacheContext);
 		RelMetaCache = hash_create("pglogical relation metadata cache",
 								   RELMETACACHE_INITIAL_SIZE,
 								   &ctl, hash_flags);
@@ -880,7 +887,7 @@ relmetacache_get_relation(struct PGLogicalOutputData *data,
 	MemoryContext old_mctx;
 
 	/* Find cached function info, creating if not found */
-	old_mctx = MemoryContextSwitchTo(TopMemoryContext);
+	old_mctx = MemoryContextSwitchTo(RelMetaCacheContext);
 	hentry = (struct PGLRelMetaCacheEntry*) hash_search(RelMetaCache,
 										 (void *)(&RelationGetRelid(rel)),
 										 HASH_ENTER, &found);
@@ -903,6 +910,10 @@ relmetacache_get_relation(struct PGLogicalOutputData *data,
 
 /*
  * Flush the relation metadata cache at the end of a decoding session.
+ *
+ * We cannot truly destroy the cache because it may be referenced by later
+ * relcache invalidation callbacks after the end of a SQL-level decoding
+ * session.
  */
 static void
 relmetacache_destroy(void)
