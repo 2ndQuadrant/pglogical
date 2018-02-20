@@ -81,7 +81,7 @@ static int InvalidRelMetaCacheCnt = 0;
 static void relmetacache_init(MemoryContext decoding_context);
 static PGLRelMetaCacheEntry *relmetacache_get_relation(PGLogicalOutputData *data,
 													   Relation rel);
-static void relmetacache_destroy(void);
+static void relmetacache_flush(void);
 static void relmetacache_prune(void);
 
 static void pglReorderBufferCleanSerializedTXNs(const char *slotname);
@@ -167,8 +167,9 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 {
 	PGLogicalOutputData	   *data = palloc0(sizeof(PGLogicalOutputData));
 
+	/* Short lived memory context for individual messages */
 	data->context = AllocSetContextCreate(ctx->context,
-										  "pglogical conversion context",
+										  "pglogical output msg context",
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
@@ -773,7 +774,7 @@ send_startup_message(LogicalDecodingContext *ctx,
 static void
 pg_decode_shutdown(LogicalDecodingContext * ctx)
 {
-	relmetacache_destroy();
+	relmetacache_flush();
 
 	VALGRIND_PRINTF("PGLOGICAL: output plugin shutdown\n");
 
@@ -916,7 +917,7 @@ relmetacache_get_relation(struct PGLogicalOutputData *data,
  * session.
  */
 static void
-relmetacache_destroy(void)
+relmetacache_flush(void)
 {
 	HASH_SEQ_STATUS status;
 	struct PGLRelMetaCacheEntry *hentry;
