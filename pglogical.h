@@ -89,6 +89,8 @@ extern int64 sequence_get_last_value(Oid seqoid);
 #define VALGRIND_DO_ADDED_LEAK_CHECK do{} while(0)
 #define VALGRIND_DO_CHANGED_LEAK_CHECK do{} while(0)
 #define VALGRIND_DO_QUICK_LEAK_CHECK do{} while(0)
+#define VALGRIND_DISABLE_ERROR_REPORTING do {} while (0)
+#define VALGRIND_ENABLE_ERROR_REPORTING do {} while (0)
 
 /*
  * Gives us some error checking when no-op'd. pglogical uses this to report
