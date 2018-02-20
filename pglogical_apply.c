@@ -1331,13 +1331,13 @@ apply_work(PGconn *streamConn)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
+		if (rc & WL_SOCKET_READABLE)
+			PQconsumeInput(applyconn);
+
 		if (PQstatus(applyconn) == CONNECTION_BAD)
 		{
 			elog(ERROR, "connection to other side has died");
 		}
-
-		if (rc & WL_SOCKET_READABLE)
-			PQconsumeInput(applyconn);
 
 		Assert(CurrentMemoryContext == MessageContext);
 
