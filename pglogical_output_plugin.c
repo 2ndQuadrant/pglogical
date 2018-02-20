@@ -656,12 +656,12 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContext	old;
 	Bitmapset	   *att_list = NULL;
 
+	/* Avoid leaking memory by using and resetting our own context */
+	old = MemoryContextSwitchTo(data->context);
+
 	/* First check the table filter */
 	if (!pglogical_change_filter(data, relation, change, &att_list))
 		return;
-
-	/* Avoid leaking memory by using and resetting our own context */
-	old = MemoryContextSwitchTo(data->context);
 
 	/*
 	 * If the protocol wants to write relation information and the client
