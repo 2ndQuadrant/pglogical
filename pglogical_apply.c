@@ -1337,12 +1337,6 @@ apply_work(PGconn *streamConn)
 			if (got_SIGTERM)
 				break;
 
-			if (copybuf != NULL)
-			{
-				PQfreemem(copybuf);
-				copybuf = NULL;
-			}
-
 			r = PQgetCopyData(applyconn, &copybuf, 1);
 
 			if (r == -1)
@@ -1411,6 +1405,13 @@ apply_work(PGconn *streamConn)
 								  reply_requested);
 				}
 				/* other message types are purposefully ignored */
+
+				/* copybuf is malloc'd not palloc'd */
+				if (copybuf != NULL)
+				{
+					PQfreemem(copybuf);
+					copybuf = NULL;
+				}
 			}
 		}
 
