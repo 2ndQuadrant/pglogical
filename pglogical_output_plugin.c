@@ -388,6 +388,9 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 	bool send_replication_origin = data->forward_changeset_origins;
+	MemoryContext old_ctx;
+
+	old_ctx = MemoryContextSwitchTo(data->context);
 
 	VALGRIND_DO_ADDED_LEAK_CHECK;
 
@@ -427,6 +430,9 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 #endif
 
 	OutputPluginWrite(ctx, true);
+
+	Assert(CurrentMemoryContext == data->context);
+	MemoryContextSwitchTo(old_ctx);
 }
 
 /*
@@ -437,6 +443,9 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					 XLogRecPtr commit_lsn)
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
+	MemoryContext old_ctx;
+
+	old_ctx = MemoryContextSwitchTo(data->context);
 
 	OutputPluginPrepareWrite(ctx, true);
 	data->api->write_commit(ctx->out, data, txn, commit_lsn);
@@ -448,6 +457,10 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	 * at the moment.
 	 */
 	relmetacache_prune();
+
+	Assert(CurrentMemoryContext == data->context);
+	MemoryContextSwitchTo(old_ctx);
+	MemoryContextReset(data->context);
 
 	VALGRIND_DO_ADDED_LEAK_CHECK;
 }
@@ -710,6 +723,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	}
 
 	/* Cleanup */
+	Assert(CurrentMemoryContext == data->context);
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
 }
