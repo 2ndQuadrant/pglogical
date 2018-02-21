@@ -67,11 +67,17 @@ SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT
 \set VERBOSITY terse
 
 -- fail (can't connect with replication connection to remote)
-SELECT * FROM pglogical.create_subscription(
-    subscription_name := 'test_subscription',
-    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
-	forward_origins := '{}');
-
+DO $$
+BEGIN
+    SELECT * FROM pglogical.create_subscription(
+        subscription_name := 'test_subscription',
+        provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
+            forward_origins := '{}');
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION '%', split_part(SQLERRM, ':', 1);
+END;
+$$;
 -- cleanup
 
 SELECT * FROM pglogical.drop_node('test_subscriber');

@@ -71,12 +71,18 @@ SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT
 \c :subscriber_dsn
 \set VERBOSITY terse
 -- fail (can't connect with replication connection to remote)
-SELECT * FROM pglogical.create_subscription(
-    subscription_name := 'test_subscription',
-    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
-	forward_origins := '{}');
-ERROR:  could not connect to the postgresql server in replication mode: FATAL:  must be superuser or replication role to start walsender
-
+DO $$
+BEGIN
+    SELECT * FROM pglogical.create_subscription(
+        subscription_name := 'test_subscription',
+        provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonreplica',
+            forward_origins := '{}');
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION '%', split_part(SQLERRM, ':', 1);
+END;
+$$;
+ERROR:  could not connect to the postgresql server in replication mode
 -- cleanup
 SELECT * FROM pglogical.drop_node('test_subscriber');
  drop_node 
