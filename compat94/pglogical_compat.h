@@ -48,17 +48,6 @@
 #define pg_attribute_unused()
 #endif
 
-/*
- * Append PG_USED_FOR_ASSERTS_ONLY to definitions of variables that are only
- * used in assert-enabled builds, to avoid compiler warnings about unused
- * variables in assert-disabled builds.
- */
-#ifdef USE_ASSERT_CHECKING
-#define PG_USED_FOR_ASSERTS_ONLY
-#else
-#define PG_USED_FOR_ASSERTS_ONLY pg_attribute_unused()
-#endif
-
 /* GCC and XLC support format attributes */
 #if defined(__GNUC__) || defined(__IBMC__)
 #define pg_attribute_format_arg(a) __attribute__((format_arg(a)))
