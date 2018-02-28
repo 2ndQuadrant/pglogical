@@ -14,8 +14,8 @@ DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--1.2.2--2.0.0.sql \
 	   pglogical--2.0.0--2.0.1.sql \
 	   pglogical--2.0.0--2.1.0.sql pglogical--2.0.1--2.1.0.sql \
-	   pglogical--2.1.0--2.1.1.sql \
-	   pglogical--2.1.1.sql
+	   pglogical--2.1.0--2.1.1.sql pglogical--2.1.1--2.2.0.sql \
+	   pglogical--2.2.0.sql
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical.o pglogical_node.o pglogical_relcache.o \
