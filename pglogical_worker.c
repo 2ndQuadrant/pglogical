@@ -578,7 +578,10 @@ signal_worker_xact_callback(XactEvent event, void *arg)
 					if (swa->kill)
 						pglogical_worker_kill(apply);
 					else if (pglogical_worker_running(apply))
+					{
+						apply->worker.apply.sync_pending = true;
 						SetLatch(&apply->proc->procLatch);
+					}
 				}
 
 				PGLogicalCtx->subscriptions_changed = true;

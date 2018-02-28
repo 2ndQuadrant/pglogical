@@ -840,12 +840,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	}
 
 	/* Tell apply to re-read sync statuses. */
-	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (pglogical_worker_running(apply))
-		apply->worker.apply.sync_pending = true;
 	pglogical_subscription_changed(sub->id, false);
-	LWLockRelease(PGLogicalCtx->lock);
 
 	PG_RETURN_BOOL(true);
 }
@@ -902,12 +897,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 		truncate_table(nspname, relname);
 
 	/* Tell apply to re-read sync statuses. */
-	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-	apply = pglogical_apply_find(MyDatabaseId, sub->id);
-	if (pglogical_worker_running(apply))
-		apply->worker.apply.sync_pending = true;
 	pglogical_subscription_changed(sub->id, false);
-	LWLockRelease(PGLogicalCtx->lock);
 
 	PG_RETURN_BOOL(true);
 }
