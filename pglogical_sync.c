@@ -1045,14 +1045,10 @@ pglogical_sync_main(Datum main_arg)
 
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
-	BackgroundWorkerUnblockSignals();
 
 	/* Attach to dsm segment. */
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical sync");
-
-	/* Connect to our database. */
-	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
 	/* Setup synchronous commit according to the user's wishes */
 	SetConfigOption("synchronous_commit",

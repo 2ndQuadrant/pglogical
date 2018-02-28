@@ -1849,14 +1849,10 @@ pglogical_apply_main(Datum main_arg)
 
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
-	BackgroundWorkerUnblockSignals();
 
 	/* Attach to dsm segment. */
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");
-
-	/* Connect to our database. */
-	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid, InvalidOid);
 
 	/* Load correct apply API. */
 	if (pglogical_use_spi)

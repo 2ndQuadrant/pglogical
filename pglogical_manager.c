@@ -182,11 +182,6 @@ pglogical_manager_main(Datum main_arg)
 
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
-	BackgroundWorkerUnblockSignals();
-
-	/* Connect to db. */
-	BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid,
-											  InvalidOid);
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
 

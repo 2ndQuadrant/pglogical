@@ -14,7 +14,11 @@
 
 #include "miscadmin.h"
 
+#include "libpq/libpq-be.h"
+
 #include "access/xact.h"
+
+#include "commands/dbcommands.h"
 
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -297,6 +301,8 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 	Assert(slot >= 0);
 	Assert(slot < PGLogicalCtx->total_workers);
 
+	MyProcPort = (Port *) calloc(1, sizeof(Port));
+
 #if PG_VERSION_NUM < 90600
 	set_latch_on_sigusr1 = true;
 #endif
@@ -328,6 +334,27 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 	/* Make it easy to identify our processes. */
 	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
 					PGC_USERSET, PGC_S_SESSION);
+
+	/* Establish signal handlers. */
+	BackgroundWorkerUnblockSignals();
+
+	/* Make it easy to identify our processes. */
+	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
+					PGC_USERSET, PGC_S_SESSION);
+
+	/* Connect to database if needed. */
+	if (MyPGLogicalWorker->dboid != InvalidOid)
+	{
+		MemoryContext oldcontext;
+
+		BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid,
+												  InvalidOid);
+		StartTransactionCommand();
+		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+		MyProcPort->database_name = pstrdup(get_database_name(MyPGLogicalWorker->dboid));
+		MemoryContextSwitchTo(oldcontext);
+		CommitTransactionCommand();
+	}
 }
 
 /*
