@@ -772,7 +772,6 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	List				   *remote_tables;
 	List				   *local_tables;
 	ListCell			   *lc;
-	PGLogicalWorker		   *apply;
 
 	/* Read table list from provider. */
 	conn = pglogical_connect(sub->origin_if->dsn, sub_name, "sync");
@@ -856,7 +855,6 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	bool					truncate = PG_GETARG_BOOL(2);
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGLogicalSyncStatus	   *oldsync;
-	PGLogicalWorker		   *apply;
 	Relation				rel;
 	char				   *nspname,
 						   *relname;
