@@ -1141,6 +1141,17 @@ replication_handler(StringInfo s)
 
 	if (error_context_stack == &errcallback)
 		error_context_stack = errcallback.previous;
+
+	if (action == 'C')
+	{
+		/*
+		 * We clobber MessageContext on commit. It doesn't matter much when we
+		 * do it so long as we do so periodically, to prevent the context from
+		 * growing too much. We might want to clean it up even 'n'th message
+		 * too, but that adds testing burden and isn't done for now.
+		 */
+		MemoryContextReset(MessageContext);
+	}
 }
 
 /*
