@@ -1412,6 +1412,45 @@ drop_table_sync_status(const char *nspname, const char *relname)
 
 }
 
+/* Remove table sync status record from catalog. */
+void
+drop_table_sync_status_for_sub(Oid subid, const char *nspname,
+							   const char *relname)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[3];
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+	ScanKeyInit(&key[1],
+				Anum_sync_nspname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(nspname));
+	ScanKeyInit(&key[2],
+				Anum_sync_relname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(relname));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 3, key);
+
+	/* Remove the tuples. */
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+		simple_heap_delete(rel, &tuple->t_self);
+
+	/* Cleanup. */
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+}
+
 /* Get the sync status for a table. */
 PGLogicalSyncStatus *
 get_table_sync_status(Oid subid, const char *nspname, const char *relname,
@@ -1499,6 +1538,46 @@ get_unsynced_tables(Oid subid)
 		sync = syncstatus_fromtuple(tuple, tupDesc);
 		if (sync->status != SYNC_STATUS_READY)
 			res = lappend(res, sync);
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return res;
+}
+
+/* Get the sync status for all tables known to subscription. */
+List *
+get_subscription_tables(Oid subid)
+{
+	PGLogicalSyncStatus	   *sync;
+	RangeVar	   *rv;
+	Relation		rel;
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	ScanKeyData		key[1];
+	List		   *res = NIL;
+	TupleDesc		tupDesc;
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	tupDesc = RelationGetDescr(rel);
+
+	ScanKeyInit(&key[0],
+				Anum_sync_subid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(subid));
+
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		if (heap_attisnull(tuple, Anum_sync_nspname) &&
+			heap_attisnull(tuple, Anum_sync_relname))
+			continue;
+
+		sync = syncstatus_fromtuple(tuple, tupDesc);
+		res = lappend(res, sync);
 	}
 
 	systable_endscan(scan);

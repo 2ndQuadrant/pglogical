@@ -769,23 +769,45 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	bool					truncate = PG_GETARG_BOOL(1);
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
 	PGconn				   *conn;
-	List				   *tables;
+	List				   *remote_tables;
+	List				   *local_tables;
 	ListCell			   *lc;
 	PGLogicalWorker		   *apply;
 
 	/* Read table list from provider. */
 	conn = pglogical_connect(sub->origin_if->dsn, sub_name, "sync");
-	tables = pg_logical_get_remote_repset_tables(conn, sub->replication_sets);
+	remote_tables = pg_logical_get_remote_repset_tables(conn, sub->replication_sets);
 	PQfinish(conn);
 
+	local_tables = get_subscription_tables(sub->id);
+
 	/* Compare with sync status on subscription. And add missing ones. */
-	foreach (lc, tables)
+	foreach (lc, remote_tables)
 	{
 		PGLogicalRemoteRel	   *remoterel = lfirst(lc);
-		PGLogicalSyncStatus	   *oldsync;
+		PGLogicalSyncStatus	   *oldsync = NULL;
+		ListCell			   *prev;
+		ListCell			   *next;
+		ListCell			   *llc;
 
-		oldsync = get_table_sync_status(sub->id, remoterel->nspname,
-										remoterel->relname, true);
+		prev = NULL;
+		for (llc = list_head(local_tables); llc; llc = next)
+		{
+			PGLogicalSyncStatus *tablesync = (PGLogicalSyncStatus *) lfirst(llc);
+
+			/* We might delete the cell so advance it now. */
+			next = lnext(llc);
+
+			if (namestrcmp(&tablesync->nspname, remoterel->nspname) == 0 &&
+				namestrcmp(&tablesync->relname, remoterel->relname) == 0)
+			{
+				oldsync = tablesync;
+				local_tables = list_delete_cell(local_tables, llc, prev);
+				break;
+			}
+			else
+				prev = llc;
+		}
 
 		if (!oldsync)
 		{
@@ -802,6 +824,19 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 			if (truncate)
 				truncate_table(remoterel->nspname, remoterel->relname);
 		}
+	}
+
+	/*
+	 * Any leftover local tables should not be replicated, remove the status
+	 * for them.
+	 */
+	foreach (lc, local_tables)
+	{
+		PGLogicalSyncStatus *tablesync = (PGLogicalSyncStatus *) lfirst(lc);
+
+		drop_table_sync_status_for_sub(tablesync->subid,
+									   NameStr(tablesync->nspname),
+									   NameStr(tablesync->relname));
 	}
 
 	/* Tell apply to re-read sync statuses. */

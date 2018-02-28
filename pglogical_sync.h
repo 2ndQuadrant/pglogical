@@ -63,6 +63,9 @@ extern PGLogicalSyncStatus *get_subscription_sync_status(Oid subid,
 extern void set_subscription_sync_status(Oid subid, char status);
 
 extern void drop_table_sync_status(const char *nspname, const char *relname);
+extern void drop_table_sync_status_for_sub(Oid subid, const char *nspname,
+							   const char *relname);
+
 extern PGLogicalSyncStatus *get_table_sync_status(Oid subid,
 												  const char *schemaname,
 												  const char *relname,
@@ -77,6 +80,7 @@ extern bool wait_for_sync_status_change(Oid subid, char *nspname,
 										XLogRecPtr *status_lsn);
 
 extern void truncate_table(char *nspname, char *relname);
+extern List *get_subscription_tables(Oid subid);
 
 #endif /* PGLOGICAL_SYNC_H */
 
