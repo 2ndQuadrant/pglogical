@@ -72,6 +72,18 @@ $$;
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 \c :provider_dsn
+DO $$
+-- give it 10 seconds to syncrhonize the tabes
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_replication_slots) = 1 THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+
 SELECT count(1) FROM pg_replication_slots;
 
 INSERT INTO public.test_publicschema VALUES(3, 'c');
@@ -129,7 +141,7 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', '
 SELECT * FROM public.test_publicschema;
 
 \x
-SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+SELECT nspname, relname, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 \x
 
 BEGIN;

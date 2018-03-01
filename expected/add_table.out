@@ -150,6 +150,17 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', '
 (3 rows)
 
 \c :provider_dsn
+DO $$
+-- give it 10 seconds to syncrhonize the tabes
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_replication_slots) = 1 THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
 SELECT count(1) FROM pg_replication_slots;
  count 
 -------
@@ -272,11 +283,11 @@ SELECT * FROM public.test_publicschema;
 (4 rows)
 
 \x
-SELECT * FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
--[ RECORD 1 ]--------------
-nspname | public
-relname | test_publicschema
-status  | synchronized
+SELECT nspname, relname, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+-[ RECORD 1 ]---------------
+nspname  | public
+relname  | test_publicschema
+?column? | t
 
 \x
 BEGIN;
