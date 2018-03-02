@@ -157,46 +157,56 @@ restore_structure(PGLogicalSubscription *sub, const char *srcfile,
 						command.data)));
 }
 
-
 /*
- * Ensure slot exists.
+ * Create slot and get the exported snapshot.
+ *
+ * This will try to recreate slot if already exists and not active.
+ *
+ * The reported LSN is the confirmed flush LSN at the point the slot reached
+ * consistency and exported its snapshot.
  */
 static char *
-ensure_replication_slot_snapshot(PGconn *origin_conn, char *slot_name,
-								 bool use_failover_slot, XLogRecPtr *lsn)
+ensure_replication_slot_snapshot(PGconn *sql_conn, PGconn *repl_conn,
+								 char *slot_name, bool use_failover_slot,
+								 XLogRecPtr *lsn)
 {
 	PGresult	   *res;
 	StringInfoData	query;
 	char		   *snapshot;
 
+retry:
 	initStringInfo(&query);
 
 	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s%s",
 					 slot_name, "pglogical_output",
 					 use_failover_slot ? " FAILOVER" : "");
 
-	res = PQexec(origin_conn, query.data);
 
-	/* TODO: check and handle already existing slot. */
+	res = PQexec(repl_conn, query.data);
+
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
-		char	*err = PQresultErrorMessage(res);
+		const char *sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
 
 		/*
-		 * Report more pleasant message on snapshot too large
-		 * (there is not ERRCODE for it).
-		 *
-		 * Note that retry is not hanled by us but by the fact that this
-		 * function is only called when sync state is INIT.
+		 * If our slot already exist but is not used, it's leftover from
+		 * previous unsucessful attempt to synchronize table, try dropping
+		 * it and recreating.
 		 */
-		if (strstr(err, "snapshot too large"))
-			ereport(ERROR,
-					(errmsg("could not start synchronization, will retry later"),
-					 errdetail("recieved \"snapshot too large\" from provider")));
-		else
-			elog(FATAL, "could not send replication command \"%s\": status %s: %s\n",
-				 query.data,
-				 PQresStatus(PQresultStatus(res)), err);
+		if (sqlstate &&
+			strcmp(sqlstate, "42710" /*ERRCODE_DUPLICATE_OBJECT*/) == 0 &&
+			!pglogical_remote_slot_active(sql_conn, slot_name))
+		{
+			pfree(query.data);
+			PQclear(res);
+
+			pglogical_drop_remote_slot(sql_conn, slot_name);
+
+			goto retry;
+		}
+
+		elog(ERROR, "could not create replication slot on provider: %s\n",
+			 PQresultErrorMessage(res));
 	}
 
 	*lsn = DatumGetLSN(DirectFunctionCall1Coll(pg_lsn_in, InvalidOid,
@@ -750,14 +760,15 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 			pglogical_remote_function_exists(origin_conn, "pg_catalog",
 											 "pg_create_logical_replication_slot",
 											 3);
-		PQfinish(origin_conn);
-
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 													 sub->name, "snap");
 
-		snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
+		snapshot = ensure_replication_slot_snapshot(origin_conn,
+													origin_conn_repl,
 													sub->slot_name,
 													use_failover_slot, &lsn);
+
+		PQfinish(origin_conn);
 
 		PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));
@@ -908,7 +919,7 @@ char
 pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table,
 					 XLogRecPtr *status_lsn)
 {
-	PGconn	   *origin_conn_repl;
+	PGconn	   *origin_conn_repl, *origin_conn;
 	RepOriginId	originid;
 	char	   *snapshot;
 	PGLogicalSyncStatus	   *sync;
@@ -942,9 +953,11 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table,
 	origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 												 sub->name, "copy");
 
-	snapshot = ensure_replication_slot_snapshot(origin_conn_repl,
+	origin_conn = pglogical_connect(sub->origin_if->dsn, sub->name, "copy_slot");
+	snapshot = ensure_replication_slot_snapshot(origin_conn, origin_conn_repl,
 												sub->slot_name, false,
 												status_lsn);
+	PQfinish(origin_conn);
 
 	/* Make sure we cleanup the slot if something goes wrong. */
 	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
