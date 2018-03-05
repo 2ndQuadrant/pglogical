@@ -84,6 +84,7 @@ pglogical_apply_spi_begin(void)
 {
 	if (SPI_connect() != SPI_OK_CONNECT)
 		elog(ERROR, "SPI_connect failed");
+	MemoryContextSwitchTo(MessageContext);
 }
 
 /*
@@ -94,6 +95,7 @@ pglogical_apply_spi_commit(void)
 {
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(ERROR, "SPI_finish failed");
+	MemoryContextSwitchTo(MessageContext);
 }
 
 /*
@@ -157,6 +159,7 @@ pglogical_apply_spi_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	if (SPI_execute_with_args(cmd.data, narg, argtypes, values, nulls, false,
 							  0) != SPI_OK_INSERT)
 		elog(ERROR, "SPI_execute_with_args failed");
+	MemoryContextSwitchTo(MessageContext);
 
 	pfree(cmd.data);
 }
@@ -235,6 +238,7 @@ pglogical_apply_spi_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	if (SPI_execute_with_args(cmd.data, narg, argtypes, values, nulls, false,
 							  0) != SPI_OK_UPDATE)
 		elog(ERROR, "SPI_execute_with_args failed");
+	MemoryContextSwitchTo(MessageContext);
 
 	pfree(cmd.data);
 }
@@ -285,6 +289,7 @@ pglogical_apply_spi_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	if (SPI_execute_with_args(cmd.data, narg, argtypes, values, nulls, false,
 							  0) != SPI_OK_DELETE)
 		elog(ERROR, "SPI_execute_with_args failed");
+	MemoryContextSwitchTo(MessageContext);
 
 	pfree(cmd.data);
 }
