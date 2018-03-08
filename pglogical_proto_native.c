@@ -725,7 +725,7 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 
 	natts = pq_getmsgint(in, 2);
 	if (rel->natts != natts)
-		elog(ERROR, "tuple natts mismatch, %u vs %u", rel->natts, natts);
+		elog(ERROR, "tuple natts mismatch between remote relation metadata cache (natts=%u) and remote tuple data (natts=%u)", rel->natts, natts);
 
 	desc = RelationGetDescr(rel->rel);
 
