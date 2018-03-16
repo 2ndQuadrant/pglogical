@@ -8,20 +8,22 @@ use PostgresNode;
 use TestLib;
 use Data::Dumper;
 use Test::More;
+use Time::HiRes;
 
 my $PGBENCH_SCALE = 1;
-my $PGBENCH_CLIENTS = 100;
+my $PGBENCH_CLIENTS = 10;
 my $PGBENCH_JOBS = 1;
-my $PGBENCH_TIME = 600;
+my $PGBENCH_TIME = 60;
+my $WALSENDER_TIMEOUT = '5s';
 
 
 my $node_provider = get_new_node('provider');
 $node_provider->init();
-$node_provider->append_conf('postgresql.conf', q[
+$node_provider->append_conf('postgresql.conf', qq[
 wal_level = 'logical'
 max_replication_slots = 12
 max_wal_senders = 12
-wal_sender_timeout = 5s
+wal_sender_timeout = '$WALSENDER_TIMEOUT'
 max_connections = 200
 log_line_prefix = '%t %p '
 shared_preload_libraries = 'pglogical'
@@ -33,7 +35,7 @@ $node_provider->start;
 
 my $node_subscriber = get_new_node('subscriber');
 $node_subscriber->init();
-$node_subscriber->append_conf('postgresql.conf', q[
+$node_subscriber->append_conf('postgresql.conf', qq[
 shared_preload_libraries = 'pglogical'
 wal_level = logical
 max_wal_senders = 10
@@ -115,29 +117,50 @@ $node_provider->poll_query_until('postgres',
 	or BAIL_OUT('subscription failed to reach "replicating" state');
 
 # Let it warm up for a while
-sleep(60);
+sleep($PGBENCH_TIME/10);
 
 my $i = 1;
 do {
-	# Resync all the tables
-	for my $tbl (@pgbench_tables)
+	# Resync all the tables in turn
+	EACH_TABLE: for my $tbl (@pgbench_tables)
 	{
-		$node_subscriber->safe_psql('postgres',
-				"SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', '$tbl');");
-	}
+		my $resync_start = [Time::HiRes::gettimeofday()];
 
-	# Make sure they all synced
-	for my $tbl (@pgbench_tables)
-	{
-		if (!$node_subscriber->poll_query_until('postgres',
-			qq[SELECT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_relname = '$tbl' AND sync_status IN ('y','r'))]))
+		eval {
+			$node_subscriber->safe_psql('postgres',
+					"SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', '$tbl');");
+		};
+		if ($@)
 		{
-			diag "sync status is " . $node_subscriber->safe_psql('postgres', "SELECT 1 FROM pglogical.local_sync_status WHERE sync_relname = '$tbl'");
-			fail("$tbl didn't sync on iteration $i");
+			diag "attempt to resync $tbl failed with $@; sync_status is currently " .
+				$node_subscriber->safe_psql('postgres', "SELECT sync_status FROM pglogical.local_sync_status WHERE sync_relname = '$tbl'");
+			fail("$tbl didn't sync: resync request failed");
+			next EACH_TABLE;
 		}
-		else
+
+		while (1)
 		{
-			pass("$tbl synced on iteration $i");
+			sleep(1);
+
+			my $running = $node_subscriber->safe_psql('postgres',
+				qq[SELECT pid, application_name FROM pg_stat_activity WHERE application_name LIKE '%sync%']);
+
+			my $status = $node_subscriber->safe_psql('postgres',
+				qq[SELECT sync_status FROM pglogical.local_sync_status WHERE sync_relname = '$tbl']);
+
+			if ($status eq 'r')
+			{
+				pass("$tbl synced on iteration $i (elapsed " . Time::HiRes::tv_interval($resync_start) . ")" );
+				last;
+			}
+			elsif ($status eq 'y')
+			{
+				# keep looping until master notices and switches to 'r'
+			}
+			elsif (!$running)
+			{
+				fail("$tbl didn't sync on iteration $i, sync worker exited (running=$running) while sync state was '$status' (elapsed " . Time::HiRes::tv_interval($resync_start) . ")" );
+			}
 		}
 	}
 
@@ -146,8 +169,10 @@ do {
 	# and repeat until pgbench exits
 } while ($node_provider->safe_psql('postgres', q[SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench']));
 
+# Wait for catchup
+$node_provider->safe_psql('postgres', 'SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);');
 
-# Compare table entries on provider and subscriber.
+# Compare final table entries on provider and subscriber.
 for my $tbl (@pgbench_tables)
 {
 	my $rowcount_provider = $node_provider->safe_psql('postgres',
@@ -157,8 +182,9 @@ for my $tbl (@pgbench_tables)
 			"SELECT count(*) FROM $tbl;");
 
 	is($rowcount_provider, $rowcount_subscriber,
-		"$tbl row counts match after sync")
-		or diag "provider rowcount for $tbl is $rowcount_provider, but subscriber has $rowcount_subscriber";
+		"final $tbl row counts match after sync")
+		or diag "final provider rowcount for $tbl is $rowcount_provider, but subscriber has $rowcount_subscriber";
+
 }
 
 $node_subscriber->teardown_node;
