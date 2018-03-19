@@ -9,13 +9,16 @@ use TestLib;
 use Data::Dumper;
 use Test::More;
 use Time::HiRes;
+use Carp;
 
-my $PGBENCH_SCALE = 1;
-my $PGBENCH_CLIENTS = 10;
-my $PGBENCH_JOBS = 1;
-my $PGBENCH_TIME = 60;
-my $WALSENDER_TIMEOUT = '5s';
+my $PGBENCH_SCALE = $ENV{PGBENCH_SCALE} // 1;
+my $PGBENCH_CLIENTS = $ENV{PGBENCH_CLIENTS} // 10;
+my $PGBENCH_JOBS = $ENV{PGBENCH_JOBS} // 1;
+my $PGBENCH_TIME = $ENV{PGBENCH_TIME} // 120;
+my $WALSENDER_TIMEOUT = $ENV{PGBENCH_TIMEOUT} // '5s';
 
+$SIG{__DIE__} = sub { Carp::confess @_ };
+$SIG{INT}  = sub { Carp::confess("interupted by SIGINT"); };
 
 my $node_provider = get_new_node('provider');
 $node_provider->init();
@@ -116,14 +119,35 @@ $node_provider->poll_query_until('postgres',
 	q[SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench')])
 	or BAIL_OUT('subscription failed to reach "replicating" state');
 
+$node_provider->safe_psql('postgres', q[ALTER SYSTEM SET log_statement = 'ddl']);
+$node_provider->safe_psql('postgres', q[SELECT pg_reload_conf();]);
+
 # Let it warm up for a while
+note "warming up pgbench for " . ($PGBENCH_TIME/10) . "s";
 sleep($PGBENCH_TIME/10);
+note "done warmup";
+
+open(my $publog, "<", $node_provider->logfile)
+	or die "can't open log file for provider at " . $node_provider->logfile . ": $!";
+open(my $sublog, "<", $node_subscriber->logfile)
+	or die "can't open log file for subscriber at " . $node_subscriber->logfile . ": $!";
+
+my $walsender_pid = int($node_provider->safe_psql('postgres', q[SELECT pid FROM pg_stat_activity WHERE application_name = 'test_subscription']));
+my $apply_pid = int($node_subscriber->safe_psql('postgres', q[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%apply%']));
+note "wal sender pid is $walsender_pid; apply worker pid is $apply_pid";
+
+# Seek to log EOF
+seek($publog, 2, 0);
+seek($sublog, 2, 0);
 
 my $i = 1;
 do {
 	# Resync all the tables in turn
 	EACH_TABLE: for my $tbl (@pgbench_tables)
 	{
+		my $publogpos = tell($publog);
+		my $sublogpos = tell($sublog);
+
 		my $resync_start = [Time::HiRes::gettimeofday()];
 
 		eval {
@@ -140,10 +164,10 @@ do {
 
 		while (1)
 		{
-			sleep(1);
+			Time::HiRes::usleep(100);
 
 			my $running = $node_subscriber->safe_psql('postgres',
-				qq[SELECT pid, application_name FROM pg_stat_activity WHERE application_name LIKE '%sync%']);
+				qq[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%sync%']);
 
 			my $status = $node_subscriber->safe_psql('postgres',
 				qq[SELECT sync_status FROM pglogical.local_sync_status WHERE sync_relname = '$tbl']);
@@ -153,8 +177,13 @@ do {
 				pass("$tbl synced on iteration $i (elapsed " . Time::HiRes::tv_interval($resync_start) . ")" );
 				last;
 			}
+			elsif ($status eq 'i')
+			{
+				# worker still starting
+			}
 			elsif ($status eq 'y')
 			{
+				# worker done but master hasn't noticed yet
 				# keep looping until master notices and switches to 'r'
 			}
 			elsif (!$running)
@@ -162,6 +191,63 @@ do {
 				fail("$tbl didn't sync on iteration $i, sync worker exited (running=$running) while sync state was '$status' (elapsed " . Time::HiRes::tv_interval($resync_start) . ")" );
 			}
 		}
+
+		# look for walsender timeouts in logs since last test
+		# We must seek to reset any prior eof marker
+		seek($publog, 0, $publogpos);
+		seek($sublog, 0, $sublogpos);
+		# then look for log lines of interest
+		my $timeout_line;
+		my $finished_sync_line;
+		while (my $line = <$publog>)
+		{
+			if ($line =~ qr/replication timeout/ && !$timeout_line)
+			{
+				$timeout_line = $line;
+
+				diag "status line after failed sync is "
+					. $node_subscriber->safe_psql('postgres',
+					 	qq[SELECT * FROM pglogical.local_sync_status WHERE sync_relname = '$tbl']);
+
+				if ($line =~ qr/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]+ (\d+) LOG:/)
+				{
+					if (int($1) == $walsender_pid)
+					{
+						diag "terminated walsender was the main walsender for the apply worker, trying to make apply core";
+						system("gcore $apply_pid");
+					}
+					else
+					{
+						diag "terminated walsender was not for apply worker, looking for a sync worker";
+						my $sync_pid = int($node_subscriber->safe_psql('postgres', q[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%sync%']));
+						if ($sync_pid)
+						{
+							diag "found running sync worker $sync_pid, trying to make core";
+							system("gcore $sync_pid");
+						}
+						else
+						{
+							diag "no sync worker found running";
+						}
+					}
+				}
+				else
+				{
+					carp "couldn't match line format for $line";
+				}
+			}
+		}
+
+		while (my $line = <$sublog>)
+		{
+			if ($line =~ qr/finished sync of table/ && !$finished_sync_line)
+			{
+				$finished_sync_line = $line;
+			}
+		}
+
+		isnt($finished_sync_line, undef, "found finished sync line in last test logs");
+		is($timeout_line, undef, "no walsender timeout since last test");
 	}
 
 	$i ++;
@@ -169,8 +255,15 @@ do {
 	# and repeat until pgbench exits
 } while ($node_provider->safe_psql('postgres', q[SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench']));
 
+note "pgbench run done, cleaning up";
+$pgbench_handle->finish;
+
+note " waiting for catchup";
+
 # Wait for catchup
 $node_provider->safe_psql('postgres', 'SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);');
+
+note "comparing tables";
 
 # Compare final table entries on provider and subscriber.
 for my $tbl (@pgbench_tables)
