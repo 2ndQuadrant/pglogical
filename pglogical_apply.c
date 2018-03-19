@@ -1425,6 +1425,9 @@ apply_work(PGconn *streamConn)
 					send_feedback(applyconn, endpos,
 								  GetCurrentTimestamp(),
 								  reply_requested);
+
+					if (last_received < endpos)
+						last_received = endpos;
 				}
 				/* other message types are purposefully ignored */
 
