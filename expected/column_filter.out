@@ -56,15 +56,15 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 (1 row)
 
 \c :subscriber_dsn
-DO $$
-BEGIN
-    FOR i IN 1..100 LOOP
-        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status NOT IN ('y', 'r') AND sync_relname IN ('basic_dml')) THEN
-            EXIT;
-        END IF;
-        PERFORM pg_sleep(0.1);
-    END LOOP;
-END;$$;
+BEGIN;
+SET LOCAL statement_timeout = '10s';
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'basic_dml');
+ wait_for_table_sync_complete 
+------------------------------
+ 
+(1 row)
+
+COMMIT;
 SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
  nspname |  relname  |                att_list                 | has_row_filter 
 ---------+-----------+-----------------------------------------+----------------

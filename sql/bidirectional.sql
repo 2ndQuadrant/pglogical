@@ -21,15 +21,10 @@ SELECT * FROM pglogical.create_subscription(
     synchronize_data := false,
     forward_origins := '{}');
 
-DO $$
-BEGIN
-    FOR i IN 1..100 LOOP
-        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
-            EXIT;
-        END IF;
-        PERFORM pg_sleep(0.1);
-    END LOOP;
-END;$$;
+BEGIN;
+SET LOCAL statement_timeout = '10s';
+SELECT pglogical.wait_for_subscription_sync_complete('test_bidirectional');
+COMMIT;
 
 \c :subscriber_dsn
 SELECT pglogical.replicate_ddl_command($$

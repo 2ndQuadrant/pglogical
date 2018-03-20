@@ -148,6 +148,8 @@ start synchronization and replication process in the background:
         provider_dsn := 'host=providerhost port=5432 dbname=db'
     );
 
+    SELECT pglogical.wait_for_subscription_sync_complete('subscription1');
+
 ### Node management
 
 Nodes can be added and removed dynamically using the SQL interfaces.
@@ -218,6 +220,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   pglogical is used as part of
   [synchronous replication](#synchronous-replication) setup.
 
+  Use `pglogical.wait_for_subscription_sync_complete(sub_name)` to wait for the
+  subscription to asynchronously start replicating and complete any needed
+  schema and/or data sync.
+
 - `pglogical.drop_subscription(subscription_name name, ifexists bool)`
   Disconnects the subscription and removes it from the catalog.
 
@@ -254,7 +260,8 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 - `pglogical.alter_subscription_synchronize(subscription_name name, truncate bool)`
   All unsynchronized tables in all sets are synchronized in a single operation.
   Tables are copied and synchronized one by one. Command does not block, just
-  initiates the action.
+  initiates the action. Use `pglogical.wait_for_subscription_sync_complete`
+  to wait for completion.
 
   Parameters:
   - `subscription_name` - name of the existing subscription
@@ -267,9 +274,27 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   **WARNING: This function will truncate the table immediately, and only then
   begin synchronising it, so it will be empty while being synced**
 
+  Does not block, use `pglogical.wait_for_table_sync_complete` to wait for
+  completion.
+
   Parameters:
   - `subscription_name` - name of the existing subscription
   - `relation` - name of existing table, optionally qualified
+
+- `pglogical.wait_for_subscription_sync_complete(subscription_name name)`
+
+   Wait for a subscription or to finish synchronization after a
+   `pglogical.create_subscription` or `pglogical.alter_subscription_synchronize`.
+
+   Do not use this to wait for a table resync.
+
+- `pglogical.wait_for_table_sync_complete(subscription_name name, relation regclass)`
+
+   Wait for a table to finish synchronizing after a
+   `pglogical.alter_subscription_resynchronize_table` (or a
+   `pglogical.replication_set_add_table` with `synchronize_data := true`).
+
+   Do not use this to wait for whole subscription (re)synchronization.
 
 - `pglogical.show_subscription_status(subscription_name name)`
   Shows status and basic information about subscription.

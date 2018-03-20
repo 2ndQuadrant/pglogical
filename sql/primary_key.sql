@@ -206,7 +206,7 @@ UPDATE pk_users SET id = 91 WHERE id = 90;
 -- Catchup will replay the insert and succeed, but the update
 -- will be lost.
 BEGIN;
-SET statement_timeout = '2s';
+SET LOCAL statement_timeout = '2s';
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ROLLBACK;
 
@@ -257,7 +257,7 @@ UPDATE pk_users SET id = 101 WHERE id = 100;
 
 -- Must time out, apply will fail on downstream due to no replident index
 BEGIN;
-SET statement_timeout = '2s';
+SET LOCAL statement_timeout = '2s';
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ROLLBACK;
 
@@ -361,7 +361,7 @@ UPDATE pk_users SET another_id = 55, name = 'pub_should_error' WHERE id = 6;
 SELECT * FROM pk_users ORDER BY id;
 -- We'll time out due to apply errors
 BEGIN;
-SET statement_timeout = '2s';
+SET LOCAL statement_timeout = '2s';
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ROLLBACK;
 -- This time we'll fix it by deleting the conflicting row

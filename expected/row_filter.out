@@ -135,15 +135,15 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 -- wait for the initial data to copy
-DO $$
-BEGIN
-    FOR i IN 1..300 LOOP
-        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status NOT IN ('y', 'r')) THEN
-            EXIT;
-        END IF;
-        PERFORM pg_sleep(0.1);
-    END LOOP;
-END;$$;
+BEGIN;
+SET LOCAL statement_timeout = '10s';
+SELECT pglogical.wait_for_subscription_sync_complete('test_subscription');
+ wait_for_subscription_sync_complete 
+-------------------------------------
+ 
+(1 row)
+
+COMMIT;
 SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
   id  | other | data | SomeThing 
 ------+-------+------+-----------

@@ -28,15 +28,10 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 \c :subscriber_dsn
 
-DO $$
-BEGIN
-    FOR i IN 1..100 LOOP
-        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status NOT IN ('y', 'r') AND sync_relname IN ('test_tablesample')) THEN
-            EXIT;
-        END IF;
-        PERFORM pg_sleep(0.1);
-    END LOOP;
-END;$$;
+BEGIN;
+SET LOCAL statement_timeout = '10s';
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_tablesample');
+COMMIT;
 
 SELECT * FROM test_tablesample ORDER BY id limit 5;
 

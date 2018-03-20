@@ -57,17 +57,10 @@ SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS
 
 
 \c :subscriber_dsn
-DO $$
--- give it 10 seconds to syncrhonize the tabes
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF (SELECT count(1) FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('test_publicschema', 'test_strangeschema')) > 1 THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
+SET statement_timeout = '10s';
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', '"strange.schema-IS".test_strangeschema');
+RESET statement_timeout;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
@@ -103,17 +96,10 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
 
 SELECT * FROM pglogical.alter_subscription_synchronize('test_subscription');
 
-DO $$
--- give it 10 seconds to syncrhonize the tabes
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('test_nosync')) THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
+BEGIN;
+SET statement_timeout = '10s';
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_nosync');
+COMMIT;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
@@ -124,17 +110,10 @@ SELECT * FROM public.test_publicschema;
 
 SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', 'test_publicschema');
 
-DO $$
--- give it 10 seconds to syncrhonize the tabes
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('test_publicschema')) THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
+BEGIN;
+SET statement_timeout = '10s';
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
+COMMIT;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
@@ -274,17 +253,10 @@ INSERT INTO synctest VALUES (2, '2');
 
 SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', 'synctest');
 
-DO $$
--- give it 10 seconds to syncrhonize the tabes
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status IN ('y', 'r') AND sync_relname IN ('synctest')) THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
+BEGIN;
+SET statement_timeout = '10s';
+SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'synctest');
+COMMIT;
 
 \c :provider_dsn
 

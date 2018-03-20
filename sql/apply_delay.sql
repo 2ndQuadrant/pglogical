@@ -26,15 +26,10 @@ SELECT * FROM pglogical.create_subscription(
 	apply_delay := int2interval(2) -- 2 seconds
 );
 
-DO $$
-BEGIN
-    FOR i IN 1..300 LOOP
-        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status NOT IN ('y', 'r')) THEN
-            EXIT;
-        END IF;
-        PERFORM pg_sleep(0.1);
-    END LOOP;
-END;$$;
+BEGIN;
+SET LOCAL statement_timeout = '30s';
+SELECT pglogical.wait_for_subscription_sync_complete('test_subscription_delay');
+COMMIT;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 

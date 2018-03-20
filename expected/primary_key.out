@@ -365,7 +365,7 @@ UPDATE pk_users SET id = 91 WHERE id = 90;
 -- Catchup will replay the insert and succeed, but the update
 -- will be lost.
 BEGIN;
-SET statement_timeout = '2s';
+SET LOCAL statement_timeout = '2s';
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ERROR:  canceling statement due to statement timeout
 ROLLBACK;
@@ -425,7 +425,7 @@ INSERT INTO pk_users VALUES(100,0,0,'User100', 'Address100');
 UPDATE pk_users SET id = 101 WHERE id = 100;
 -- Must time out, apply will fail on downstream due to no replident index
 BEGIN;
-SET statement_timeout = '2s';
+SET LOCAL statement_timeout = '2s';
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ERROR:  canceling statement due to statement timeout
 ROLLBACK;
@@ -621,7 +621,7 @@ SELECT * FROM pk_users ORDER BY id;
 
 -- We'll time out due to apply errors
 BEGIN;
-SET statement_timeout = '2s';
+SET LOCAL statement_timeout = '2s';
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 ERROR:  canceling statement due to statement timeout
 ROLLBACK;

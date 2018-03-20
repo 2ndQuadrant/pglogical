@@ -44,28 +44,12 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}');
 COMMIT;
 
-DO $$
-BEGIN
-	FOR i IN 1..100 LOOP
-		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
-			RETURN;
-		END IF;
-		PERFORM pg_sleep(0.1);
-	END LOOP;
-END;
-$$;
+BEGIN;
+SET LOCAL statement_timeout = '10s';
+SELECT pglogical.wait_for_subscription_sync_complete('test_orig_subscription');
+COMMIT;
 
 SELECT subscription_name, status, provider_node, replication_sets, forward_origins FROM pglogical.show_subscription_status();
-
-DO $$
-BEGIN
-    FOR i IN 1..300 LOOP
-        IF EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status = 'r') THEN
-            EXIT;
-        END IF;
-        PERFORM pg_sleep(0.1);
-    END LOOP;
-END;$$;
 
 SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 

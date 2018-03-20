@@ -102,6 +102,9 @@ PG_FUNCTION_INFO_V1(pglogical_alter_subscription_resynchronize_table);
 PG_FUNCTION_INFO_V1(pglogical_show_subscription_table);
 PG_FUNCTION_INFO_V1(pglogical_show_subscription_status);
 
+PG_FUNCTION_INFO_V1(pglogical_wait_for_subscription_sync_complete);
+PG_FUNCTION_INFO_V1(pglogical_wait_for_table_sync_complete);
+
 /* Replication set manipulation. */
 PG_FUNCTION_INFO_V1(pglogical_create_replication_set);
 PG_FUNCTION_INFO_V1(pglogical_alter_replication_set);
@@ -2093,6 +2096,90 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	heap_close(rel, NoLock);
 
 	PG_RETURN_NULL();
+}
+
+
+
+/*
+ * Wait for subscription and initial sync to complete, or, if relation info is
+ * given, for sync to complete for a specific table.
+ *
+ * We have to play games with snapshots to achieve this, since we're looking at
+ * pglogical tables in the future as far as our snapshot is concerned.
+ */
+static void
+pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, char *relname)
+{
+	PGLogicalSubscription *sub;
+
+	/*
+	 * If we wait in SERIALIZABLE, then the next snapshot after we return
+	 * won't reflect the new state.
+	 */
+	if (IsolationUsesXactSnapshot())
+		elog(ERROR, "cannot wait for sync in REPEATABLE READ or SERIALIZABLE isolation");
+
+	sub = get_subscription_by_name(subscription_name, false);
+
+	do
+	{
+		PGLogicalSyncStatus	   *sync;
+		bool					isdone;
+
+		/* We need to see the latest rows */
+		PushActiveSnapshot(GetLatestSnapshot());
+
+		if (relname != NULL)
+			sync = get_table_sync_status(sub->id,
+										 relnamespace, relname, true); 
+		else
+			sync = get_subscription_sync_status(sub->id, true);
+
+		isdone = sync && (sync->status == SYNC_STATUS_SYNCDONE
+						  || sync->status == SYNC_STATUS_READY);
+
+		/* TODO: in pgl3 we must pfree() the strings separately */
+		if (sync)
+			pfree(sync);
+
+		PopActiveSnapshot();
+
+		if (isdone)
+			break;
+
+		CHECK_FOR_INTERRUPTS();
+
+		/* some kind of backoff could be useful here */
+		(void) WaitLatch(&MyProc->procLatch,
+						 WL_LATCH_SET | WL_TIMEOUT, 200L);
+
+		ResetLatch(&MyProc->procLatch);
+	} while (1);
+}
+
+Datum
+pglogical_wait_for_subscription_sync_complete(PG_FUNCTION_ARGS)
+{
+	char *subscription_name = NameStr(*PG_GETARG_NAME(0));
+
+	pglogical_wait_for_sync_complete(subscription_name, NULL, NULL);
+
+	PG_RETURN_VOID();
+}
+
+Datum
+pglogical_wait_for_table_sync_complete(PG_FUNCTION_ARGS)
+{
+	char *subscription_name = NameStr(*PG_GETARG_NAME(0));
+	Oid relid = PG_GETARG_OID(1);
+	char *relname, *relnamespace;
+
+	relname = get_rel_name(relid);
+	relnamespace = get_namespace_name(get_rel_namespace(relid));
+
+	pglogical_wait_for_sync_complete(subscription_name, relnamespace, relname);
+
+	PG_RETURN_VOID();
 }
 
 Datum
