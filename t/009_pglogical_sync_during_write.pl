@@ -18,7 +18,7 @@ my $PGBENCH_TIME = $ENV{PGBENCH_TIME} // 120;
 my $WALSENDER_TIMEOUT = $ENV{PGBENCH_TIMEOUT} // '5s';
 
 $SIG{__DIE__} = sub { Carp::confess @_ };
-$SIG{INT}  = sub { Carp::confess("interupted by SIGINT"); };
+$SIG{INT}  = sub { die("interupted by SIGINT"); };
 
 my $node_provider = get_new_node('provider');
 $node_provider->init();
@@ -246,7 +246,12 @@ do {
 			}
 		}
 
-		isnt($finished_sync_line, undef, "found finished sync line in last test logs");
+		# This test is racey, because we don't emit this message until
+		# after the sync commits so we quite possibly won't see it here
+		# after we finish waiting for synced state.
+		#
+		#isnt($finished_sync_line, undef, "found finished sync line in last test logs");
+
 		is($timeout_line, undef, "no walsender timeout since last test");
 	}
 
