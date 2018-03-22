@@ -76,7 +76,7 @@ extern void set_table_sync_status(Oid subid, const char *schemaname,
 extern List *get_unsynced_tables(Oid subid);
 
 /* For interface compat with pgl3 */
-inline void free_sync_status(PGLogicalSyncStatus *sync)
+inline static void free_sync_status(PGLogicalSyncStatus *sync)
 {
 	pfree(sync);
 }
