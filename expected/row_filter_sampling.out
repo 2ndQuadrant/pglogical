@@ -64,6 +64,12 @@ SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_tablesa
 (1 row)
 
 COMMIT;
+SELECT sync_kind, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status WHERE sync_relname = 'test_tablesample';
+ sync_kind | sync_nspname |   sync_relname   | sync_status 
+-----------+--------------+------------------+-------------
+ d         | public       | test_tablesample | r
+(1 row)
+
 SELECT * FROM test_tablesample ORDER BY id limit 5;
  id |                                                                                                   name                                                                                                   
 ----+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

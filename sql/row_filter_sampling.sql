@@ -33,6 +33,8 @@ SET LOCAL statement_timeout = '10s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_tablesample');
 COMMIT;
 
+SELECT sync_kind, sync_nspname, sync_relname, sync_status FROM pglogical.local_sync_status WHERE sync_relname = 'test_tablesample';
+
 SELECT * FROM test_tablesample ORDER BY id limit 5;
 
 \c :provider_dsn

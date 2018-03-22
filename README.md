@@ -286,15 +286,35 @@ Nodes can be added and removed dynamically using the SQL interfaces.
    Wait for a subscription or to finish synchronization after a
    `pglogical.create_subscription` or `pglogical.alter_subscription_synchronize`.
 
-   Do not use this to wait for a table resync.
+  This function waits until the subscription's initial schema/data sync,
+  if any, are done, and until any tables pending individual resynchronisation
+  have also finished synchronising.
+
+  For best results, run `SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL)` on the
+  provider after any replication set changes that requested resyncs, and only
+  then call `pglogical.wait_for_subscription_sync_complete` on the subscriber.
 
 - `pglogical.wait_for_table_sync_complete(subscription_name name, relation regclass)`
 
-   Wait for a table to finish synchronizing after a
-   `pglogical.alter_subscription_resynchronize_table` (or a
-   `pglogical.replication_set_add_table` with `synchronize_data := true`).
+  Same as `pglogical.wait_for_subscription_sync_complete`, but waits only for
+  the subscription's initial sync and the named table. Other tables pending
+  resynchronisation are ignored.
 
-   Do not use this to wait for whole subscription (re)synchronization.
+- `pglogical.wait_slot_confirm_lsn`
+
+  `SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL)`
+
+  Wait until all replication slots on the current node have replayed up to the
+  xlog insert position at time of call on all providers. Returns when
+  all slots' `confirmed_flush_lsn` passes the `pg_current_wal_insert_lsn()` at
+  time of call.
+
+  Optionally may wait for only one replication slot (first argument).
+  Optionally may wait for an arbitrary LSN passed instead of the insert lsn
+  (second argument). Both are usually just left null.
+
+  This function is very useful to ensure all subscribers have received changes
+  up to a certain point on the provider.
 
 - `pglogical.show_subscription_status(subscription_name name)`
   Shows status and basic information about subscription.

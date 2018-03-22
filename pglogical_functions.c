@@ -2123,24 +2123,46 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 
 	do
 	{
-		PGLogicalSyncStatus	   *sync;
-		bool					isdone;
+		PGLogicalSyncStatus	   *subsync;
+		List				   *tables;
+		bool					isdone = false;
 
 		/* We need to see the latest rows */
 		PushActiveSnapshot(GetLatestSnapshot());
 
-		if (relname != NULL)
-			sync = get_table_sync_status(sub->id,
-										 relnamespace, relname, true); 
-		else
-			sync = get_subscription_sync_status(sub->id, true);
+		subsync = get_subscription_sync_status(sub->id, true);
+		isdone = subsync && subsync->status == SYNC_STATUS_READY;
+		free_sync_status(subsync);
 
-		isdone = sync && (sync->status == SYNC_STATUS_SYNCDONE
-						  || sync->status == SYNC_STATUS_READY);
-
-		/* TODO: in pgl3 we must pfree() the strings separately */
-		if (sync)
-			pfree(sync);
+		if (isdone)
+		{
+			/*
+			 * Subscription its self is synced, but what about separately
+			 * synced tables?
+			 */
+			if (relname != NULL)
+			{
+				PGLogicalSyncStatus *table = get_table_sync_status(sub->id, relnamespace, relname, true);
+				isdone = table && table->status == SYNC_STATUS_READY;
+				free_sync_status(table);
+			}
+			else
+			{
+				/*
+				 * This is plenty inefficient and we should probably just do a direct catalog
+				 * scan, but meh, it hardly has to be fast.
+				 */
+				ListCell *lc;
+				tables = get_unsynced_tables(sub->id);
+				isdone = tables == NIL;
+				foreach (lc, tables)
+				{
+					PGLogicalSyncStatus *table = lfirst(lc);
+					free_sync_status(table);
+				}
+				list_free(tables);
+			}
+		}
 
 		PopActiveSnapshot();
 
