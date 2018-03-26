@@ -213,8 +213,10 @@ do {
 				{
 					if (int($1) == $walsender_pid)
 					{
-						diag "terminated walsender was the main walsender for the apply worker, trying to make apply core";
-						system("gcore $apply_pid");
+						diag "terminated walsender was the main walsender for the apply worker, trying to make apply core of pid $apply_pid";
+						system("gcore -o tmp_check/core.$apply_pid $apply_pid")
+							and diag "core saved as tmp_check/core.$apply_pid"
+							or diag "couldn't save core, see logs";
 					}
 					else
 					{
@@ -279,9 +281,28 @@ for my $tbl (@pgbench_tables)
 	my $rowcount_subscriber = $node_subscriber->safe_psql('postgres',
 			"SELECT count(*) FROM $tbl;");
 
-	is($rowcount_provider, $rowcount_subscriber,
-		"final $tbl row counts match after sync")
-		or diag "final provider rowcount for $tbl is $rowcount_provider, but subscriber has $rowcount_subscriber";
+	my $matched = is($rowcount_subscriber, $rowcount_provider,
+		"final $tbl row counts match after sync");
+	if (!$matched)
+	{
+		diag "final provider rowcount for $tbl is $rowcount_provider, but subscriber has $rowcount_subscriber";
+
+		my $sortkey;
+		if ($tbl == "pgbench_history") {
+			$sortkey = "1, 2, 3, 4";
+		} elsif ($tbl == "pgbench_tellers" || $tbl == "pgbench_accounts") {
+			$sortkey = "1, 2";
+		} elsif ($tbl == "pgbench_branches") {
+			$sortkey = "1";
+		}
+
+		# Compare the tables
+		$node_provider->safe_psql('postgres', qq[\\copy (SELECT * FROM $tbl ORDER BY $sortkey) to tmp_check/$tbl-provider]);
+		$node_subscriber->safe_psql('postgres', qq[\\copy (SELECT * FROM $tbl ORDER BY $sortkey) to tmp_check/$tbl-subscriber]);
+		$node_subscriber->safe_psql('postgres', qq[\\copy (SELECT * FROM $tbl, pglogical.xact_commit_timestamp_origin($tbl.xmin) ORDER BY $sortkey) to tmp_check/$tbl-subscriber-detail]);
+		IPC::Run::run(['diff', '-u', "tmp_check/$tbl-provider", "tmp_check/$tbl-subscriber"], '>', "tmp_check/$tbl-diff");
+		diag "differences between $tbl on provider and subscriber recorded in tmp_check/";
+	}
 
 }
 
