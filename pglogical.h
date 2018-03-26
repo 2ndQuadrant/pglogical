@@ -36,6 +36,10 @@
 
 #define REPLICATION_ORIGIN_ALL "all"
 
+#if PG_VERSION_NUM >= 90500
+#define HAVE_REPLICATION_ORIGINS
+#endif
+
 extern bool pglogical_synchronous_commit;
 extern char *pglogical_temp_directory;
 extern bool pglogical_use_spi;

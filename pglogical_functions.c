@@ -13,6 +13,7 @@
 
 #include "postgres.h"
 
+#include "access/commit_ts.h"
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
@@ -136,6 +137,8 @@ PG_FUNCTION_INFO_V1(pglogical_version);
 PG_FUNCTION_INFO_V1(pglogical_version_num);
 PG_FUNCTION_INFO_V1(pglogical_min_proto_version);
 PG_FUNCTION_INFO_V1(pglogical_max_proto_version);
+
+PG_FUNCTION_INFO_V1(pglogical_xact_commit_timestamp_origin);
 
 static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
@@ -2202,6 +2205,56 @@ pglogical_wait_for_table_sync_complete(PG_FUNCTION_ARGS)
 	pglogical_wait_for_sync_complete(subscription_name, relnamespace, relname);
 
 	PG_RETURN_VOID();
+}
+
+/*
+ * Like pg_xact_commit_timestamp but extended for replorigin
+ * too.
+ */
+Datum
+pglogical_xact_commit_timestamp_origin(PG_FUNCTION_ARGS)
+{
+#ifdef HAVE_REPLICATION_ORIGINS
+	TransactionId xid = PG_GETARG_UINT32(0);
+	TimestampTz ts;
+	RepOriginId	origin;
+	bool		found;
+#endif
+	TupleDesc	tupdesc;
+	Datum		values[2];
+	bool		nulls[2] = {false, false};
+	HeapTuple	tup;
+
+	/*
+	 * Construct a tuple descriptor for the result row. Must match the
+	 * function declaration.
+	 */
+	tupdesc = CreateTemplateTupleDesc(2, false);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "timestamp",
+					   TIMESTAMPTZOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "roident",
+					   OIDOID, -1, 0);
+	tupdesc = BlessTupleDesc(tupdesc);
+
+#ifdef HAVE_REPLICATION_ORIGINS
+	found = TransactionIdGetCommitTsData(xid, &ts, &origin);
+
+	if (found)
+	{
+		values[0] = TimestampTzGetDatum(ts);
+		values[1] = ObjectIdGetDatum(origin);
+	}
+	else
+#endif
+	{
+		values[0] = (Datum)0;
+		nulls[0] = true;
+		values[1] = (Datum)0;
+		nulls[1] = true;
+	}
+
+	tup = heap_form_tuple(tupdesc, values, nulls);
+	PG_RETURN_DATUM(HeapTupleGetDatum(tup));
 }
 
 Datum
