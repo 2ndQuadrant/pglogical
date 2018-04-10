@@ -311,6 +311,9 @@ main(int argc, char **argv)
 	if (!replication_sets || !strlen(replication_sets))
 		replication_sets = "default,default_insert_only,ddl_sql";
 
+	/* Init random numbers used for slot suffixes, etc */
+	srand(time(NULL));
+
 	/* Parse database list or connection string. */
 	if (databases != NULL)
 	{
