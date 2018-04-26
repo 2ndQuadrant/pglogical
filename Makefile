@@ -37,7 +37,8 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended conflict
 		  node_origin_cascade drop
 
 EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
-			   compat96/pglogical_compat.o pglogical_create_subscriber.o
+			   compat96/pglogical_compat.o compat10/pglogical_compat.o \
+			   pglogical_create_subscriber.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
 # so it must be escaped. The $ placeholders in awk must be doubled too.
