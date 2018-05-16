@@ -793,7 +793,7 @@ alter_subscription(PGLogicalSubscription *sub)
 	if (strcmp(NameStr(oldsub->sub_name), sub->name) != 0)
 		ereport(LOG,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("subscription name change not is not supported")));
+				 errmsg("subscription name change is not supported")));
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
