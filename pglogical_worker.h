@@ -54,7 +54,7 @@ typedef struct PGLogicalWorker {
 	/* Database id to connect to. */
 	Oid		dboid;
 
-	/* Connection id, for apply worker. */
+	/* Type-specific worker info */
 	union
 	{
 		PGLogicalApplyWorker apply;

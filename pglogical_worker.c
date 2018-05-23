@@ -133,6 +133,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 	worker_shm->generation = next_generation;
 	worker_shm->crashed_at = 0;
 	worker_shm->proc = NULL;
+	worker_shm->worker_type = worker->worker_type;
 
 	LWLockRelease(PGLogicalCtx->lock);
 
@@ -655,13 +656,13 @@ pglogical_worker_shmem_startup(void)
 		prev_shmem_startup_hook();
 
 	/*
-	 * This is cludge for Windows (Postgres des not define the GUC variable
-	 * as PGDDLIMPORT)
+	 * This is kludge for Windows (Postgres does not define the GUC variable
+	 * as PGDLLIMPORT)
 	 */
 	nworkers = atoi(GetConfigOptionByName("max_worker_processes", NULL,
 										  false));
 
-	/* Init signaling context for supervisor proccess. */
+	/* Init signaling context for the various processes. */
 	PGLogicalCtx = ShmemInitStruct("pglogical_context",
 								   worker_shmem_size(nworkers), &found);
 
@@ -669,6 +670,7 @@ pglogical_worker_shmem_startup(void)
 	{
 		PGLogicalCtx->lock = &(GetNamedLWLockTranche("pglogical"))->lock;
 		PGLogicalCtx->supervisor = NULL;
+		PGLogicalCtx->subscriptions_changed = false;
 		PGLogicalCtx->total_workers = nworkers;
 		memset(PGLogicalCtx->workers, 0,
 			   sizeof(PGLogicalWorker) * PGLogicalCtx->total_workers);

@@ -644,9 +644,16 @@ pglogical_supervisor_main(Datum main_arg)
 	pqsignal(SIGTERM, handle_sigterm);
 	BackgroundWorkerUnblockSignals();
 
-	/* Assign the latch in shared memory to our process latch. */
+	/*
+	 * Initialize supervisor info in shared memory.  Strictly speaking we
+	 * don't need a lock here, because no other process could possibly be
+	 * looking at this shared struct since they're all started by the
+	 * supervisor, but let's be safe.
+	 */
+	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 	PGLogicalCtx->supervisor = MyProc;
 	PGLogicalCtx->subscriptions_changed = true;
+	LWLockRelease(PGLogicalCtx->lock);
 
 	/* Make it easy to identify our processes. */
 	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
