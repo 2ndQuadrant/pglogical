@@ -32,11 +32,13 @@
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
 
-typedef struct signal_workers_arg
+
+typedef struct signal_worker_item
 {
 	Oid		subid;
 	bool	kill;
-} signal_workers_arg;
+} signal_worker_item;
+static	List *signal_workers = NIL;
 
 volatile sig_atomic_t	got_SIGTERM = false;
 
@@ -45,6 +47,7 @@ PGLogicalWorker		   *MyPGLogicalWorker = NULL;
 static uint16			MyPGLogicalWorkerGeneration;
 
 static bool xacthook_signal_workers = false;
+static bool xact_cb_installed = false;
 
 
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -447,17 +450,19 @@ pglogical_apply_find(Oid dboid, Oid subscriberid)
 
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
-		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_APPLY &&
-			dboid == PGLogicalCtx->workers[i].dboid &&
-			subscriberid == PGLogicalCtx->workers[i].worker.apply.subid)
-			return &PGLogicalCtx->workers[i];
+		PGLogicalWorker	   *w = &PGLogicalCtx->workers[i];
+
+		if (w->worker_type == PGLOGICAL_WORKER_APPLY &&
+			dboid == w->dboid &&
+			subscriberid == w->worker.apply.subid)
+			return w;
 	}
 
 	return NULL;
 }
 
 /*
- * Find all apply worker for given database.
+ * Find all apply workers for given database.
  */
 List *
 pglogical_apply_find_all(Oid dboid)
@@ -558,79 +563,76 @@ pglogical_worker_kill(PGLogicalWorker *worker)
 static void
 signal_worker_xact_callback(XactEvent event, void *arg)
 {
-	switch (event)
+	if (event == XACT_EVENT_COMMIT && xacthook_signal_workers)
 	{
-		case XACT_EVENT_COMMIT:
-			if (xacthook_signal_workers)
+		PGLogicalWorker	   *w;
+		ListCell	   *l;
+
+		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
+
+		foreach (l, signal_workers)
+		{
+			signal_worker_item *item = (signal_worker_item *) lfirst(l);
+
+			w = pglogical_apply_find(MyDatabaseId, item->subid);
+			if (item->kill)
+				pglogical_worker_kill(w);
+			else if (pglogical_worker_running(w))
 			{
-				PGLogicalWorker	   *w;
-
-				xacthook_signal_workers = false;
-
-				LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
-
-				if (arg != NULL)
-				{
-					signal_workers_arg *swa = (signal_workers_arg *) arg;
-					PGLogicalWorker	   *apply;
-
-					apply = pglogical_apply_find(MyDatabaseId, swa->subid);
-					if (swa->kill)
-						pglogical_worker_kill(apply);
-					else if (pglogical_worker_running(apply))
-					{
-						apply->worker.apply.sync_pending = true;
-						SetLatch(&apply->proc->procLatch);
-					}
-				}
-
-				PGLogicalCtx->subscriptions_changed = true;
-
-				w = pglogical_manager_find(MyDatabaseId);
-
-				if (pglogical_worker_running(w))
-				{
-					/* Signal the manager worker. */
-					SetLatch(&w->proc->procLatch);
-				}
-				else if (PGLogicalCtx->supervisor)
-				{
-					/* Signal the supervisor process. */
-					SetLatch(&PGLogicalCtx->supervisor->procLatch);
-				}
-
-				LWLockRelease(PGLogicalCtx->lock);
+				w->worker.apply.sync_pending = true;
+				SetLatch(&w->proc->procLatch);
 			}
-			break;
-		default:
-			/* We're not interested in other tx events */
-			break;
+		}
+
+		PGLogicalCtx->subscriptions_changed = true;
+
+		/* Signal the manager worker, if there's one */
+		w = pglogical_manager_find(MyDatabaseId);
+		if (pglogical_worker_running(w))
+			SetLatch(&w->proc->procLatch);
+
+		/* and signal the supervisor, for good measure */
+		if (PGLogicalCtx->supervisor)
+			SetLatch(&PGLogicalCtx->supervisor->procLatch);
+
+		LWLockRelease(PGLogicalCtx->lock);
+
+		list_free_deep(signal_workers);
+		signal_workers = NIL;
+
+		xacthook_signal_workers = false;
 	}
 }
 
 /*
- * Enqueue singal for supervisor/manager at COMMIT.
+ * Enqueue signal for supervisor/manager at COMMIT.
  */
 void
 pglogical_subscription_changed(Oid subid, bool kill)
 {
-	if (!xacthook_signal_workers)
+	if (!xact_cb_installed)
 	{
-		void *arg = NULL;
-
-		if (OidIsValid(subid))
-		{
-			signal_workers_arg swa;
-			arg = MemoryContextAlloc(TopTransactionContext,
-									 sizeof(signal_workers_arg));
-			swa.subid = subid;
-			swa.kill = kill;
-			memcpy(arg, &swa, sizeof(signal_workers_arg));
-		}
-
-		RegisterXactCallback(signal_worker_xact_callback, arg);
-		xacthook_signal_workers = true;
+		RegisterXactCallback(signal_worker_xact_callback, NULL);
+		xact_cb_installed = true;
 	}
+
+	if (OidIsValid(subid))
+	{
+		MemoryContext	oldcxt;
+		signal_worker_item *item;
+
+		oldcxt = MemoryContextSwitchTo(TopTransactionContext);
+
+		item = palloc(sizeof(signal_worker_item));
+		item->subid = subid;
+		item->kill = kill;
+
+		signal_workers = lappend(signal_workers, item);
+
+		MemoryContextSwitchTo(oldcxt);
+	}
+
+	xacthook_signal_workers = true;
 }
 
 static size_t
