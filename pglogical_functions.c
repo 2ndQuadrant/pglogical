@@ -851,7 +851,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 }
 
 /*
- * Resyncrhonize one existing table.
+ * Resynchronize one existing table.
  */
 Datum
 pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)

@@ -66,7 +66,7 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', '
 
 \c :provider_dsn
 DO $$
--- give it 10 seconds to syncrhonize the tabes
+-- give it 10 seconds to synchronize the tables
 BEGIN
 	FOR i IN 1..100 LOOP
 		IF (SELECT count(1) FROM pg_replication_slots) = 1 THEN

@@ -1774,7 +1774,7 @@ process_syncing_tables(XLogRecPtr end_lsn)
 	}
 
 	/*
-	 * If there are still pending tables for syncrhonization, launch the sync
+	 * If there are still pending tables for synchronization, launch the sync
 	 * worker.
 	 */
 	foreach (lc, SyncingTables)
