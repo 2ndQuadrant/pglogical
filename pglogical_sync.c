@@ -1476,9 +1476,33 @@ get_table_sync_status(Oid subid, const char *nspname, const char *relname,
 	HeapTuple		tuple;
 	ScanKeyData		key[3];
 	TupleDesc		tupDesc;
+	Oid				idxoid = InvalidOid;
+	List		   *indexes;
+	ListCell	   *l;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_LOCAL_SYNC_STATUS, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
+
+	/* Find an index we can use to scan this catalog. */
+	indexes = RelationGetIndexList(rel);
+	foreach (l, indexes)
+	{
+		Relation	idx = index_open(lfirst_oid(l), AccessShareLock);
+
+		if (idx->rd_index->indkey.values[0] == Anum_sync_subid &&
+			idx->rd_index->indkey.values[1] == Anum_sync_nspname &&
+			idx->rd_index->indkey.values[2] == Anum_sync_relname)
+		{
+			idxoid = lfirst_oid(l);
+			index_close(idx, AccessShareLock);
+			break;
+		}
+		index_close(idx, AccessShareLock);
+	}
+	if (!OidIsValid(idxoid))
+		elog(ERROR, "could not find index on local_sync_status");
+	list_free(indexes);
+
 	tupDesc = RelationGetDescr(rel);
 
 	ScanKeyInit(&key[0],
@@ -1494,7 +1518,7 @@ get_table_sync_status(Oid subid, const char *nspname, const char *relname,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(relname));
 
-	scan = systable_beginscan(rel, 0, true, NULL, 3, key);
+	scan = systable_beginscan(rel, idxoid, true, NULL, 3, key);
 	tuple = systable_getnext(scan);
 
 	if (!HeapTupleIsValid(tuple))
