@@ -150,7 +150,6 @@ struct ActionErrCallbackArg
 	const char * action_name;
 	PGLogicalRelation *rel;
 	bool is_ddl_or_drop;
-	bool suppress_output;
 };
 
 struct ActionErrCallbackArg errcallback_arg;
@@ -246,18 +245,15 @@ static void
 action_error_callback(void *arg)
 {
 	StringInfoData si;
+	initStringInfo(&si);
 
-	if (!errcallback_arg.suppress_output)
-	{
-		initStringInfo(&si);
+	format_action_description(&si,
+		errcallback_arg.action_name,
+		errcallback_arg.rel,
+		errcallback_arg.is_ddl_or_drop);
 
-		format_action_description(&si,
-			errcallback_arg.action_name,
-			errcallback_arg.rel,
-			errcallback_arg.is_ddl_or_drop);
-
-		errcontext("%s", si.data);
-	}
+	errcontext("%s", si.data);
+	pfree(si.data);
 }
 
 static bool
