@@ -578,6 +578,7 @@ pglogical_read_origin(StringInfo in, XLogRecPtr *origin_lsn)
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	/* fixed fields */
 	*origin_lsn = pq_getmsgint64(in);
@@ -605,6 +606,7 @@ pglogical_read_insert(StringInfo in, LOCKMODE lockmode,
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -636,6 +638,7 @@ pglogical_read_update(StringInfo in, LOCKMODE lockmode, bool *hasoldtup,
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -685,6 +688,7 @@ pglogical_read_delete(StringInfo in, LOCKMODE lockmode,
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	/* read the relation id */
 	relid = pq_getmsgint(in, 4);
@@ -830,6 +834,7 @@ pglogical_read_rel(StringInfo in)
 	/* read the flags */
 	flags = pq_getmsgbyte(in);
 	Assert(flags == 0);
+	(void) flags; /* unused */
 
 	relid = pq_getmsgint(in, 4);
 
