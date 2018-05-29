@@ -869,6 +869,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	if (oldsync)
 	{
 		if (oldsync->status != SYNC_STATUS_READY &&
+			oldsync->status != SYNC_STATUS_SYNCDONE &&
 			oldsync->status != SYNC_STATUS_NONE)
 			elog(ERROR, "table %s.%s is already being synchronized",
 				 nspname, relname);
