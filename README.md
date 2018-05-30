@@ -150,6 +150,17 @@ start synchronization and replication process in the background:
 
     SELECT pglogical.wait_for_subscription_sync_complete('subscription1');
 
+### Creating subscriber nodes with base backups
+
+In addition to the SQL-level node and subscription creation, pglogical also
+supports creating a subscriber by cloning the provider with `pg_basebackup` and
+starting it up as a pglogical subscriber. This is done with the
+`pglogical_create_subscriber` tool; see the `--help` output.
+
+Unlike `pglogical.create_subscription`'s data sync options, this clone ignores
+replication sets and copies all tables on all databases. However, it's often
+much faster, especially over high-bandwidth links.
+
 ### Node management
 
 Nodes can be added and removed dynamically using the SQL interfaces.
