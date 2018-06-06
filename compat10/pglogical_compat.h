@@ -18,7 +18,13 @@
 
 #define GetCurrentIntegerTimestamp() GetCurrentTimestamp()
 
-#define	PGLDoCopy(stmt, queryString, processed) DoCopy(NULL, stmt, -1, 0, processed)
+#define	PGLDoCopy(stmt, queryString, processed) \
+	do \
+	{ \
+		ParseState* pstate = make_parsestate(NULL); \
+		DoCopy(pstate, stmt, -1, 0, processed); \
+		free_parsestate(pstate); \
+	} while (false);
 
 #define pg_analyze_and_rewrite(parsetree, query_string, paramTypes, numParams) \
 	pg_analyze_and_rewrite(parsetree, query_string, paramTypes, numParams, NULL)
