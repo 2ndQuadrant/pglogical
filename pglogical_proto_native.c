@@ -334,7 +334,7 @@ static void
 pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 					  Relation rel, HeapTuple tuple, Bitmapset *att_list)
 {
-	TupleDesc	desc;
+	TupleDesc	desc, tupdesc;
 	Datum		values[MaxTupleAttributeNumber];
 	bool		isnull[MaxTupleAttributeNumber];
 	int			i;
@@ -367,22 +367,29 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 	 * interesting to inline heap_deform_tuple() here, we don't actually need
 	 * the information in the form we get from it.
 	 */
-	heap_deform_tuple(tuple, desc, values, isnull);
-
+	tupdesc = CreateTemplateTupleDesc(nliveatts, desc->tdhasoid);
+	nliveatts = 0;
 	for (i = 0; i < desc->natts; i++)
 	{
-		HeapTuple	typtup;
-		Form_pg_type typclass;
 		Form_pg_attribute att = desc->attrs[i];
-		char		transfer_type;
-
-		/* skip dropped columns */
 		if (att->attisdropped)
 			continue;
 		if (att_list &&
 			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
 						   att_list))
 			continue;
+		tupdesc->attrs[nliveatts] = att;
+		nliveatts++;
+	}
+	heap_deform_tuple(tuple, tupdesc, values, isnull);
+
+
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		HeapTuple	typtup;
+		Form_pg_type typclass;
+		Form_pg_attribute att = tupdesc->attrs[i];
+		char		transfer_type;
 
 		if (isnull[i])
 		{
@@ -487,6 +494,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 		ReleaseSysCache(typtup);
 	}
+	FreeTupleDesc(tupdesc);
 }
 
 /*
