@@ -85,7 +85,8 @@ static void print_msg(VerbosityLevelEnum level, const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
 
 static int run_pg_ctl(const char *arg);
-static void run_basebackup(const char *provider_connstr, const char *data_dir);
+static void run_basebackup(const char *provider_connstr, const char *data_dir,
+	const char *extra_basebackup_args);
 static void wait_postmaster_connection(const char *connstr);
 static void wait_primary_connection(const char *connstr);
 static void wait_postmaster_shutdown(void);
@@ -110,7 +111,8 @@ static bool extension_exists(PGconn *conn, const char *extname);
 static void install_extension(PGconn *conn, const char *extname);
 
 static void initialize_data_dir(char *data_dir, char *connstr,
-					char *postgresql_conf, char *pg_hba_conf);
+					char *postgresql_conf, char *pg_hba_conf,
+					char *extra_basebackup_args);
 static bool check_data_dir(char *data_dir, RemoteInfo *remoteinfo);
 
 static char *read_sysid(const char *data_dir);
@@ -183,6 +185,7 @@ main(int argc, char **argv)
 	int			pg_ctl_ret,
 				logfd;
 	char	   *restore_point_name = NULL;
+	char	   *extra_basebackup_args = NULL;
 
 	static struct option long_options[] = {
 		{"subscriber-name", required_argument, NULL, 'n'},
@@ -197,6 +200,7 @@ main(int argc, char **argv)
 		{"drop-slot-if-exists", no_argument, NULL, 7},
 		{"apply-delay", required_argument, NULL, 8},
 		{"databases", required_argument, NULL, 9},
+		{"extra-basebackup-args", required_argument, NULL, 10},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -272,6 +276,9 @@ main(int argc, char **argv)
 				apply_delay = atoi(optarg);
 			case 9:
 				databases = pg_strdup(optarg);
+				break;
+			case 10:
+				extra_basebackup_args = pg_strdup(optarg);
 				break;
 			default:
 				fprintf(stderr, _("Unknown option\n"));
@@ -415,7 +422,8 @@ main(int argc, char **argv)
 
 	initialize_data_dir(data_dir,
 						use_existing_data_dir ? NULL : prov_connstr,
-						postgresql_conf, pg_hba_conf);
+						postgresql_conf, pg_hba_conf,
+						extra_basebackup_args);
 	snprintf(pid_file, MAXPGPATH, "%s/postmaster.pid", data_dir);
 
 	restore_point_name = generate_restore_point_name();
@@ -582,6 +590,8 @@ usage(void)
 	printf(_("  --drop-slot-if-exists       drop replication slot of conflicting name\n"));
 	printf(_("  -s, --stop                  stop the server once the initialization is done\n"));
 	printf(_("  -v                          increase logging verbosity\n"));
+	printf(_("  --extra-basebackup-args     additional arguments to pass to pg_basebackup.\n"));
+	printf(_("                              Safe options: -T, -c, --xlogdir/--waldir\n"));
 	printf(_("\nConfiguration files override:\n"));
 	printf(_("  --hba-conf              path to the new pg_hba.conf\n"));
 	printf(_("  --postgresql-conf       path to the new postgresql.conf\n"));
@@ -671,7 +681,8 @@ run_pg_ctl(const char *arg)
  * Run pg_basebackup to create the copy of the origin node.
  */
 static void
-run_basebackup(const char *provider_connstr, const char *data_dir)
+run_basebackup(const char *provider_connstr, const char *data_dir,
+	const char *extra_basebackup_args)
 {
 	int			 ret;
 	PQExpBuffer  cmd = createPQExpBuffer();
@@ -682,6 +693,9 @@ run_basebackup(const char *provider_connstr, const char *data_dir)
 	/* Run pg_basebackup in verbose mode if we are running in verbose mode. */
 	if (verbosity >= VERBOSITY_VERBOSE)
 		appendPQExpBuffer(cmd, " -v");
+
+	if (extra_basebackup_args != NULL)
+		appendPQExpBuffer(cmd, "%s", extra_basebackup_args);
 
 	print_msg(VERBOSITY_DEBUG, _("Running pg_basebackup: %s.\n"), cmd->data);
 	ret = system(cmd->data);
@@ -709,13 +723,14 @@ run_basebackup(const char *provider_connstr, const char *data_dir)
  */
 static void
 initialize_data_dir(char *data_dir, char *connstr,
-					char *postgresql_conf, char *pg_hba_conf)
+					char *postgresql_conf, char *pg_hba_conf,
+					char *extra_basebackup_args)
 {
 	if (connstr)
 	{
 		print_msg(VERBOSITY_NORMAL,
 				  _("Creating base backup of the remote node...\n"));
-		run_basebackup(connstr, data_dir);
+		run_basebackup(connstr, data_dir, extra_basebackup_args);
 	}
 
 	if (postgresql_conf)
