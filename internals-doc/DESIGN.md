@@ -180,8 +180,8 @@ as long, since we can't start apply on the replica until the xact is committed
 on the master.
 
 Additionally, a big xact will cause large delays in apply of smaller
-transactions because logical decoding reoreders transactions into strict commit
-order and replays them in that sequence. Small transactions that commited after
+transactions because logical decoding reorders transactions into strict commit
+order and replays them in that sequence. Small transactions that committed after
 the big transaction cannot be replayed to the replica until the big transaction
 is transferred over the wire, and we can't get a head start on that while it's
 still running.

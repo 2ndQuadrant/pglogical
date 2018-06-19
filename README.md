@@ -13,7 +13,7 @@ reused from the earlier Slony technology:
 pglogical is new technology utilising the latest in-core features, so we have these version restrictions:
 * Provider & subscriber nodes must run PostgreSQL 9.4+
 * PostgreSQL 9.5+ is required for replication origin filtering and conflict detection
-* Additionaly, subscriber can be Postgres-XL 9.5+
+* Additionally, subscriber can be Postgres-XL 9.5+
 
 Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
@@ -586,7 +586,7 @@ can be either set in `postgresql.conf` or via `ALTER SYSTEM SET`.
   uses PostgreSQL internal batch insert mode which is also used by `COPY`
   command.
 
-  The batch inserts will improve replication peformance of transactions that
+  The batch inserts will improve replication performance of transactions that
   did many inserts into one table. PGLogical will switch to batch mode when
   transaction did more than 5 INSERTs.
 
@@ -782,10 +782,10 @@ Postgres-XL.
 Also any DDL limitations apply so extra care need to be taken when using
 `replicate_ddl_command()`.
 
-The Postgre-XL changes defaults and available settings for
+Postgres-XL changes defaults and available settings for
 `pglogical.conflict_resolution` and `pglogical.use_spi` configuration options.
 
-## Credits and Licence
+## Credits and License
 
 pglogical has been designed, developed and tested by the 2ndQuadrant team
 * Petr Jelinek
@@ -794,6 +794,6 @@ pglogical has been designed, developed and tested by the 2ndQuadrant team
 * Pallavi Sontakke
 * Umair Shahid
 
-pglogical licence is The PostgreSQL Licence
+pglogical license is The PostgreSQL License
 
-pglogical copyright is novated to PostgreSQL Global Development Group
+pglogical copyright is donated to PostgreSQL Global Development Group
