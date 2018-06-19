@@ -47,7 +47,7 @@ the protocol flow is the same as any other walsender-based logical replication
 plugin. The data stream is sent in COPY BOTH mode as a series of CopyData
 messages encapsulating replication data, and ends when the client disconnects.
 There's no facility for ending the COPY BOTH mode and returning to the
-walsender command parser to issue new commands. This is a limiation of the
+walsender command parser to issue new commands. This is a limitation of the
 walsender interface, not pglogical_output.
 
 == Protocol messages

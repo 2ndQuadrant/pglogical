@@ -143,7 +143,7 @@ e.g.
 to see the database's state as of the moment of the slot's creation. The first
 change streamed from the slot will be the change immediately after this
 snapshot was taken. The snapshot is useful when cloning the initial state of a
-database being replicted. Applications that want to see the change stream
+database being replicated. Applications that want to see the change stream
 going forward, but don't care about the initial state, can ignore this. The
 snapshot is only valid as long as the connection that issued the
 `CREATE_REPLICATION_SLOT` remains open and has not run another command.
@@ -259,7 +259,7 @@ running the decoding plugin.
 
 Note that 9.4 servers lack replication origin information and won't send it
 on the wire. They also always pass zeroes to the hooks. So you can't filter
-by origin in 9.4, and thus can't do multual multi-master as it'll create an
+by origin in 9.4, and thus can't do mutual multi-master as it'll create an
 infinite loop.
 
 Clients may use this facility to form arbitrarily complex topologies when
