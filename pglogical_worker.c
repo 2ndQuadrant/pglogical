@@ -77,7 +77,7 @@ handle_sigterm(SIGNAL_ARGS)
  * The caller is responsible for locking.
  */
 static int
-find_empty_worker_slot(void)
+find_empty_worker_slot(Oid dboid)
 {
 	int	i;
 
@@ -86,7 +86,9 @@ find_empty_worker_slot(void)
 	for (i = 0; i < PGLogicalCtx->total_workers; i++)
 	{
 		if (PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_NONE
-		    || PGLogicalCtx->workers[i].crashed_at != 0)
+		    || (PGLogicalCtx->workers[i].crashed_at != 0 
+                && (PGLogicalCtx->workers[i].dboid == dboid
+                    || PGLogicalCtx->workers[i].dboid == InvalidOid)))
 			return i;
 	}
 
@@ -111,7 +113,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
-	slot = find_empty_worker_slot();
+	slot = find_empty_worker_slot(worker->dboid);
 	if (slot == -1)
 	{
 		LWLockRelease(PGLogicalCtx->lock);
