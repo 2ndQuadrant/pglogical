@@ -992,35 +992,32 @@ relmetacache_prune(void)
 static void
 pglReorderBufferCleanSerializedTXNs(const char *slotname)
 {
-	DIR		   *spill_dir = NULL;
+	DIR		   *spill_dir;
 	struct dirent *spill_de;
 	struct stat statbuf;
 	char		path[MAXPGPATH * 2 + 12];
 
 	sprintf(path, "pg_replslot/%s", slotname);
 
-	/* we're only handling directories here, skip if it's not our's */
+	/* we're only handling directories here, skip if it's not ours */
 	if (lstat(path, &statbuf) == 0 && !S_ISDIR(statbuf.st_mode))
 		return;
 
 	spill_dir = AllocateDir(path);
-	while ((spill_de = ReadDir(spill_dir, path)) != NULL)
+	while ((spill_de = ReadDirExtended(spill_dir, path, INFO)) != NULL)
 	{
-		if (strcmp(spill_de->d_name, ".") == 0 ||
-			strcmp(spill_de->d_name, "..") == 0)
-			continue;
-
 		/* only look at names that can be ours */
 		if (strncmp(spill_de->d_name, "xid", 3) == 0)
 		{
-			sprintf(path, "pg_replslot/%s/%s", slotname,
-					spill_de->d_name);
+			snprintf(path, sizeof(path),
+					 "pg_replslot/%s/%s", slotname,
+					 spill_de->d_name);
 
 			if (unlink(path) != 0)
-				ereport(PANIC,
+				ereport(ERROR,
 						(errcode_for_file_access(),
-						 errmsg("could not remove file \"%s\": %m",
-								path)));
+						 errmsg("could not remove file \"%s\" during removal of pg_replslot/%s/*.xid: %m",
+								path, slotname)));
 		}
 	}
 	FreeDir(spill_dir);
