@@ -699,7 +699,7 @@ pglogical_sync_tmpfile_cleanup_cb(int code, Datum arg)
 	const char *tmpfile = DatumGetCString(arg);
 
 	if (unlink(tmpfile) != 0 && errno != ENOENT)
-		elog(WARNING, "Failed to clean up pglogical temporary dump file \"%s\" on exit/error",
+		elog(WARNING, "Failed to clean up pglogical temporary dump file \"%s\" on exit/error: %m",
 			 tmpfile);
 }
 
