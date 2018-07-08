@@ -341,6 +341,8 @@ pglogical_alter_node_drop_interface(PG_FUNCTION_ARGS)
 	char	   *if_name = NameStr(*PG_GETARG_NAME(1));
 	PGLogicalNode	   *node;
 	PGlogicalInterface *oldif;
+	List		   *other_subs;
+	ListCell	   *lc;
 
 	node = get_node_by_name(node_name, false);
 	if (node == NULL)
@@ -354,6 +356,18 @@ pglogical_alter_node_drop_interface(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("interface \"%s\" for node node \"%s\" not found",
 				 if_name, node_name)));
+
+	other_subs = get_node_subscriptions(node->id, true);
+	foreach (lc, other_subs)
+	{
+		PGLogicalSubscription  *sub = (PGLogicalSubscription *) lfirst(lc);
+		if (oldif->id == sub->origin_if->id)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("cannot drop interface \"%s\" for node \"%s\" because subscription \"%s\" is using it",
+							oldif->name, node->name, sub->name),
+					 errhint("change the subscription interface first")));
+        }
 
 	drop_node_interface(oldif->id);
 
