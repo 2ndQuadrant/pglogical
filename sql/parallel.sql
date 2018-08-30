@@ -12,7 +12,7 @@ SELECT * FROM pglogical.create_subscription(
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel,default}',
 	forward_origins := '{}',
-	synchronize_structure := false,
+	synchronize_structure := 'none',
 	synchronize_data := false
 );
 
@@ -21,7 +21,7 @@ SELECT * FROM pglogical.create_subscription(
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel}',
 	forward_origins := '{}',
-	synchronize_structure := false,
+	synchronize_structure := 'none',
 	synchronize_data := false
 );
 

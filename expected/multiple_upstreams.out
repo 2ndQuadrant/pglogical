@@ -65,11 +65,11 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'multi_ups_tbl');
 
 \c :subscriber_dsn
 -- We'll use the already existing pglogical node
--- notice synchronize_structure as false when table definition already exists
+-- notice synchronize_structure as 'none' when table definition already exists
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_subscription1',
     provider_dsn := (SELECT provider1_dsn FROM pglogical_regress_variables()) || ' user=super',
-	synchronize_structure := false,
+	synchronize_structure := 'none',
 	forward_origins := '{}');
  create_subscription 
 ---------------------
