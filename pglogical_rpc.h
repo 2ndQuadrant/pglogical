@@ -19,6 +19,8 @@ extern List *pg_logical_get_remote_repset_tables(PGconn *conn,
 									List *replication_sets);
 extern PGLogicalRemoteRel *pg_logical_get_remote_repset_table(PGconn *conn,
 								  RangeVar *rv, List *replication_sets);
+extern List *pg_logical_get_remote_repset_sequences(PGconn *conn,
+									List *replication_sets);
 
 extern bool pglogical_remote_slot_active(PGconn *conn, const char *slot_name);
 extern void pglogical_drop_remote_slot(PGconn *conn, const char *slot_name);

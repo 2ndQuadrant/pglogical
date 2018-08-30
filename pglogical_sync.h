@@ -29,19 +29,28 @@ typedef struct PGLogicalSyncStatus
 								 * synchronization coordination */
 } PGLogicalSyncStatus;
 
+/* XXX use a bitmap flag instead ? */
 #define SYNC_KIND_INIT		'i'
 #define SYNC_KIND_FULL		'f'
+#define SYNC_KIND_FULL_REL	'l'
 #define SYNC_KIND_STRUCTURE	's'
+#define SYNC_KIND_STRUCTURE_REL	'r'
 #define SYNC_KIND_DATA		'd'
 
 #define SyncKindData(kind) \
-	(kind == SYNC_KIND_FULL || kind == SYNC_KIND_DATA)
+	(kind == SYNC_KIND_FULL || kind == SYNC_KIND_FULL_REL || kind == SYNC_KIND_DATA)
 
 #define SyncKindStructure(kind) \
-	(kind == SYNC_KIND_FULL || kind == SYNC_KIND_STRUCTURE)
+	(kind == SYNC_KIND_FULL || kind == SYNC_KIND_FULL_REL || kind == SYNC_KIND_STRUCTURE || kind == SYNC_KIND_STRUCTURE_REL)
+
+#define SyncKindStructureRelations(kind) \
+	(kind == SYNC_KIND_FULL_REL || kind == SYNC_KIND_STRUCTURE_REL)
 
 #define SyncStructureAll(sync_structure) \
 	(strcmp(sync_structure, "all") == 0)
+
+#define SyncStructureRelOnly(sync_structure) \
+	(strcmp(sync_structure, "relations_only") == 0)
 
 /* XXX not used but document the sync_structure enum ... */
 #define SyncStructureNone(sync_structure) \
@@ -94,6 +103,9 @@ extern bool wait_for_sync_status_change(Oid subid, const char *nspname,
 
 extern void truncate_table(char *nspname, char *relname);
 extern List *get_subscription_tables(Oid subid);
+List *list_replication_sets_objects(const char *dsn, const char *name,
+										   const char *snapshot,
+										   List *replication_sets);
 
 #endif /* PGLOGICAL_SYNC_H */
 

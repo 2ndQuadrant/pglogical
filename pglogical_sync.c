@@ -87,12 +87,13 @@ static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
 static void
 dump_structure(PGLogicalSubscription *sub, const char *destfile,
-			   const char *snapshot)
+	       const char *snapshot, const char kind)
 {
 	char		pg_dump[MAXPGPATH];
 	uint32		version;
 	int			res;
 	StringInfoData	schema_filter;
+	StringInfoData	table_filter;
 	StringInfoData	command;
 
 	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump) != 0)
@@ -112,10 +113,41 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 		appendStringInfoString(&schema_filter, " -N pglogical_origin");
 	CommitTransactionCommand();
 
+	/*
+	 * Filter tables and sequences using "pg_dump -t" switch, based on
+	 * replication set tables and sequences from origin node.
+	 *
+	 * Creates new connection to origin.
+	 *
+	 * XXX CREATE SCHEMA is not done by pg_dump when using -t switch
+	 *
+	 * XXX add -T switch option ?
+	 *
+	 */
+	initStringInfo(&table_filter);
+	if (SyncKindStructureRelations(kind))
+	{
+		List *objects;
+		ListCell   *lc;
+
+		objects = list_replication_sets_objects(sub->origin_if->dsn,
+							sub->name, snapshot,
+							sub->replication_sets);
+
+		/* Get every object and add it to the -t switch */
+		foreach (lc, objects)
+		{
+			char	   *object_name = lfirst(lc);
+			appendStringInfo(&table_filter, " -t %s",
+					 object_name);
+		}
+	}
+
 	initStringInfo(&command);
-	appendStringInfo(&command, "\"%s\" --snapshot=\"%s\" %s -s -F c -f \"%s\" \"%s\"",
-					 pg_dump, snapshot, schema_filter.data, destfile,
-					 sub->origin_if->dsn);
+	appendStringInfo(&command, "\"%s\" --strict-names --snapshot=\"%s\" %s %s -s -F c -f \"%s\" \"%s\"",
+					 pg_dump, snapshot,
+					 schema_filter.data, table_filter.data,
+					 destfile, sub->origin_if->dsn);
 
 	res = system(command.data);
 	if (res != 0)
@@ -560,6 +592,74 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 }
 
 /*
+ * Returns the list of schema qualified name of replicated tables and sequences
+ * from provider.
+ *
+ *  Creates new connection to origin.
+ */
+List *
+list_replication_sets_objects(const char *dsn, const char *name, const char *snapshot, List *replication_sets)
+{
+	PGconn	   *origin_conn;
+	List	   *objects;
+	List	   *res = NIL;
+	ListCell   *lc;
+
+	/* Connect to origin node. */
+	origin_conn = pglogical_connect(dsn, name, "copy");
+	start_copy_origin_tx(origin_conn, snapshot);
+
+	/* Get tables from our replication sets from origin node. */
+	objects = pg_logical_get_remote_repset_tables(origin_conn,
+												 replication_sets);
+
+	/* And append them to the list */
+	foreach (lc, objects)
+	{
+		PGLogicalRemoteRel	*remoterel = lfirst(lc);
+		StringInfoData object;
+
+		initStringInfo(&object);
+		appendStringInfo(&object, "%s.%s",
+						 PQescapeLiteral(origin_conn, remoterel->nspname,
+											strlen(remoterel->nspname)),
+						 PQescapeLiteral(origin_conn, remoterel->relname,
+											strlen(remoterel->relname)));
+		res = lappend(res, object.data);
+
+		/* XXX probably not required here */
+		CHECK_FOR_INTERRUPTS();
+	}
+
+	/* Get sequences from our replication sets from origin node. */
+	objects = pg_logical_get_remote_repset_sequences(origin_conn,
+												 replication_sets);
+
+	/* And append them to the list */
+	foreach (lc, objects)
+	{
+		RangeVar	*rv = lfirst(lc);
+		StringInfoData object;
+
+		initStringInfo(&object);
+		appendStringInfo(&object, "%s.%s",
+				 PQescapeLiteral(origin_conn, rv->schemaname,
+											strlen(rv->schemaname)),
+						 PQescapeLiteral(origin_conn, rv->relname,
+											strlen(rv->relname)));
+		res = lappend(res, object.data);
+
+		/* XXX probably not required here */
+		CHECK_FOR_INTERRUPTS();
+	}
+
+	/* Finish the transaction and disconnect. */
+	finish_copy_origin_tx(origin_conn);
+
+	return res;
+}
+
+/*
  * Copy data from origin node to target node.
  *
  * Creates new connection to origin and target.
@@ -817,7 +917,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					CommitTransactionCommand();
 
 					/* Dump structure to temp storage. */
-					dump_structure(sub, tmpfile, snapshot);
+					dump_structure(sub, tmpfile, snapshot, sync->kind);
 
 					/* Restore base pre-data structure (types, tables, etc). */
 					restore_structure(sub, tmpfile, "pre-data");
