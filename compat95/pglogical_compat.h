@@ -50,4 +50,9 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum)
 
+#define ALLOCSET_DEFAULT_SIZES \
+		ALLOCSET_DEFAULT_MINSIZE, \
+		ALLOCSET_DEFAULT_INITSIZE, \
+		ALLOCSET_DEFAULT_MAXSIZE
+
 #endif
