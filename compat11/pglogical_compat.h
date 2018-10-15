@@ -1,14 +1,7 @@
 #ifndef PG_LOGICAL_COMPAT_H
 #define PG_LOGICAL_COMPAT_H
 
-#include "pgstat.h"
-#include "catalog/indexing.h"
-#include "commands/trigger.h"
-#include "executor/executor.h"
-#include "replication/origin.h"
 #include "utils/varlena.h"
-
-#define PGLCreateTrigger CreateTrigger
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
 	WaitLatchOrSocket(latch, wakeEvents, sock, timeout, PG_WAIT_EXTENSION)
@@ -17,8 +10,6 @@
 	WaitLatch(latch, wakeEvents, timeout, PG_WAIT_EXTENSION)
 
 #define GetCurrentIntegerTimestamp() GetCurrentTimestamp()
-
-#define	PGLDoCopy(stmt, queryString, processed) DoCopy(NULL, stmt, -1, 0, processed)
 
 #define pg_analyze_and_rewrite(parsetree, query_string, paramTypes, numParams) \
 	pg_analyze_and_rewrite(parsetree, query_string, paramTypes, numParams, NULL)
@@ -60,5 +51,33 @@
 
 #define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
 	next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, completionTag)
+
+#define PGLCreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, isInternal) \
+	CreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, InvalidOid, InvalidOid, NULL, isInternal, false);
+
+#define	PGLDoCopy(stmt, queryString, processed) DoCopy(NULL, stmt, -1, 0, processed)
+
+#define PGLReplicationSlotCreate(name, db_specific, persistency) ReplicationSlotCreate(name, db_specific, persistency)
+
+#ifdef PG2Q
+#define ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot) \
+	ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot, NULL)
+
+#define ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple) \
+	ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, NULL)
+#endif
+
+#ifndef rbtxn_has_catalog_changes
+#define rbtxn_has_catalog_changes(txn) (txn->has_catalog_changes)
+#endif
+
+/* ad7dbee368a */
+#define ExecInitExtraTupleSlot(estate) \
+	ExecInitExtraTupleSlot(estate, NULL)
+
+#define ACL_OBJECT_RELATION OBJECT_TABLE
+#define ACL_OBJECT_SEQUENCE OBJECT_SEQUENCE
+
+#define DatumGetJsonb DatumGetJsonbP
 
 #endif

@@ -123,10 +123,10 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, 
 (1 row)
 
 -- fail, the membership in repset depends on data column
+\set VERBOSITY terse
 ALTER TABLE basic_dml DROP COLUMN data;
-ERROR:  cannot drop table basic_dml column data because other objects depend on it
-DETAIL:  table basic_dml membership in replication set default depends on table basic_dml column data
-HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+ERROR:  cannot drop column data of table basic_dml because other objects depend on it
+\set VERBOSITY default
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
  wait_slot_confirm_lsn 
 -----------------------

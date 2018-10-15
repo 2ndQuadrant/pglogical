@@ -1316,9 +1316,7 @@ apply_work(PGconn *streamConn)
 	/* Init the MessageContext which we use for easier cleanup. */
 	MessageContext = AllocSetContextCreate(TopMemoryContext,
 										   "MessageContext",
-										   ALLOCSET_DEFAULT_MINSIZE,
-										   ALLOCSET_DEFAULT_INITSIZE,
-										   ALLOCSET_DEFAULT_MAXSIZE);
+										   ALLOCSET_DEFAULT_SIZES);
 
 	MemoryContextSwitchTo(MessageContext);
 

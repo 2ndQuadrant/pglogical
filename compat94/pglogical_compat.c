@@ -202,7 +202,7 @@ replorigin_create(char *roname)
  * Needs to be called in a transaction.
  */
 void
-replorigin_drop(RepOriginId roident)
+pgl_replorigin_drop(RepOriginId roident)
 {
 	HeapTuple	tuple = NULL;
 	Relation	rel;

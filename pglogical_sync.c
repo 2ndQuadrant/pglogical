@@ -376,7 +376,7 @@ make_copy_attnamelist(PGLogicalRelation *rel)
 		int		remoteattnum = physatt_in_attmap(rel, attnum);
 
 		/* Skip dropped attributes. */
-		if (desc->attrs[attnum]->attisdropped)
+		if (TupleDescAttr(desc,attnum)->attisdropped)
 			continue;
 
 		if (remoteattnum < 0)
@@ -681,7 +681,7 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
 		replorigin_session_reset();
-		replorigin_drop(replorigin_session_origin);
+		pgl_replorigin_drop(replorigin_session_origin);
 		replorigin_session_origin = InvalidRepOriginId;
 	}
 }
@@ -715,9 +715,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 	/* We need our own context for keeping things between transactions. */
 	myctx = AllocSetContextCreate(CurrentMemoryContext,
 								   "pglogical_sync_subscription cxt",
-								   ALLOCSET_DEFAULT_MINSIZE,
-								   ALLOCSET_DEFAULT_INITSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
+								   ALLOCSET_DEFAULT_SIZES);
 
 	StartTransactionCommand();
 	oldctx = MemoryContextSwitchTo(myctx);
@@ -1312,8 +1310,8 @@ get_subscription_sync_status(Oid subid, bool missing_ok)
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		if (heap_attisnull(tuple, Anum_sync_nspname) &&
-			heap_attisnull(tuple, Anum_sync_relname))
+		if (heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
+			heap_attisnull(tuple, Anum_sync_relname, NULL))
 			break;
 	}
 
@@ -1364,8 +1362,8 @@ set_subscription_sync_status(Oid subid, char status)
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
 	{
-		if (heap_attisnull(oldtup, Anum_sync_nspname) &&
-			heap_attisnull(oldtup, Anum_sync_relname))
+		if (heap_attisnull(oldtup, Anum_sync_nspname, NULL) &&
+			heap_attisnull(oldtup, Anum_sync_relname, NULL))
 			break;
 	}
 
@@ -1568,8 +1566,8 @@ get_unsynced_tables(Oid subid)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		if (heap_attisnull(tuple, Anum_sync_nspname) &&
-			heap_attisnull(tuple, Anum_sync_relname))
+		if (heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
+			heap_attisnull(tuple, Anum_sync_relname, NULL))
 			continue;
 
 		sync = syncstatus_fromtuple(tuple, tupDesc);
@@ -1609,8 +1607,8 @@ get_subscription_tables(Oid subid)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		if (heap_attisnull(tuple, Anum_sync_nspname) &&
-			heap_attisnull(tuple, Anum_sync_relname))
+		if (heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
+			heap_attisnull(tuple, Anum_sync_relname, NULL))
 			continue;
 
 		sync = syncstatus_fromtuple(tuple, tupDesc);

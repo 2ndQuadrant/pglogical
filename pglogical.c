@@ -47,6 +47,8 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
+#include "pgstat.h"
+
 #include "pglogical_executor.h"
 #include "pglogical_node.h"
 #include "pglogical_conflict.h"
@@ -667,7 +669,9 @@ pglogical_supervisor_main(Datum main_arg)
 	VALGRIND_PRINTF("PGLOGICAL: supervisor\n");
 
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
-#if PG_VERSION_NUM >= 90500
+#if PG_VERSION_NUM >= 110000
+	BackgroundWorkerInitializeConnection(NULL, NULL, 0);
+#elif PG_VERSION_NUM >= 90500
 	BackgroundWorkerInitializeConnection(NULL, NULL);
 #else
 	BackgroundWorkerInitializeConnection("postgres", NULL);

@@ -29,6 +29,8 @@
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 
+#include "pgstat.h"
+
 #include "pglogical_sync.h"
 #include "pglogical_worker.h"
 
@@ -354,7 +356,13 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 		MemoryContext oldcontext;
 
 		BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid,
-												  InvalidOid);
+												  InvalidOid
+#if PG_VERSION_NUM >= 110000
+												  , 0 /* flags */
+#endif
+												  );
+
+
 		StartTransactionCommand();
 		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 		MyProcPort->database_name = pstrdup(get_database_name(MyPGLogicalWorker->dboid));

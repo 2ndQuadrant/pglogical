@@ -11,7 +11,6 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output_plugin.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
@@ -38,6 +37,7 @@
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
 
+#include "pglogical_output_plugin.h"
 #include "pglogical_proto_json.h"
 
 static void
@@ -601,14 +601,14 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 		JsonTypeCategory tcategory;
 		Oid			outfuncoid;
 
-		if (tupdesc->attrs[i]->attisdropped)
+		if (TupleDescAttr(tupdesc,i)->attisdropped)
 			continue;
 
 		if (needsep)
 			appendStringInfoString(result, sep);
 		needsep = true;
 
-		attname = NameStr(tupdesc->attrs[i]->attname);
+		attname = NameStr(TupleDescAttr(tupdesc,i)->attname);
 		escape_json(result, attname);
 		appendStringInfoChar(result, ':');
 
@@ -620,7 +620,7 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 			outfuncoid = InvalidOid;
 		}
 		else
-			json_categorize_type(tupdesc->attrs[i]->atttypid,
+			json_categorize_type(TupleDescAttr(tupdesc,i)->atttypid,
 								 &tcategory, &outfuncoid);
 
 		datum_to_json(val, isnull, result, tcategory, outfuncoid, false);
@@ -655,7 +655,7 @@ json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple,
 
 	for (i = 0; i < tupdesc->natts; i++)
 	{
-		Form_pg_attribute att = tupdesc->attrs[i];
+		Form_pg_attribute att = TupleDescAttr(tupdesc,i);
 		JsonTypeCategory tcategory;
 		Oid			outfuncoid;
 

@@ -17,8 +17,6 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#include "pglogical_output_plugin.h"
-
 #include "mb/pg_wchar.h"
 #include "replication/logical.h"
 #ifdef HAVE_REPLICATION_ORIGINS
@@ -32,7 +30,9 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "replication/origin.h"
 
+#include "pglogical_output_plugin.h"
 #include "pglogical.h"
 #include "pglogical_output_config.h"
 #include "pglogical_executor.h"
@@ -170,9 +170,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 	/* Short lived memory context for individual messages */
 	data->context = AllocSetContextCreate(ctx->context,
 										  "pglogical output msg context",
-										  ALLOCSET_DEFAULT_MINSIZE,
-										  ALLOCSET_DEFAULT_INITSIZE,
-										  ALLOCSET_DEFAULT_MAXSIZE);
+										  ALLOCSET_DEFAULT_SIZES);
 	data->allow_internal_basetypes = false;
 	data->allow_binary_basetypes = false;
 
@@ -852,9 +850,7 @@ relmetacache_init(MemoryContext decoding_context)
 
 		RelMetaCacheContext = AllocSetContextCreate(TopMemoryContext,
 											  "pglogical output relmetacache",
-											  ALLOCSET_DEFAULT_MINSIZE,
-											  ALLOCSET_DEFAULT_INITSIZE,
-											  ALLOCSET_DEFAULT_MAXSIZE);
+											  ALLOCSET_DEFAULT_SIZES);
 
 		/* Make a new hash table for the cache */
 		hash_flags = HASH_ELEM | HASH_CONTEXT;

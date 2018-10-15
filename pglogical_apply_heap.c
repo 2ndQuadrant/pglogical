@@ -199,7 +199,7 @@ fill_missing_defaults(PGLogicalRelation *rel, EState *estate,
 	{
 		Expr	   *defexpr;
 
-		if (desc->attrs[attnum]->attisdropped)
+		if (TupleDescAttr(desc,attnum)->attisdropped)
 			continue;
 
 		if (physatt_in_attmap(rel, attnum))
@@ -710,7 +710,7 @@ pglogical_apply_heap_mi_start(PGLogicalRelation *rel)
 		{
 			Expr	   *defexpr;
 
-			if (desc->attrs[attnum]->attisdropped)
+			if (TupleDescAttr(desc,attnum)->attisdropped)
 				continue;
 
 			defexpr = (Expr *) build_column_default(rel->rel, attnum + 1);

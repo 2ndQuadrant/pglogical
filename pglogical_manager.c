@@ -26,6 +26,8 @@
 #include "utils/resowner.h"
 #include "utils/timestamp.h"
 
+#include "pgstat.h"
+
 #include "pglogical_node.h"
 #include "pglogical_worker.h"
 #include "pglogical.h"

@@ -1466,11 +1466,11 @@ get_att_num_by_name(TupleDesc desc, const char *attname)
 
 	for (i = 0; i < desc->natts; i++)
 	{
-		if (desc->attrs[i]->attisdropped)
+		if (TupleDescAttr(desc,i)->attisdropped)
 			continue;
 
-		if (namestrcmp(&(desc->attrs[i]->attname), attname) == 0)
-			return desc->attrs[i]->attnum;
+		if (namestrcmp(&(TupleDescAttr(desc,i)->attname), attname) == 0)
+			return TupleDescAttr(desc,i)->attnum;
 	}
 
 	return FirstLowInvalidHeapAttributeNumber;

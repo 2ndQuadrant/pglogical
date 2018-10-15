@@ -284,7 +284,7 @@ tupdesc_get_att_by_name(TupleDesc desc, const char *attname)
 
 	for (i = 0; i < desc->natts; i++)
 	{
-		Form_pg_attribute att = desc->attrs[i];
+		Form_pg_attribute att = TupleDescAttr(desc,i);
 
 		if (strcmp(NameStr(att->attname), attname) == 0)
 			return i;

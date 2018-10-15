@@ -106,7 +106,7 @@ pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_list)
 	/* send number of live attributes */
 	for (i = 0; i < desc->natts; i++)
 	{
-		Form_pg_attribute att = desc->attrs[i];
+		Form_pg_attribute att = TupleDescAttr(desc,i);
 
 		if (att->attisdropped)
 			continue;
@@ -124,7 +124,7 @@ pglogical_write_attrs(StringInfo out, Relation rel, Bitmapset *att_list)
 	/* send the attributes */
 	for (i = 0; i < desc->natts; i++)
 	{
-		Form_pg_attribute att = desc->attrs[i];
+		Form_pg_attribute att = TupleDescAttr(desc,i);
 		uint8			flags = 0;
 		uint16			len;
 		const char	   *attname;
@@ -346,7 +346,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 
 	for (i = 0; i < desc->natts; i++)
 	{
-		Form_pg_attribute att = desc->attrs[i];
+		Form_pg_attribute att = TupleDescAttr(desc,i);
 
 		if (att->attisdropped)
 			continue;
@@ -373,7 +373,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 	{
 		HeapTuple	typtup;
 		Form_pg_type typclass;
-		Form_pg_attribute att = desc->attrs[i];
+		Form_pg_attribute att = TupleDescAttr(desc,i);
 		char		transfer_type;
 
 		/* skip dropped columns */
@@ -737,7 +737,7 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 	for (i = 0; i < natts; i++)
 	{
 		int			attid = rel->attmap[i];
-		Form_pg_attribute att = desc->attrs[attid];
+		Form_pg_attribute att = TupleDescAttr(desc,attid);
 		char		kind = pq_getmsgbyte(in);
 		const char *data;
 		int			len;

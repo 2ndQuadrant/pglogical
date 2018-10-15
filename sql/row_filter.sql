@@ -61,7 +61,9 @@ SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
 SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, row_filter := $rf$id > 1 AND data IS DISTINCT FROM 'baz' AND data IS DISTINCT FROM 'bbb'$rf$);
 
 -- fail, the membership in repset depends on data column
+\set VERBOSITY terse
 ALTER TABLE basic_dml DROP COLUMN data;
+\set VERBOSITY default
 
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 

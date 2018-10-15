@@ -6,7 +6,12 @@
  *		Most of the code here is taken from dependency.c as the dependency
  *		handling in postgres is sadly not extensible.
  *
- * Copyright (c) 2015, PostgreSQL Global Development Group
+ *		See
+ *
+ *		    git diff REL_10_STABLE..REL_11_STABLE -- src/backend/catalog/dependency.c
+ *
+ *		for version comparisons, but you can't apply directly as you must
+ *		keep old-version compatibility.
  *
  * IDENTIFICATION
  *		pglogical_functions.c
@@ -29,10 +34,14 @@
 #include "catalog/pg_authid.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_collation.h"
+#if PG_VERSION_NUM < 110000
 #include "catalog/pg_collation_fn.h"
+#endif
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_conversion.h"
+#if PG_VERSION_NUM < 110000
 #include "catalog/pg_conversion_fn.h"
+#endif
 #include "catalog/pg_database.h"
 #include "catalog/pg_default_acl.h"
 #include "catalog/pg_event_trigger.h"
@@ -452,6 +461,9 @@ findDependentObjects(const ObjectAddress *object,
 #endif
 				/* no problem */
 				break;
+#if PG_VERSION_NUM >= 110000
+			case DEPENDENCY_INTERNAL_AUTO:
+#endif
 			case DEPENDENCY_INTERNAL:
 			case DEPENDENCY_EXTENSION:
 
@@ -529,6 +541,16 @@ findDependentObjects(const ObjectAddress *object,
 				 * transform this deletion request into a delete of this
 				 * owning object.
 				 *
+				 * For INTERNAL_AUTO dependencies, we don't enforce this; in
+				 * other words, we don't follow the links back to the owning
+				 * object.
+				 */
+#if PG_VERSION_NUM >= 110000
+				if (foundDep->deptype == DEPENDENCY_INTERNAL_AUTO)
+					break;
+#endif
+
+				/*
 				 * First, release caller's lock on this object and get
 				 * deletion lock on the owning object.  (We must release
 				 * caller's lock to avoid deadlock against a concurrent
@@ -570,6 +592,7 @@ findDependentObjects(const ObjectAddress *object,
 				/* And we're done here. */
 				systable_endscan(scan);
 				return;
+
 			case DEPENDENCY_PIN:
 
 				/*
@@ -660,6 +683,9 @@ findDependentObjects(const ObjectAddress *object,
 				break;
 #endif
 			case DEPENDENCY_INTERNAL:
+#if PG_VERSION_NUM >= 110000
+			case DEPENDENCY_INTERNAL_AUTO:
+#endif
 				subflags = DEPFLAG_INTERNAL;
 				break;
 			case DEPENDENCY_EXTENSION:
@@ -1049,6 +1075,8 @@ pglogical_recordDependencyOnSingleRelExpr(const ObjectAddress *depender,
  *
  * Similarly, we don't need to create dependencies on collations except where
  * the collation is being freshly introduced to the expression.
+ *
+ * This is mostly cloned from find_expr_references_walker in Pg's dependency.c
  */
 static bool
 find_expr_references_walker(Node *node,
@@ -1281,6 +1309,53 @@ find_expr_references_walker(Node *node,
 		/* Extra work needed here if we ever need this case */
 		elog(ERROR, "already-planned subqueries not supported");
 	}
+#if PG_VERSION_NUM >= 110000
+	else if (IsA(node, FieldSelect))
+	{
+		FieldSelect *fselect = (FieldSelect *) node;
+		Oid			argtype = getBaseType(exprType((Node *) fselect->arg));
+		Oid			reltype = get_typ_typrelid(argtype);
+
+		/*
+		 * We need a dependency on the specific column named in FieldSelect,
+		 * assuming we can identify the pg_class OID for it.  (Probably we
+		 * always can at the moment, but in future it might be possible for
+		 * argtype to be RECORDOID.)  If we can make a column dependency then
+		 * we shouldn't need a dependency on the column's type; but if we
+		 * can't, make a dependency on the type, as it might not appear
+		 * anywhere else in the expression.
+		 */
+		if (OidIsValid(reltype))
+			add_object_address(OCLASS_CLASS, reltype, fselect->fieldnum,
+							   context->addrs);
+		else
+			add_object_address(OCLASS_TYPE, fselect->resulttype, 0,
+							   context->addrs);
+		/* the collation might not be referenced anywhere else, either */
+		if (OidIsValid(fselect->resultcollid) &&
+			fselect->resultcollid != DEFAULT_COLLATION_OID)
+			add_object_address(OCLASS_COLLATION, fselect->resultcollid, 0,
+							   context->addrs);
+	}
+	else if (IsA(node, FieldStore))
+	{
+		FieldStore *fstore = (FieldStore *) node;
+		Oid			reltype = get_typ_typrelid(fstore->resulttype);
+
+		/* similar considerations to FieldSelect, but multiple column(s) */
+		if (OidIsValid(reltype))
+		{
+			ListCell   *l;
+
+			foreach(l, fstore->fieldnums)
+				add_object_address(OCLASS_CLASS, reltype, lfirst_int(l),
+								   context->addrs);
+		}
+		else
+			add_object_address(OCLASS_TYPE, fstore->resulttype, 0,
+							   context->addrs);
+	}
+#endif
 	else if (IsA(node, RelabelType))
 	{
 		RelabelType *relab = (RelabelType *) node;
@@ -1306,11 +1381,28 @@ find_expr_references_walker(Node *node,
 	{
 		ArrayCoerceExpr *acoerce = (ArrayCoerceExpr *) node;
 
+#if PG_VERSION_NUM < 110000
+		/* See Pg commit c12d570fa14 */
 		if (OidIsValid(acoerce->elemfuncid))
 			add_object_address(OCLASS_PROC, acoerce->elemfuncid, 0,
 							   context->addrs);
+#endif
+
 		add_object_address(OCLASS_TYPE, acoerce->resulttype, 0,
 						   context->addrs);
+
+#if PG_VERSION_NUM >= 110000
+		/*
+		 * elemfuncid and coerceexpr are gone, replaced by elemexprstate
+		 * as part of arrays-over-domains support; see Pg commit c12d570fa14
+		 */
+		/* the collation might not be referenced anywhere else, either */
+		if (OidIsValid(acoerce->resultcollid) &&
+			acoerce->resultcollid != DEFAULT_COLLATION_OID)
+			add_object_address(OCLASS_COLLATION, acoerce->resultcollid, 0,
+							   context->addrs);
+#endif
+
 		/* fall through to examine arguments */
 	}
 	else if (IsA(node, ConvertRowtypeExpr))
@@ -1381,6 +1473,24 @@ find_expr_references_walker(Node *node,
 							   context->addrs);
 		return false;
 	}
+#if PG_VERSION_NUM >= 110000
+	else if (IsA(node, WindowClause))
+	{
+		WindowClause *wc = (WindowClause *) node;
+
+		if (OidIsValid(wc->startInRangeFunc))
+			add_object_address(OCLASS_PROC, wc->startInRangeFunc, 0,
+							   context->addrs);
+		if (OidIsValid(wc->endInRangeFunc))
+			add_object_address(OCLASS_PROC, wc->endInRangeFunc, 0,
+							   context->addrs);
+		if (OidIsValid(wc->inRangeColl) &&
+			wc->inRangeColl != DEFAULT_COLLATION_OID)
+			add_object_address(OCLASS_COLLATION, wc->inRangeColl, 0,
+							   context->addrs);
+		/* fall through to examine substructure */
+	}
+#endif
 	else if (IsA(node, Query))
 	{
 		/* Recurse into RTE subquery or not-yet-planned sublink subquery */
@@ -1931,6 +2041,8 @@ deleteOneObject(const ObjectAddress *object, Relation *depRel)
 
 /*
  * doDeletion: actually delete a single object
+ *
+ * This is customised in pglogical.
  */
 static void
 doDeletion(const ObjectAddress *object)

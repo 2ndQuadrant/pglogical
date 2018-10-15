@@ -118,7 +118,7 @@ pglogical_apply_spi_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 	for (att = 0, narg = 0; att < desc->natts; att++)
 	{
-		if (desc->attrs[att]->attisdropped)
+		if (TupleDescAttr(desc,att)->attisdropped)
 			continue;
 
 		if (!newtup->changed[att])
@@ -126,10 +126,10 @@ pglogical_apply_spi_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 		if (narg > 0)
 			appendStringInfo(&cmd, ", %s",
-					quote_identifier(NameStr(desc->attrs[att]->attname)));
+					quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)));
 		else
 			appendStringInfo(&cmd, "%s",
-					quote_identifier(NameStr(desc->attrs[att]->attname)));
+					quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)));
 		narg++;
 	}
 
@@ -137,7 +137,7 @@ pglogical_apply_spi_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 	for (att = 0, narg = 0; att < desc->natts; att++)
 	{
-		if (desc->attrs[att]->attisdropped)
+		if (TupleDescAttr(desc,att)->attisdropped)
 			continue;
 
 		if (!newtup->changed[att])
@@ -148,7 +148,7 @@ pglogical_apply_spi_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 		else
 			appendStringInfo(&cmd, "$%u", narg + 1);
 
-		argtypes[narg] = desc->attrs[att]->atttypid;
+		argtypes[narg] = TupleDescAttr(desc,att)->atttypid;
 		values[narg] = newtup->values[att];
 		nulls[narg] = newtup->nulls[att] ? 'n' : ' ';
 		narg++;
@@ -190,7 +190,7 @@ pglogical_apply_spi_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 	for (att = 0, narg = 0; att < desc->natts; att++)
 	{
-		if (desc->attrs[att]->attisdropped)
+		if (TupleDescAttr(desc,att)->attisdropped)
 			continue;
 
 		if (!newtup->changed[att])
@@ -198,14 +198,14 @@ pglogical_apply_spi_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 		if (narg > 0)
 			appendStringInfo(&cmd, ", %s = $%u",
-							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)),
 							 narg + 1);
 		else
 			appendStringInfo(&cmd, "%s = $%u",
-							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)),
 							 narg + 1);
 
-		argtypes[narg] = desc->attrs[att]->atttypid;
+		argtypes[narg] = TupleDescAttr(desc,att)->atttypid;
 		values[narg] = newtup->values[att];
 		nulls[narg] = newtup->nulls[att] ? 'n' : ' ';
 		narg++;
@@ -216,20 +216,20 @@ pglogical_apply_spi_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	firstarg = narg;
 	for (att = 0; att < desc->natts; att++)
 	{
-		if (!bms_is_member(desc->attrs[att]->attnum - FirstLowInvalidHeapAttributeNumber,
+		if (!bms_is_member(TupleDescAttr(desc,att)->attnum - FirstLowInvalidHeapAttributeNumber,
 						   id_attrs))
 			continue;
 
 		if (narg > firstarg)
 			appendStringInfo(&cmd, " AND %s = $%u",
-							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)),
 							 narg + 1);
 		else
 			appendStringInfo(&cmd, " %s = $%u",
-							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)),
 							 narg + 1);
 
-		argtypes[narg] = desc->attrs[att]->atttypid;
+		argtypes[narg] = TupleDescAttr(desc,att)->atttypid;
 		values[narg] = oldtup->values[att];
 		nulls[narg] = oldtup->nulls[att] ? 'n' : ' ';
 		narg++;
@@ -267,20 +267,20 @@ pglogical_apply_spi_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 	for (att = 0, narg = 0; att < desc->natts; att++)
 	{
-		if (!bms_is_member(desc->attrs[att]->attnum - FirstLowInvalidHeapAttributeNumber,
+		if (!bms_is_member(TupleDescAttr(desc,att)->attnum - FirstLowInvalidHeapAttributeNumber,
 						   id_attrs))
 			continue;
 
 		if (narg > 0)
 			appendStringInfo(&cmd, " AND %s = $%u",
-							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)),
 							 narg + 1);
 		else
 			appendStringInfo(&cmd, " %s = $%u",
-							 quote_identifier(NameStr(desc->attrs[att]->attname)),
+							 quote_identifier(NameStr(TupleDescAttr(desc,att)->attname)),
 							 narg + 1);
 
-		argtypes[narg] = desc->attrs[att]->atttypid;
+		argtypes[narg] = TupleDescAttr(desc,att)->atttypid;
 		values[narg] = oldtup->values[att];
 		nulls[narg] = oldtup->nulls[att] ? 'n' : ' ';
 		narg++;
@@ -343,7 +343,6 @@ static void
 pglogical_start_copy(PGLogicalRelation *rel)
 {
 	MemoryContext oldcontext;
-	Form_pg_attribute *attr;
 	TupleDesc		desc;
 	ListCell	   *cur;
 	int				num_phys_attrs;
@@ -368,9 +367,7 @@ pglogical_start_copy(PGLogicalRelation *rel)
 	pglcstate->msgbuf = makeStringInfo();
 	pglcstate->rowcontext = AllocSetContextCreate(CurrentMemoryContext,
 												  "COPY TO",
-												  ALLOCSET_DEFAULT_MINSIZE,
-												  ALLOCSET_DEFAULT_INITSIZE,
-												  ALLOCSET_DEFAULT_MAXSIZE);
+												  ALLOCSET_DEFAULT_SIZES);
 
 	pglcstate->rel = rel;
 
@@ -379,7 +376,6 @@ pglogical_start_copy(PGLogicalRelation *rel)
 											rel->attmap[i]);
 
 	desc = RelationGetDescr(rel->rel);
-	attr = desc->attrs;
 	num_phys_attrs = desc->natts;
 
 	/* Get info about the columns we need to process. */
@@ -400,13 +396,13 @@ pglogical_start_copy(PGLogicalRelation *rel)
 		Oid         out_func_oid;
 		bool        isvarlena;
 
-		getTypeBinaryOutputInfo(attr[attnum]->atttypid,
+		getTypeBinaryOutputInfo(TupleDescAttr(desc,attnum)->atttypid,
 								&out_func_oid,
 								&isvarlena);
 		fmgr_info(out_func_oid, &pglcstate->out_functions[attnum]);
 		appendStringInfo(&attrnames, "%s %s",
 						 delim,
-						 quote_identifier(NameStr(attr[attnum]->attname)));
+						 quote_identifier(NameStr(TupleDescAttr(desc,attnum)->attname)));
 		delim = ", ";
 
 	}
