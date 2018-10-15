@@ -80,4 +80,7 @@
 
 #define DatumGetJsonb DatumGetJsonbP
 
+#define pgl_heap_attisnull(tup, attnum, tupledesc) \
+	heap_attisnull(tup, attnum, tupledesc)
+
 #endif

@@ -1310,8 +1310,8 @@ get_subscription_sync_status(Oid subid, bool missing_ok)
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		if (heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
-			heap_attisnull(tuple, Anum_sync_relname, NULL))
+		if (pgl_heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
+			pgl_heap_attisnull(tuple, Anum_sync_relname, NULL))
 			break;
 	}
 
@@ -1362,8 +1362,8 @@ set_subscription_sync_status(Oid subid, char status)
 	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
 	while (HeapTupleIsValid(oldtup = systable_getnext(scan)))
 	{
-		if (heap_attisnull(oldtup, Anum_sync_nspname, NULL) &&
-			heap_attisnull(oldtup, Anum_sync_relname, NULL))
+		if (pgl_heap_attisnull(oldtup, Anum_sync_nspname, NULL) &&
+			pgl_heap_attisnull(oldtup, Anum_sync_relname, NULL))
 			break;
 	}
 
@@ -1566,8 +1566,8 @@ get_unsynced_tables(Oid subid)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		if (heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
-			heap_attisnull(tuple, Anum_sync_relname, NULL))
+		if (pgl_heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
+			pgl_heap_attisnull(tuple, Anum_sync_relname, NULL))
 			continue;
 
 		sync = syncstatus_fromtuple(tuple, tupDesc);
@@ -1607,8 +1607,8 @@ get_subscription_tables(Oid subid)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		if (heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
-			heap_attisnull(tuple, Anum_sync_relname, NULL))
+		if (pgl_heap_attisnull(tuple, Anum_sync_nspname, NULL) &&
+			pgl_heap_attisnull(tuple, Anum_sync_relname, NULL))
 			continue;
 
 		sync = syncstatus_fromtuple(tuple, tupDesc);

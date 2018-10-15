@@ -44,4 +44,7 @@ extern Oid CatalogTupleInsert(Relation heapRel, HeapTuple tup);
 extern void CatalogTupleUpdate(Relation heapRel, ItemPointer otid, HeapTuple tup);
 extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 
+#define pgl_heap_attisnull(tup, attnum, tupledesc) \
+	heap_attisnull(tup, attnum)
+
 #endif

@@ -61,4 +61,7 @@
 #define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
 	next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, completionTag)
 
+#define pgl_heap_attisnull(tup, attnum, tupledesc) \
+	heap_attisnull(tup, attnum)
+
 #endif
