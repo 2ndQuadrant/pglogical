@@ -26,6 +26,14 @@
 #define pgl_replorigin_drop(roident) \
 	replorigin_drop(roident, true)
 
+/*
+ * Pg 11 adds an argument here.  We don't need to special-case 2ndQPostgres
+ * anymore because it adds a separate ExecBRDeleteTriggers2 now, so this only
+ * handles the stock Pg11 change.
+ */ 
+#define ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple) \
+ 	ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, NULL)
+
 #undef ExecEvalExpr
 #define ExecEvalExpr(expr, econtext, isNull, isDone) \
 	((*(expr)->evalfunc) (expr, econtext, isNull))
@@ -58,14 +66,6 @@
 #define	PGLDoCopy(stmt, queryString, processed) DoCopy(NULL, stmt, -1, 0, processed)
 
 #define PGLReplicationSlotCreate(name, db_specific, persistency) ReplicationSlotCreate(name, db_specific, persistency)
-
-#ifdef PG2Q
-#define ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot) \
-	ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot, NULL)
-
-#define ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple) \
-	ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, NULL)
-#endif
 
 #ifndef rbtxn_has_catalog_changes
 #define rbtxn_has_catalog_changes(txn) (txn->has_catalog_changes)
