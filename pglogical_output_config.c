@@ -15,6 +15,7 @@
 #include "catalog/catversion.h"
 #include "mb/pg_wchar.h"
 #include "nodes/makefuncs.h"
+#include "replication/reorderbuffer.h"
 #include "utils/builtins.h"
 #include "utils/int8.h"
 

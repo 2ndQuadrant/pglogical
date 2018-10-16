@@ -25,6 +25,8 @@
 
 #include "nodes/makefuncs.h"
 
+#include "replication/reorderbuffer.h"
+
 #include "utils/fmgroids.h"
 #include "utils/json.h"
 #include "utils/lsyscache.h"

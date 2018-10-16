@@ -43,6 +43,7 @@
 #endif
 
 #include "replication/origin.h"
+#include "replication/reorderbuffer.h"
 
 #include "rewrite/rewriteHandler.h"
 

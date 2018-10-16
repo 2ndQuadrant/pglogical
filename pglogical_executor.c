@@ -86,7 +86,12 @@ create_estate_for_relation(Relation rel, bool forwrite)
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
 	estate->es_result_relation_info = resultRelInfo;
+#if PG_VERSION_NUM >= 110000 && SECONDQ_VERSION_NUM >= 103
+	/* 2ndQPostgres 11 r1.3 changes executor API */
+	estate->es_range_table = alist_add(NULL, rte);
+#else
 	estate->es_range_table = list_make1(rte);
+#endif
 
 	if (forwrite)
 		resultRelInfo->ri_TrigDesc = CopyTriggerDesc(rel->trigdesc);

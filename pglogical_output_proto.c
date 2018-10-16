@@ -11,6 +11,7 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
+#include "replication/reorderbuffer.h"
 #include "pglogical_output_plugin.h"
 
 #include "pglogical_output_proto.h"

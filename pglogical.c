@@ -38,6 +38,8 @@
 
 #include "parser/parse_coerce.h"
 
+#include "replication/reorderbuffer.h"
+
 #include "storage/ipc.h"
 #include "storage/proc.h"
 

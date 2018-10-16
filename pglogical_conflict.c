@@ -29,6 +29,8 @@
 #include "parser/parse_relation.h"
 
 #include "replication/origin.h"
+#include "replication/reorderbuffer.h"
+
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 

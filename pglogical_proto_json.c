@@ -28,6 +28,7 @@
 #ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"
 #endif
+#include "replication/reorderbuffer.h"
 #include "utils/builtins.h"
 #include "utils/json.h"
 #include "utils/lsyscache.h"
@@ -53,7 +54,7 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 	appendStringInfoChar(out, '{');
 	appendStringInfoString(out, "\"action\":\"B\"");
 	appendStringInfo(out, ", \"has_catalog_changes\":\"%c\"",
-		txn->has_catalog_changes ? 't' : 'f');
+		rbtxn_has_catalog_changes(txn) ? 't' : 'f');
 #ifdef HAVE_REPLICATION_ORIGINS
 	if (txn->origin_id != InvalidRepOriginId)
 		appendStringInfo(out, ", \"origin_id\":\"%u\"", txn->origin_id);

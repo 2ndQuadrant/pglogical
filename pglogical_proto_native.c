@@ -11,17 +11,18 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-#include "pglogical_output_plugin.h"
 
 #include "access/sysattr.h"
 #include "access/tuptoaster.h"
 #include "catalog/pg_type.h"
 #include "libpq/pqformat.h"
 #include "nodes/parsenodes.h"
+#include "replication/reorderbuffer.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
+#include "pglogical_output_plugin.h"
 #include "pglogical_output_proto.h"
 #include "pglogical_proto_native.h"
 
