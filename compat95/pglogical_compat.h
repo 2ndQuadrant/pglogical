@@ -55,4 +55,9 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 		ALLOCSET_DEFAULT_INITSIZE, \
 		ALLOCSET_DEFAULT_MAXSIZE
 
+#ifndef rbtxn_has_catalog_changes
+#define rbtxn_has_catalog_changes(txn) (txn->has_catalog_changes)
+#endif
+
+
 #endif

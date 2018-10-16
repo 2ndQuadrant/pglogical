@@ -64,4 +64,8 @@
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum)
 
+#ifndef rbtxn_has_catalog_changes
+#define rbtxn_has_catalog_changes(txn) (txn->has_catalog_changes)
+#endif
+
 #endif
