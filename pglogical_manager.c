@@ -100,6 +100,9 @@ manage_apply_workers(void)
 			else
 				prev = wlc;
 		}
+		/* If the subscriber does not have a registered worker. */
+		if (!wlc)
+			apply = NULL;
 
 		/* Skip if the worker was alrady registered. */
 		if (pglogical_worker_running(apply))
