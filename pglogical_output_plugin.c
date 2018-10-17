@@ -19,9 +19,6 @@
 
 #include "mb/pg_wchar.h"
 #include "replication/logical.h"
-#ifdef HAVE_REPLICATION_ORIGINS
-#include "replication/origin.h"
-#endif
 
 #include "access/xact.h"
 #include "executor/executor.h"
@@ -40,6 +37,10 @@
 #include "pglogical_output_proto.h"
 #include "pglogical_queue.h"
 #include "pglogical_repset.h"
+
+#ifdef HAVE_REPLICATION_ORIGINS
+#include "replication/origin.h"
+#endif
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 

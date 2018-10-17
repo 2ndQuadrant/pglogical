@@ -25,9 +25,6 @@
 #include "libpq/pqformat.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
-#ifdef HAVE_REPLICATION_ORIGINS
-#include "replication/origin.h"
-#endif
 #include "replication/reorderbuffer.h"
 #include "utils/builtins.h"
 #include "utils/json.h"
@@ -40,6 +37,10 @@
 
 #include "pglogical_output_plugin.h"
 #include "pglogical_proto_json.h"
+
+#ifdef HAVE_REPLICATION_ORIGINS
+#include "replication/origin.h"
+#endif
 
 static void
 json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple,
