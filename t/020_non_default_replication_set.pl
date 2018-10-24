@@ -41,8 +41,13 @@ system_or_bail 'sleep', '17';
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-d', "postgres", '-c', "CREATE USER super SUPERUSER";
 system_or_bail 'psql', '-p', "$PGPORT", '-d', "postgres", '-c', "CREATE USER super SUPERUSER";
 
+# Required for PostgreSQL 9.4 run
+#system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-d', "postgres", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical_origin";
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-d', "postgres", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0'";
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-d', "postgres", '-c', "ALTER EXTENSION pglogical UPDATE";
+
+# Required for PostgreSQL 9.4 run
+#system_or_bail 'psql', '-p', "$PGPORT", '-d', "postgres", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical_origin";
 system_or_bail 'psql', '-p', "$PGPORT", '-d', "postgres", '-c', "CREATE EXTENSION IF NOT EXISTS pglogical";
 
 system_or_bail 'psql', '-p', "$PROVIDER_PORT", '-d', "postgres", '-c', "SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := 'dbname=postgres user=super')";
