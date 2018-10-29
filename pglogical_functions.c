@@ -146,6 +146,8 @@ static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
 						  const char *subscriber_name);
 
+bool in_pglogical_replicate_ddl_command = false;
+
 static PGLogicalLocalNode *
 check_local_node(bool for_update)
 {
@@ -1761,13 +1763,26 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	queue_message(replication_sets, GetUserId(),
 				  QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
-	/* Execute the query locally. */
-	pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
-#if PG_VERSION_NUM >= 90500
-														   , false
-#endif
-														   ),
-								  false);
+	/*
+	 * Execute the query locally.
+	 * Use PG_TRY to ensure in_pglogical_replicate_ddl_command gets cleaned up
+	 */
+	in_pglogical_replicate_ddl_command = true;
+	PG_TRY();
+	{
+		pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
+	#if PG_VERSION_NUM >= 90500
+															   , false
+	#endif
+															   ),
+									  false);
+	}
+	PG_CATCH();
+	{
+		in_pglogical_replicate_ddl_command = false;
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	/*
 	 * Restore the GUC variables we set above.
@@ -1776,7 +1791,6 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(true);
 }
-
 
 /*
  * pglogical_queue_trigger

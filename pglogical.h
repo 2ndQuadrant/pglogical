@@ -81,6 +81,8 @@ extern void pglogical_create_sequence_state_record(Oid seqoid);
 extern void pglogical_drop_sequence_state_record(Oid seqoid);
 extern int64 sequence_get_last_value(Oid seqoid);
 
+extern bool in_pglogical_replicate_ddl_command;
+
 #include "utils/memdebug.h"
 
 /*
