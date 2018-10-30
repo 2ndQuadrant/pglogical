@@ -2051,7 +2051,7 @@ doDeletion(const ObjectAddress *object)
 		drop_replication_set(object->objectId);
 	else if (object->classId == get_replication_set_table_rel_oid())
 		replication_set_remove_table(object->objectId, object->objectSubId,
-									 true);
+										 true);
 	else if (object->classId == get_replication_set_seq_rel_oid())
 		replication_set_remove_seq(object->objectId, object->objectSubId,
 								   true);

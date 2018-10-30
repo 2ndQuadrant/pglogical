@@ -123,6 +123,11 @@ SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', repli
 ERROR:  replication set repset_replicate_instrunc cannot be altered to replicate UPDATEs or DELETEs because it contains tables without PRIMARY KEY
 SELECT * FROM pglogical.alter_replication_set('repset_replicate_instrunc', replicate_delete := true);
 ERROR:  replication set repset_replicate_instrunc cannot be altered to replicate UPDATEs or DELETEs because it contains tables without PRIMARY KEY
+-- Adding already-added fails
+\set VERBOSITY terse
+SELECT * FROM pglogical.replication_set_add_table('repset_replicate_all', 'public.test_publicschema');
+ERROR:  duplicate key value violates unique constraint "replication_set_table_pkey"
+\set VERBOSITY default
 -- check the replication sets
 SELECT nspname, relname, set_name FROM pglogical.tables
  WHERE relname IN ('test_publicschema', 'test_normalschema', 'test_strangeschema', 'test_nopkey') ORDER BY 1,2,3;
@@ -157,6 +162,48 @@ SELECT nspname, relname, set_name FROM pglogical.tables
 --too short
 SELECT pglogical.create_replication_set('');
 ERROR:  replication set name cannot be empty
+-- Can't drop table while it's in a repset
+DROP TABLE public.test_publicschema;
+ERROR:  cannot drop table test_publicschema because other objects depend on it
+DETAIL:  table test_publicschema membership in replication set default_insert_only depends on table test_publicschema
+table test_publicschema membership in replication set repset_replicate_all depends on table test_publicschema
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+-- Can't drop table while it's in a repset
+BEGIN;
+SELECT pglogical.replicate_ddl_command($$
+DROP TABLE public.test_publicschema;
+$$);
+ERROR:  cannot drop table public.test_publicschema because other objects depend on it
+DETAIL:  table public.test_publicschema membership in replication set default_insert_only depends on table public.test_publicschema
+table public.test_publicschema membership in replication set repset_replicate_all depends on table public.test_publicschema
+HINT:  Use DROP ... CASCADE to drop the dependent objects too.
+CONTEXT:  during execution of queued SQL statement: 
+DROP TABLE public.test_publicschema;
+
+ROLLBACK;
+-- Can CASCADE though, even outside ddlrep
+BEGIN;
+DROP TABLE public.test_publicschema CASCADE;
+NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to table test_publicschema membership in replication set default_insert_only
+drop cascades to table test_publicschema membership in replication set repset_replicate_all
+ROLLBACK;
+-- ... and can drop after repset removal
+SELECT pglogical.replication_set_remove_table('repset_replicate_all', 'public.test_publicschema');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT pglogical.replication_set_remove_table('default_insert_only', 'public.test_publicschema');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+BEGIN;
+DROP TABLE public.test_publicschema;
+ROLLBACK;
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_publicschema CASCADE;
@@ -165,7 +212,6 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.test_nopkey CASCADE;
 	DROP TABLE public.test_unlogged CASCADE;
 $$);
-NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to table normalschema.test_normalschema
 NOTICE:  drop cascades to 2 other objects
 NOTICE:  drop cascades to table "strange.schema-IS".test_strangeschema
