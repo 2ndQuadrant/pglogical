@@ -1784,6 +1784,8 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	}
 	PG_END_TRY();
 
+	in_pglogical_replicate_ddl_command = false;
+
 	/*
 	 * Restore the GUC variables we set above.
 	 */
@@ -1889,7 +1891,8 @@ pglogical_node_info(PG_FUNCTION_ARGS)
  * Get replication info about table.
  *
  * This is called by downstream sync worker on the upstream to obtain
- * info needed to do initial synchronization correctly.
+ * info needed to do initial synchronization correctly. Be careful
+ * about changing it, as it must be upward- and downward-compatible.
  */
 Datum
 pglogical_show_repset_table_info(PG_FUNCTION_ARGS)

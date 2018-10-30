@@ -125,7 +125,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, 
 -- fail, the membership in repset depends on data column
 \set VERBOSITY terse
 ALTER TABLE basic_dml DROP COLUMN data;
-ERROR:  cannot drop column data of table basic_dml because other objects depend on it
+ERROR:  cannot drop table basic_dml column data because other objects depend on it
 \set VERBOSITY default
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
  wait_slot_confirm_lsn 
@@ -398,6 +398,42 @@ SELECT * FROM test_jsonb ORDER BY json_type;
  array     | ["zero", "one", "two", null, "four", "five", [1, 2, 3], {"f1": 9}]
  scalar    | "a scalar"
 (2 rows)
+
+\c :provider_dsn
+-- Filter may refer to not-replicated columns
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, columns := ARRAY['id', 'data'], row_filter := $rf$other = 2$rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO basic_dml(other, data, "SomeThing") VALUES (2, 'itstwo', '1 second'::interval);
+SELECT other, data, "SomeThing" FROM basic_dml WHERE data = 'itstwo';
+ other |  data  | SomeThing 
+-------+--------+-----------
+     2 | itstwo | @ 1 sec
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+-- 'other' will be NULL as it wasn't in the repset
+-- even though we filtered on it. So will SomeThing.
+SELECT other, data, "SomeThing" FROM basic_dml WHERE data = 'itstwo';
+ other |  data  | SomeThing 
+-------+--------+-----------
+       | itstwo | 
+(1 row)
 
 \c :provider_dsn
 \set VERBOSITY terse

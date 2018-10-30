@@ -197,6 +197,24 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 SELECT * FROM test_jsonb ORDER BY json_type;
 
 \c :provider_dsn
+
+-- Filter may refer to not-replicated columns
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, columns := ARRAY['id', 'data'], row_filter := $rf$other = 2$rf$);
+
+INSERT INTO basic_dml(other, data, "SomeThing") VALUES (2, 'itstwo', '1 second'::interval);
+
+SELECT other, data, "SomeThing" FROM basic_dml WHERE data = 'itstwo';
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
+\c :subscriber_dsn
+
+-- 'other' will be NULL as it wasn't in the repset
+-- even though we filtered on it. So will SomeThing.
+SELECT other, data, "SomeThing" FROM basic_dml WHERE data = 'itstwo';
+
+\c :provider_dsn
 \set VERBOSITY terse
 DROP FUNCTION funcn_add(integer, integer);
 DROP FUNCTION funcn_nochange(text);
