@@ -31,6 +31,7 @@
 
 #include "commands/dbcommands.h"
 #include "commands/tablecmds.h"
+#include "commands/copy.h"
 
 #include "lib/stringinfo.h"
 
@@ -38,6 +39,9 @@
 
 #include "nodes/makefuncs.h"
 #include "nodes/parsenodes.h"
+
+#include "parser/parse_node.h"
+#include "parser/parse_relation.h"
 
 #include "pgstat.h"
 
@@ -84,6 +88,11 @@ void pglogical_sync_main(Datum main_arg);
 
 static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
+static StringInfo copybuf = NULL;
+static PGconn *source_copy_conn = NULL;
+
+static int copy_read_data(void *outbuf, int minread, int maxread);
+static int libpqrcv_receive_pglogical(PGconn *conn, char **buffer,pgsocket *wait_fd);
 
 static void
 dump_structure(PGLogicalSubscription *sub, const char *destfile,
@@ -393,13 +402,11 @@ make_copy_attnamelist(PGLogicalRelation *rel)
  * COPY single table over wire.
  */
 static void
-copy_table_data(PGconn *origin_conn, PGconn *target_conn,
+copy_table_data(PGconn *origin_conn,
 				PGLogicalRemoteRel *remoterel, List *replication_sets)
 {
 	PGLogicalRelation *rel;
 	PGresult   *res;
-	int			bytes;
-	char	   *copybuf;
 	List	   *attnamelist;
 	ListCell   *lc;
 	bool		first;
@@ -407,6 +414,9 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	StringInfoData	attlist;
 	MemoryContext	curctx = CurrentMemoryContext,
 					oldctx;
+	CopyState	cstate;
+	ParseState *pstate;
+	StringInfoData stringinfodata = {0};
 
 	/* Build the relation map. */
 	StartTransactionCommand();
@@ -501,59 +511,39 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 					 PQerrorMessage(origin_conn))));
 	}
 
-	/* Build COPY FROM query. */
-	resetStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s ",
-					 PQescapeIdentifier(origin_conn, remoterel->nspname,
-										strlen(remoterel->nspname)),
-					 PQescapeIdentifier(origin_conn, remoterel->relname,
-										strlen(remoterel->relname)));
-	if (list_length(attnamelist))
-		appendStringInfo(&query, "(%s) ", attlist.data);
-	appendStringInfoString(&query, "FROM stdin");
-
-	/* Execute COPY FROM. */
-	res = PQexec(target_conn, query.data);
-	if (PQresultStatus(res) != PGRES_COPY_IN)
-	{
-		ereport(ERROR,
-				(errmsg("table copy failed"),
-				 errdetail("Query '%s': %s", query.data,
-					 PQerrorMessage(origin_conn))));
-	}
-
-	while ((bytes = PQgetCopyData(origin_conn, &copybuf, false)) > 0)
-	{
-		if (PQputCopyData(target_conn, copybuf, bytes) != 1)
-		{
-			ereport(ERROR,
-					(errmsg("writing to target table failed"),
-					 errdetail("destination connection reported: %s",
-						 PQerrorMessage(target_conn))));
-		}
-		PQfreemem(copybuf);
-
-		CHECK_FOR_INTERRUPTS();
-	}
-
-	if (bytes != -1)
-	{
-		ereport(ERROR,
-				(errmsg("reading from origin table failed"),
-				 errdetail("source connection returned %d: %s",
-					bytes, PQerrorMessage(origin_conn))));
-	}
-
-	/* Send local finish */
-	if (PQputCopyEnd(target_conn, NULL) != 1)
-	{
-		ereport(ERROR,
-				(errmsg("sending copy-completion to destination connection failed"),
-				 errdetail("destination connection reported: %s",
-					 PQerrorMessage(target_conn))));
-	}
-
 	PQclear(res);
+
+	/*
+	 * Instead of creating another libpq connection in to the target database, we
+	 * use the same sync worker to write to the target database.
+	 * 
+	 * This connection is in replica mode, so foreign key constraints wont be
+	 * checked, just like pg's logical replication sync worker does. This means
+	 * that tables can be copied in any order without triggering FK violation.
+	 */
+
+	copybuf = &stringinfodata;
+	StartTransactionCommand();
+	rel = pglogical_relation_open(remoterel->relid, RowExclusiveLock);
+	pstate = make_parsestate(NULL);
+	addRangeTableEntryForRelation(pstate, rel->rel, NULL, false, false);
+
+	source_copy_conn = origin_conn;
+
+	cstate = BeginCopyFrom(pstate, rel->rel, NULL, false, copy_read_data, attnamelist, NIL);
+
+	/* Do the copy */
+	(void) CopyFrom(cstate);
+
+	source_copy_conn = NULL;
+
+	if(copybuf->data)
+		PQfreemem(copybuf->data); // malloc-ed by libpq
+
+	copybuf = NULL;
+	
+	pglogical_relation_close(rel, RowExclusiveLock);
+	CommitTransactionCommand();
 }
 
 /*
@@ -568,16 +558,12 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 				 const char *origin_name)
 {
 	PGconn	   *origin_conn;
-	PGconn	   *target_conn;
 	ListCell   *lc;
 
 	/* Connect to origin node. */
 	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
 	start_copy_origin_tx(origin_conn, origin_snapshot);
 
-	/* Connect to target node. */
-	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
-	start_copy_target_tx(target_conn, origin_name);
 
 	/* Copy every table. */
 	foreach (lc, tables)
@@ -588,14 +574,13 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 		remoterel = pg_logical_get_remote_repset_table(origin_conn, rv,
 													   replication_sets);
 
-		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
+		copy_table_data(origin_conn, remoterel, replication_sets);
 
 		CHECK_FOR_INTERRUPTS();
 	}
 
 	/* Finish the transactions and disconnect. */
 	finish_copy_origin_tx(origin_conn);
-	finish_copy_target_tx(target_conn);
 }
 
 /*
@@ -616,7 +601,6 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
 	List	   *tables;
-	ListCell   *lc;
 
 	/* Connect to origin node. */
 	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
@@ -630,21 +614,192 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
 	start_copy_target_tx(target_conn, origin_name);
 
-	/* Copy every table. */
-	foreach (lc, tables)
-	{
-		PGLogicalRemoteRel	*remoterel = lfirst(lc);
 
-		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
+	/*
+	 * We don't copy the table data here. Instead a sync worker
+	 * is spawned for each table and it does the initial copying.
+	 */
+	// /* Copy every table. */
+	// foreach (lc, tables)
+	// {
+	// 	PGLogicalRemoteRel	*remoterel = lfirst(lc);
 
-		CHECK_FOR_INTERRUPTS();
-	}
+	// 	copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
+
+	// 	CHECK_FOR_INTERRUPTS();
+	// }
 
 	/* Finish the transactions and disconnect. */
 	finish_copy_origin_tx(origin_conn);
 	finish_copy_target_tx(target_conn);
 
 	return tables;
+}
+
+/*
+ * Data source callback for the COPY FROM, which reads from the remote
+ * connection and passes the data back to our local COPY.
+ * Modified version of copy_read_data() from pg/src/backend/replication/logical/tablesync.c
+ */
+static int
+copy_read_data(void *outbuf, int minread, int maxread)
+{
+	int			bytesread = 0;
+	int			avail;
+
+	/* If there are some leftover data from previous read, use it. */
+	avail = copybuf->len - copybuf->cursor;
+	if (avail)
+	{
+		if (avail > maxread)
+			avail = maxread;
+		memcpy(outbuf, &copybuf->data[copybuf->cursor], avail);
+		copybuf->cursor += avail;
+		maxread -= avail;
+		bytesread += avail;
+	}
+
+	while (maxread > 0 && bytesread < minread)
+	{
+		pgsocket	fd = PGINVALID_SOCKET;
+		int			rc;
+		int			len;
+		char	   *buf = NULL;
+
+		for (;;)
+		{
+			/* Try read the data. */
+			len = libpqrcv_receive_pglogical(source_copy_conn, &buf, &fd);
+
+			CHECK_FOR_INTERRUPTS();
+
+			if (len == 0)
+				break;
+			else if (len < 0)
+				return bytesread;
+			else
+			{
+				/* Process the data */
+				if(copybuf->data)
+					PQfreemem(copybuf->data); // malloc-ed by libpq
+				copybuf->data = buf;
+				copybuf->len = len;
+				copybuf->cursor = 0;
+
+				avail = copybuf->len - copybuf->cursor;
+				if (avail > maxread)
+					avail = maxread;
+				memcpy(outbuf, &copybuf->data[copybuf->cursor], avail);
+				outbuf = (void *) ((char *) outbuf + avail);
+				copybuf->cursor += avail;
+				maxread -= avail;
+				bytesread += avail;
+			}
+
+			if (maxread <= 0 || bytesread >= minread)
+				return bytesread;
+		}
+
+		/*
+		 * Wait for more data or latch.
+		 */
+		rc = WaitLatchOrSocket(MyLatch,
+							   WL_SOCKET_READABLE | WL_LATCH_SET |
+							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+							   fd, 1000L/* , WAIT_EVENT_LOGICAL_SYNC_DATA */);
+
+		/* Emergency bailout if postmaster has died */
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
+
+		ResetLatch(MyLatch);
+	}
+
+	return bytesread;
+}
+
+/*
+ * Modified version of libpqrcv_receive from 
+ * pg/src/backend/replication/libpqwalreceiver/libpqwalreceiver.c
+ */
+static int libpqrcv_receive_pglogical(PGconn *conn, char **buffer,
+				 pgsocket *wait_fd)
+{
+	int			rawlen;
+	char *recvBuf = NULL;
+
+	*buffer = NULL;
+	
+	/* Try to receive a CopyData message */
+	rawlen = PQgetCopyData(conn, &recvBuf, 1);
+	if (rawlen == 0)
+	{
+		/* Try consuming some data. */
+		if (PQconsumeInput(conn) == 0)
+			ereport(ERROR,
+					(errmsg("could not receive data from WAL stream: %s",
+							pchomp(PQerrorMessage(conn)))));
+
+		/* Now that we've consumed some input, try again */
+		rawlen = PQgetCopyData(conn, &recvBuf, 1);
+		if (rawlen == 0)
+		{
+			/* Tell caller to try again when our socket is ready. */
+			*wait_fd = PQsocket(conn);
+			return 0;
+		}
+	}
+	if (rawlen == -1)			/* end-of-streaming or error */
+	{
+		PGresult   *res;
+
+		res = PQgetResult(conn);
+		if (PQresultStatus(res) == PGRES_COMMAND_OK)
+		{
+			PQclear(res);
+
+			/* Verify that there are no more results. */
+			res = PQgetResult(conn);
+			if (res != NULL)
+			{
+				PQclear(res);
+
+				/*
+				 * If the other side closed the connection orderly (otherwise
+				 * we'd seen an error, or PGRES_COPY_IN) don't report an error
+				 * here, but let callers deal with it.
+				 */
+				if (PQstatus(conn) == CONNECTION_BAD)
+					return -1;
+
+				ereport(ERROR,
+						(errmsg("unexpected result after CommandComplete: %s",
+								PQerrorMessage(conn))));
+			}
+
+			return -1;
+		}
+		else if (PQresultStatus(res) == PGRES_COPY_IN)
+		{
+			PQclear(res);
+			return -1;
+		}
+		else
+		{
+			PQclear(res);
+			ereport(ERROR,
+					(errmsg("could not receive data from WAL stream: %s",
+							pchomp(PQerrorMessage(conn)))));
+		}
+	}
+	if (rawlen < -1)
+		ereport(ERROR,
+				(errmsg("could not receive data from WAL stream: %s",
+						pchomp(PQerrorMessage(conn)))));
+
+	/* Return received messages to caller */
+	*buffer = recvBuf;
+	return rawlen;
 }
 
 static void
@@ -851,7 +1006,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 						{
 							set_table_sync_status(sub->id, remoterel->nspname,
 												  remoterel->relname,
-												  SYNC_STATUS_READY,
+												  SYNC_STATUS_INIT,
 												  lsn);
 						}
 						else
@@ -862,7 +1017,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 							newsync.subid = sub->id;
 							namestrcpy(&newsync.nspname, remoterel->nspname);
 							namestrcpy(&newsync.relname, remoterel->relname);
-							newsync.status = SYNC_STATUS_READY;
+							newsync.status = SYNC_STATUS_INIT;
 							newsync.statuslsn = lsn;
 							create_local_sync_status(&newsync);
 						}

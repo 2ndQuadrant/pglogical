@@ -1788,7 +1788,11 @@ process_syncing_tables(XLogRecPtr end_lsn)
 		{
 			PGLogicalWorker	   *worker = (PGLogicalWorker *) lfirst(wlc);
 
-			if (pglogical_worker_running(worker))
+			/* Is any sync worker running for the given table */
+			if (pglogical_worker_running(worker) 
+				&& strcmp(NameStr(worker->worker.sync.nspname), NameStr(sync->nspname)) == 0
+				&& strcmp(NameStr(worker->worker.sync.relname), NameStr(sync->relname)) == 0
+				)
 				nworkers++;
 		}
 		LWLockRelease(PGLogicalCtx->lock);
@@ -1799,6 +1803,55 @@ process_syncing_tables(XLogRecPtr end_lsn)
 			break;
 		}
 	}
+
+	//Following codes are modified version of the code from handle_commit() function
+	if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC)
+	{
+		/*
+		 * Stop replay if we're doing limited replay and we've replayed up to the
+		 * last record we're supposed to process.
+		 */
+		if (MyApplyWorker->replay_stop_lsn != InvalidXLogRecPtr
+				&& MyApplyWorker->replay_stop_lsn <= end_lsn)
+		{
+			ereport(LOG,
+					(errmsg("pglogical sync finished processing; replayed to %X/%X of required %X/%X",
+					(uint32)(end_lsn>>32), (uint32)end_lsn,
+					(uint32)(MyApplyWorker->replay_stop_lsn >>32),
+					(uint32)MyApplyWorker->replay_stop_lsn)));
+
+			/*
+			 * If this is sync worker, update syncing table state to done.
+			 */
+			StartTransactionCommand();
+			set_table_sync_status(MyApplyWorker->subid,
+							NameStr(MyPGLogicalWorker->worker.sync.nspname),
+							NameStr(MyPGLogicalWorker->worker.sync.relname),
+							SYNC_STATUS_SYNCDONE, end_lsn);
+			CommitTransactionCommand();
+			
+			/*
+			 * Flush all writes so the latest position can be reported back to the
+			 * sender.
+			 */
+			XLogFlush(GetXLogWriteRecPtr());
+
+			/*
+			 * Disconnect.
+			 *
+			 * This needs to happen before the pglogical_sync_worker_finish()
+			 * call otherwise slot drop will fail.
+			 */
+			PQfinish(applyconn);
+
+			pglogical_sync_worker_finish();
+
+			/* Stop gracefully */
+			proc_exit(0);
+		}
+
+	}
+	//Copied code ends
 
 	Assert(CurrentMemoryContext == MessageContext);
 }

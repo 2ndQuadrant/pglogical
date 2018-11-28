@@ -108,4 +108,7 @@ extern void pglogical_worker_kill(PGLogicalWorker *worker);
 
 extern const char * pglogical_worker_type_name(PGLogicalWorkerType type);
 
+extern int num_of_sync_workers(Oid dboid, Oid subid);
+
+
 #endif /* PGLOGICAL_WORKER_H */
