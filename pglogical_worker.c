@@ -29,6 +29,8 @@
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 
+#include "replication/logicallauncher.h"
+
 #include "pgstat.h"
 
 #include "pglogical_sync.h"
@@ -115,11 +117,34 @@ pglogical_worker_register(PGLogicalWorker *worker)
 
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
+	/*
+	 * Limit sync workers per subscription upto the 
+	 * GUC max_sync_workers_per_subscprition
+	 */
+	if(worker->worker_type == PGLOGICAL_WORKER_SYNC)
+	{
+		int nsyncWorkers;
+
+		nsyncWorkers = num_of_sync_workers(worker->dboid, worker->worker.sync.apply.subid);
+
+		if(nsyncWorkers >= max_sync_workers_per_subscription)
+		{
+			LWLockRelease(PGLogicalCtx->lock);
+			return -1;
+		}
+	}
+	
 	slot = find_empty_worker_slot(worker->dboid);
 	if (slot == -1)
 	{
 		LWLockRelease(PGLogicalCtx->lock);
-		elog(ERROR, "could not register pglogical worker: all background worker slots are already used");
+
+		ereport(WARNING,
+				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+				 errmsg("out of worker slots for pglogical workers"),
+				 errhint("You might need to increase max_worker_processes.")));
+
+		return -1;
 	}
 
 	worker_shm = &PGLogicalCtx->workers[slot];
@@ -179,7 +204,7 @@ pglogical_worker_register(PGLogicalWorker *worker)
 	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
 	{
 		worker_shm->crashed_at = GetCurrentTimestamp();
-		ereport(ERROR,
+		ereport(WARNING,
 				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
 				 errmsg("worker registration failed, you might want to increase max_worker_processes setting")));
 	}
@@ -736,4 +761,31 @@ pglogical_worker_type_name(PGLogicalWorkerType type)
 		case PGLOGICAL_WORKER_SYNC: return "sync";
 		default: Assert(false); return NULL;
 	}
+}
+
+
+/*
+ * Find number of sync workers for the given subscriptions.
+ */
+int
+num_of_sync_workers(Oid dboid, Oid subid)
+{
+	int	i;
+	int nsync = 0;
+
+	Assert(LWLockHeldByMe(PGLogicalCtx->lock));
+
+	for (i = 0; i < PGLogicalCtx->total_workers; i++)
+	{
+		/* 
+		 * Find num of sync workers for the given subscription which are not crashed
+		 */
+		if(PGLogicalCtx->workers[i].worker_type == PGLOGICAL_WORKER_SYNC
+		   && PGLogicalCtx->workers[i].dboid == dboid
+		   && PGLogicalCtx->workers[i].worker.sync.apply.subid == subid
+		   && PGLogicalCtx->workers[i].crashed_at == 0 )
+		   nsync++;
+	}
+
+	return nsync;
 }
