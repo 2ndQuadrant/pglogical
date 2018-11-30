@@ -101,6 +101,7 @@ typedef struct RepSetTableTuple
 #define Anum_repset_table_row_filter	4
 
 
+#define REPSETTABLEHASH_INITIAL_SIZE 128
 static HTAB *RepSetTableHash = NULL;
 
 /*
@@ -260,8 +261,9 @@ repset_relcache_init(void)
 	hashflags |= HASH_BLOBS;
 #endif
 
-	RepSetTableHash = hash_create("pglogical repset table cache", 128,
-									 &ctl, hashflags);
+	RepSetTableHash = hash_create("pglogical repset table cache",
+                                      REPSETTABLEHASH_INITIAL_SIZE, &ctl,
+                                      hashflags);
 
 	/*
 	 * Watch for invalidation events fired when the relcache changes.
