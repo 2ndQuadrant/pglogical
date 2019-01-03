@@ -59,12 +59,22 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 	}
 
 	initStringInfo(&query);
-	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
+	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info_by_target", 3, NULL))
+	{
+		/* PGLogical 2.3+ */
+		appendStringInfo(&query,
+						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
+						 "       i.has_row_filter, i.nsptarget, i.reltarget"
+						 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
+						 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
+						 repsetarr.data, repsetarr.data);
+	}
+	else if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
 	{
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
 						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-						 "       i.has_row_filter"
+						 "       i.has_row_filter, i.nspname as i.nsptarget, i.relname as i.reltarget"
 						 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
 						 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
 						 repsetarr.data, repsetarr.data);
@@ -74,7 +84,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 		/* PGLogical 1.x */
 		appendStringInfo(&query,
 						 "SELECT r.oid AS relid, t.nspname, t.relname, ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = r.oid AND NOT attisdropped AND attnum > 0) AS att_list,"
-						 "       false AS has_row_filter"
+						 "       false AS has_row_filter, t.nspname as nsptarget, t.relname as reltarget"
 						 "  FROM pglogical.tables t, pg_catalog.pg_class r, pg_catalog.pg_namespace n"
 						 " WHERE t.set_name = ANY(ARRAY[%s]) AND r.relname = t.relname AND n.oid = r.relnamespace AND n.nspname = t.nspname",
 						 repsetarr.data);
@@ -96,6 +106,8 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 						  &remoterel->natts))
 			elog(ERROR, "could not parse column list for table");
 		remoterel->hasRowFilter = (strcmp(PQgetvalue(res, i, 4), "t") == 0);
+		remoterel->nsptarget = pstrdup(PQgetvalue(res, i, 5));
+		remoterel->reltarget = pstrdup(PQgetvalue(res, i, 6));
 
 		tables = lappend(tables, remoterel);
 	}
@@ -108,22 +120,23 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 /*
  * Like above but for one table.
  */
-PGLogicalRemoteRel *
+List *
 pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 								   List *replication_sets)
 {
-	PGLogicalRemoteRel *remoterel = palloc0(sizeof(PGLogicalRemoteRel));
 	PGresult   *res;
+	int			i;
+	List	   *tables = NIL;
 	ListCell   *lc;
 	bool		first = true;
 	StringInfoData	query;
 	StringInfoData	repsetarr;
-	StringInfoData	relname;
+	StringInfoData  relname;
 
 	initStringInfo(&relname);
 	appendStringInfo(&relname, "%s.%s",
-					 PQescapeIdentifier(conn, rv->schemaname, strlen(rv->schemaname)),
-					 PQescapeIdentifier(conn, rv->relname, strlen(rv->relname)));
+					 PQescapeLiteral(conn, rv->schemaname, strlen(rv->schemaname)),
+					 PQescapeLiteral(conn, rv->relname, strlen(rv->relname)));
 
 	initStringInfo(&repsetarr);
 	foreach (lc, replication_sets)
@@ -140,12 +153,23 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	}
 
 	initStringInfo(&query);
-	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
+	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info_by_target", 3, NULL))
+	{
+		/* PGLogical 2.3+ */
+		appendStringInfo(&query,
+						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
+						 "       i.has_row_filter, i.nsptarget, i.reltarget"
+						 "  FROM pglogical.show_repset_table_info_by_target(%s, %s, ARRAY[%s]) i",
+						 PQescapeLiteral(conn, rv->schemaname, strlen(rv->schemaname)),
+						 PQescapeLiteral(conn, rv->relname, strlen(rv->relname)),
+						 repsetarr.data);
+	}
+	else if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
 	{
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
 						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-						 "       i.has_row_filter"
+						 "       i.has_row_filter, i.nspname as nsptarget, i.relname as reltarget"
 						 "  FROM pglogical.show_repset_table_info(%s::regclass, ARRAY[%s]) i",
 						 PQescapeLiteral(conn, relname.data, relname.len),
 						 repsetarr.data);
@@ -155,7 +179,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 		/* PGLogical 1.x */
 		appendStringInfo(&query,
 						 "SELECT r.oid AS relid, t.nspname, t.relname, ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = r.oid AND NOT attisdropped AND attnum > 0) AS att_list,"
-						 "       false AS has_row_filter"
+						 "       false AS has_row_filter, t.nspname as nsptarget, t.relname as reltarget"
 						 "  FROM pglogical.tables t, pg_catalog.pg_class r, pg_catalog.pg_namespace n"
 						 " WHERE r.oid = %s::regclass AND t.set_name = ANY(ARRAY[%s]) AND r.relname = t.relname AND n.oid = r.relnamespace AND n.nspname = t.nspname",
 						 PQescapeLiteral(conn, relname.data, relname.len),
@@ -167,18 +191,26 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) != 1)
 		elog(ERROR, "could not get table list: %s", PQresultErrorMessage(res));
 
-	remoterel->relid = atooid(PQgetvalue(res, 0, 0));
-	remoterel->nspname = pstrdup(PQgetvalue(res, 0, 1));
-	remoterel->relname = pstrdup(PQgetvalue(res, 0, 2));
-	if (!parsePGArray(PQgetvalue(res, 0, 3), &remoterel->attnames,
-					  &remoterel->natts))
-		elog(ERROR, "could not parse column list for table");
-	remoterel->hasRowFilter = (strcmp(PQgetvalue(res, 0, 4), "t") == 0);
+	for (i = 0; i < PQntuples(res); i++)
+	{
+		PGLogicalRemoteRel *remoterel = palloc0(sizeof(PGLogicalRemoteRel));
 
+		remoterel->relid = atooid(PQgetvalue(res, i, 0));
+		remoterel->nspname = pstrdup(PQgetvalue(res, i, 1));
+		remoterel->relname = pstrdup(PQgetvalue(res, i, 2));
+		if (!parsePGArray(PQgetvalue(res, i, 3), &remoterel->attnames,
+						  &remoterel->natts))
+			elog(ERROR, "could not parse column list for table");
+		remoterel->hasRowFilter = (strcmp(PQgetvalue(res, i, 4), "t") == 0);
+		remoterel->nsptarget = pstrdup(PQgetvalue(res, i, 5));
+		remoterel->reltarget = pstrdup(PQgetvalue(res, i, 6));
+
+		tables = lappend(tables, remoterel);
+	}
 
 	PQclear(res);
 
-	return remoterel;
+	return tables;
 }
 
 /*

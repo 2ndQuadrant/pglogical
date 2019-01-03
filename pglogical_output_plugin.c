@@ -25,6 +25,7 @@
 #include "catalog/namespace.h"
 #include "storage/fd.h"
 #include "utils/inval.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "replication/origin.h"
@@ -676,10 +677,34 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 		if (!cached_relmeta->is_cached)
 		{
+			PGLogicalTableRepInfo *tblinfo;
+			char       *nsptarget;
+			char       *reltarget;
+
+			if (RelationGetRelid(relation) == get_queue_table_oid()
+				|| RelationGetRelid(relation) == get_replication_set_rel_oid())
+			{
+					nsptarget = get_namespace_name(RelationGetNamespace(relation));
+					reltarget = pstrdup(RelationGetRelationName(relation));
+					if (nsptarget == NULL)
+							elog(ERROR, "cache lookup failed for namespace %u",
+								 relation->rd_rel->relnamespace);
+			}
+			else
+			{
+					tblinfo = get_table_replication_info(data->local_node_id, relation,
+																data->replication_sets);
+					nsptarget = pstrdup(tblinfo->nsptarget);
+					reltarget = pstrdup(tblinfo->reltarget);
+			}
+
 			OutputPluginPrepareWrite(ctx, false);
-			data->api->write_rel(ctx->out, data, relation, att_list);
+			data->api->write_rel(ctx->out, data, relation, att_list,
+								 nsptarget, reltarget);
 			OutputPluginWrite(ctx, false);
 			cached_relmeta->is_cached = true;
+			pfree(nsptarget);
+			pfree(reltarget);
 		}
 	}
 

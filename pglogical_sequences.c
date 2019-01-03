@@ -47,6 +47,11 @@ typedef struct SeqStateTuple {
 	int64	last_value;
 } SeqStateTuple;
 
+typedef struct SeqTargets {
+	Relation	seqtarget;
+	List		*repsets;
+} SeqTargets;
+
 #define Natts_sequence_state			3
 #define Anum_sequence_state_seqoid		1
 #define Anum_sequence_state_cache_size	2
@@ -110,12 +115,8 @@ synchronize_sequences(void)
 		SeqStateTuple  *newseq;
 		int64			last_value;
 		HeapTuple		newtup;
-		List		   *repsets;
-		List		   *repset_names;
+		List		   *seqtargets;
 		ListCell	   *lc;
-		char		   *nspname;
-		char		   *relname;
-		StringInfoData	json;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -140,29 +141,42 @@ synchronize_sequences(void)
 		newseq->last_value = last_value + newseq->cache_size;
 		simple_heap_update(rel, &tuple->t_self, newtup);
 
-		repsets = get_seq_replication_sets(local_node->node->id,
-										   oldseq->seqoid);
-		repset_names = NIL;
-		foreach (lc, repsets)
+		/*
+		 * We need each target relation and namespace names, with their
+		 * respective replication set names.
+		 */
+		seqtargets = get_seq_replication_sets_targets(local_node->node->id,
+													  oldseq->seqoid);
+		/*
+		 * For the moment, a sequence cannot have more than one target
+		 * per node/replication set. And here we sync one oid at once.
+		 * Still a sequence can have distinct targets on distinct repset
+		 * so we need to figure that here.  See
+		 * pglogical.replication_set_seq CONSTRAINTS
+		 */
+		foreach (lc, seqtargets)
 		{
-			PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(lc);
-			repset_names = lappend(repset_names, pstrdup(repset->name));
+			StringInfoData	json;
+			List		*repset_names = NIL;
+			char		*nspname;
+			char		*relname;
+			PGLogicalRepSetSeq *t = (PGLogicalRepSetSeq *) lfirst(lc);
+			nspname = pstrdup(t->nsptarget);
+			relname = pstrdup(t->seqtarget);
+			repset_names = lappend(repset_names, pstrdup(t->repset_name));
+
+			initStringInfo(&json);
+			appendStringInfoString(&json, "{\"schema_name\": ");
+			escape_json(&json, nspname);
+			appendStringInfoString(&json, ",\"sequence_name\": ");
+			escape_json(&json, relname);
+			appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+							 newseq->last_value);
+			appendStringInfo(&json, "}");
+
+			queue_message(repset_names, GetUserId(),
+						  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 		}
-
-		nspname = get_namespace_name(get_rel_namespace(oldseq->seqoid));
-		relname = get_rel_name(oldseq->seqoid);
-
-		initStringInfo(&json);
-		appendStringInfoString(&json, "{\"schema_name\": ");
-		escape_json(&json, nspname);
-		appendStringInfoString(&json, ",\"sequence_name\": ");
-		escape_json(&json, relname);
-		appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
-						 newseq->last_value);
-		appendStringInfo(&json, "}");
-
-		queue_message(repset_names, GetUserId(),
-					  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 	}
 
 	/* Cleanup */
@@ -189,12 +203,8 @@ synchronize_sequence(Oid seqoid)
 	SeqStateTuple  *newseq;
 	int64			last_value;
 	HeapTuple		newtup;
-	List		   *repsets;
-	List		   *repset_names;
+	List		   *seqtargets;
 	ListCell	   *lc;
-	char		   *nspname;
-	char		   *relname;
-	StringInfoData	json;
 	PGLogicalLocalNode	   *local_node = get_local_node(true, false);
 
 	/* Check if the oid points to actual sequence. */
@@ -230,31 +240,38 @@ synchronize_sequence(Oid seqoid)
 
 	last_value = sequence_get_last_value(seqoid);
 
+	/* Update the tracking table with new last_value */
 	newseq->last_value = last_value + newseq->cache_size;
 	simple_heap_update(rel, &tuple->t_self, newtup);
 
-	repsets = get_seq_replication_sets(local_node->node->id, seqoid);
-	repset_names = NIL;
-	foreach (lc, repsets)
+	/* And now prepare the messages for the queue */
+	seqtargets = get_seq_replication_sets_targets(local_node->node->id, seqoid);
+	/*
+	 * Compute a message for each unique (seqoid,nsptarget,seqtarget) triplet.
+	 */
+	foreach (lc, seqtargets)
 	{
-		PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(lc);
-		repset_names = lappend(repset_names, pstrdup(repset->name));
+			StringInfoData	json;
+			List		*repset_names = NIL;
+			char		*nspname;
+			char		*relname;
+			PGLogicalRepSetSeq *t = (PGLogicalRepSetSeq *) lfirst(lc);
+			nspname = pstrdup(t->nsptarget);
+			relname = pstrdup(t->seqtarget);
+			repset_names = lappend(repset_names, pstrdup(t->repset_name));
+
+			initStringInfo(&json);
+			appendStringInfoString(&json, "{\"schema_name\": ");
+			escape_json(&json, nspname);
+			appendStringInfoString(&json, ",\"sequence_name\": ");
+			escape_json(&json, relname);
+			appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+							 newseq->last_value);
+			appendStringInfo(&json, "}");
+
+			queue_message(repset_names, GetUserId(),
+						  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 	}
-
-	nspname = get_namespace_name(RelationGetNamespace(seqrel));
-	relname = RelationGetRelationName(seqrel);
-
-	initStringInfo(&json);
-	appendStringInfoString(&json, "{\"schema_name\": ");
-	escape_json(&json, nspname);
-	appendStringInfoString(&json, ",\"sequence_name\": ");
-	escape_json(&json, relname);
-	appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
-					 newseq->last_value);
-	appendStringInfo(&json, "}");
-
-	queue_message(repset_names, GetUserId(),
-				  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 
 	/* Cleanup */
 	systable_endscan(scan);

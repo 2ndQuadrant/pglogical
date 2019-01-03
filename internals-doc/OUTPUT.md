@@ -271,6 +271,12 @@ case is bi-directional (mutual) replication.
 By specifying a row filter hook it's possible to filter the replication stream
 server-side so that only a subset of changes is replicated.
 
+# Table and Sequence names
+
+By default, relation and schema name are the same on the receiver and the
+provider. However 2 columns are used to track the target names to offer the
+user to change them, the receiver does not know about the original names,
+only those (mandatory) set for "target".
 
 # Hooks
 
