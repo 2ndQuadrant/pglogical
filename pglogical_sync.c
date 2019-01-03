@@ -554,6 +554,9 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	}
 
 	PQclear(res);
+
+	elog(INFO, "finished synchronization of data for table %s.%s",
+		 remoterel->nsptarget, remoterel->reltarget);
 }
 
 /*
