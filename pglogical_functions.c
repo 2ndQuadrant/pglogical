@@ -2178,7 +2178,7 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 			 */
 			if (relname != NULL)
 			{
-				PGLogicalSyncStatus *table = get_table_sync_status(sub->id, relnamespace, relname, true);
+				PGLogicalSyncStatus *table = get_table_sync_status(sub->id, relnamespace, relname, false);
 				isdone = table && table->status == SYNC_STATUS_READY;
 				free_sync_status(table);
 			}
