@@ -299,8 +299,8 @@ get_node_replication_sets(Oid nodeid)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		RepSetTableTuple	*t = (RepSetTableTuple *) GETSTRUCT(tuple);
-		PGLogicalRepSet	    *repset = get_replication_set(t->setid);
+		RepSetTuple	*t = (RepSetTuple *) GETSTRUCT(tuple);
+		PGLogicalRepSet	    *repset = get_replication_set(t->id);
 		replication_sets = lappend(replication_sets, repset);
 	}
 
