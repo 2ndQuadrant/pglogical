@@ -497,7 +497,7 @@ pglogical_apply_find_all(Oid dboid)
  * Find the sync worker for given subscription and table
  */
 PGLogicalWorker *
-pglogical_sync_find(Oid dboid, Oid subscriberid, char *nspname, char *relname)
+pglogical_sync_find(Oid dboid, Oid subscriberid, const char *nspname, const char *relname)
 {
 	int i;
 
