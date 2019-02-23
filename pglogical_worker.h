@@ -99,7 +99,7 @@ extern PGLogicalWorker *pglogical_apply_find(Oid dboid, Oid subscriberid);
 extern List *pglogical_apply_find_all(Oid dboid);
 
 extern PGLogicalWorker *pglogical_sync_find(Oid dboid, Oid subid,
-											char *nspname, char *relname);
+											const char *nspname, const char *relname);
 extern List *pglogical_sync_find_all(Oid dboid, Oid subscriberid);
 
 extern PGLogicalWorker *pglogical_get_worker(int slot);

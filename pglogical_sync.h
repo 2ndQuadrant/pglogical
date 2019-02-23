@@ -81,8 +81,8 @@ inline static void free_sync_status(PGLogicalSyncStatus *sync)
 	pfree(sync);
 }
 
-extern bool wait_for_sync_status_change(Oid subid, char *nspname,
-										char *relname, char desired_state,
+extern bool wait_for_sync_status_change(Oid subid, const char *nspname,
+										const char *relname, char desired_state,
 										XLogRecPtr *status_lsn);
 
 extern void truncate_table(char *nspname, char *relname);

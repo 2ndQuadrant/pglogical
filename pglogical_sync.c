@@ -1701,7 +1701,7 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
  * in TopMemoryContext.
  */
 bool
-wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
+wait_for_sync_status_change(Oid subid, const char *nspname, const char *relname,
 							char desired_state, XLogRecPtr *lsn)
 {
 	int rc;
