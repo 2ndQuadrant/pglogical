@@ -1648,7 +1648,7 @@ pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
 }
 
 /*
- * Add replication set / table mapping based on schemas.
+ * Add replication set / sequence mapping based on schemas.
  */
 Datum
 pglogical_replication_set_add_all_sequences(PG_FUNCTION_ARGS)
@@ -2173,7 +2173,7 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 		if (isdone)
 		{
 			/*
-			 * Subscription its self is synced, but what about separately
+			 * Subscription itself is synced, but what about separately
 			 * synced tables?
 			 */
 			if (relname != NULL)
@@ -2185,7 +2185,7 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 			else
 			{
 				/*
-				 * This is plenty inefficient and we should probably just do a direct catalog
+				 * XXX This is plenty inefficient and we should probably just do a direct catalog
 				 * scan, but meh, it hardly has to be fast.
 				 */
 				ListCell *lc;

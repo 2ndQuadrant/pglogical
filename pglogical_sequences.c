@@ -287,7 +287,7 @@ pglogical_create_sequence_state_record(Oid seqoid)
 
 	tuple = systable_getnext(scan);
 
-	/* And it it doesn't insert it. */
+	/* And if it doesn't insert it. */
 	if (!HeapTupleIsValid(tuple))
 	{
 		Datum		values[Natts_sequence_state];

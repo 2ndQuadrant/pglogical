@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pglogical_executor.c
- * 		pglogical execurot related functions
+ * 		pglogical executor related functions
  *
  * Copyright (c) 2015, PostgreSQL Global Development Group
  *
