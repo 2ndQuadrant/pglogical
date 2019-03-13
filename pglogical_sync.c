@@ -749,15 +749,23 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		RepOriginId	originid;
 		char	   *snapshot;
 		bool		use_failover_slot;
+		int			server_version = PQserverVersion(origin_conn);
 
 		elog(INFO, "initializing subscriber %s", sub->name);
 
 		origin_conn = pglogical_connect(sub->origin_if->dsn,
 										sub->name, "snap");
-		use_failover_slot = PQserverVersion(origin_conn) < 100000 &&
+
+		/* 2QPG9.6 and 2QPG11 support failover slots */
+		use_failover_slot = ((server_version < 100000 &&
 			pglogical_remote_function_exists(origin_conn, "pg_catalog",
 											 "pg_create_logical_replication_slot",
-											 3);
+											 3)) ||
+							((server_version > 110000
+							  && server_version < 120000) &&
+			pglogical_remote_function_exists(origin_conn, "pg_catalog",
+											 "pg_create_logical_replication_slot",
+											 4)));
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 													 sub->name, "snap");
 
