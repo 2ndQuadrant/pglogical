@@ -277,6 +277,7 @@ main(int argc, char **argv)
 				break;
 			case 8:
 				apply_delay = atoi(optarg);
+				break;
 			case 9:
 				databases = pg_strdup(optarg);
 				break;
@@ -1216,8 +1217,7 @@ get_connstr_dbname(char *connstr)
 		}
 	}
 
-	if (conn_opts)
-		PQconninfoFree(conn_opts);
+	PQconninfoFree(conn_opts);
 
 	return ret;
 }
