@@ -151,5 +151,6 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 #define rbtxn_has_catalog_changes(txn) (txn->has_catalog_changes)
 #endif
 
+#define IndexRelationGetNumberOfKeyAttributes(rel) RelationGetNumberOfAttributes(rel)
 
 #endif
