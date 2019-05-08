@@ -618,7 +618,7 @@ die(const char *fmt,...)
 	{
 		if (!run_pg_ctl("stop -s"))
 		{
-			fprintf(stderr, _("WARNING: postgres seems to be running, but could not be stopped"));
+			fprintf(stderr, _("WARNING: postgres seems to be running, but could not be stopped\n"));
 		}
 	}
 
@@ -819,7 +819,7 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 		resetPQExpBuffer(&query);
 
 		if (!drop_slot_if_exists)
-			die(_("Slot %s already exists, drop it or use --drop-slot-if-exists drop it automatically.\n"),
+			die(_("Slot %s already exists, drop it or use --drop-slot-if-exists to drop it automatically.\n"),
 				slot_name);
 
 		print_msg(VERBOSITY_VERBOSE,
