@@ -122,10 +122,16 @@ SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', true, 
  t
 (1 row)
 
+SELECT nspname, relname, set_name FROM pglogical.tables WHERE relname = 'basic_dml';
+ nspname |  relname  | set_name 
+---------+-----------+----------
+ public  | basic_dml | default
+(1 row)
+
 -- fail, the membership in repset depends on data column
 \set VERBOSITY terse
 ALTER TABLE basic_dml DROP COLUMN data;
-ERROR:  cannot drop table basic_dml column data because other objects depend on it
+ERROR:  cannot drop column data of table basic_dml because other objects depend on it
 \set VERBOSITY default
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
  wait_slot_confirm_lsn 
@@ -379,7 +385,7 @@ INSERT INTO test_jsonb VALUES
 ('scalar','"a scalar"'),
 ('array','["zero", "one","two",null,"four","five", [1,2,3],{"f1":9}]'),
 ('object','{"field1":"val1","field2":"val2","field3":null, "field4": 4, "field5": [1,2,3], "field6": {"f1":9}}');
-SELECT * FROM pglogical.replication_set_add_table('default', 'test_jsonb', true, row_filter := $rf$test_json ->> 'field2' IS DISTINCT FROM 'val2' $rf$);
+SELECT * FROM pglogical.replication_set_add_table('default', 'test_jsonb', true, row_filter := $rf$(test_json ->> 'field2') IS DISTINCT FROM 'val2' $rf$);
  replication_set_add_table 
 ---------------------------
  t
@@ -392,6 +398,15 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 (1 row)
 
 \c :subscriber_dsn
+DO $$
+BEGIN
+    FOR i IN 1..100 LOOP
+        IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r') THEN
+            EXIT;
+        END IF;
+        PERFORM pg_sleep(0.1);
+    END LOOP;
+END;$$;
 SELECT * FROM test_jsonb ORDER BY json_type;
  json_type |                             test_json                              
 -----------+--------------------------------------------------------------------
@@ -399,6 +414,318 @@ SELECT * FROM test_jsonb ORDER BY json_type;
  scalar    | "a scalar"
 (2 rows)
 
+\c :provider_dsn
+-- Filter may refer to not-replicated columns
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false, columns := ARRAY['id', 'data'], row_filter := $rf$other = 2$rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO basic_dml(other, data, "SomeThing") VALUES (2, 'itstwo', '1 second'::interval);
+SELECT other, data, "SomeThing" FROM basic_dml WHERE data = 'itstwo';
+ other |  data  | SomeThing 
+-------+--------+-----------
+     2 | itstwo | @ 1 sec
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+-- 'other' will be NULL as it wasn't in the repset
+-- even though we filtered on it. So will SomeThing.
+SELECT other, data, "SomeThing" FROM basic_dml WHERE data = 'itstwo';
+ other |  data  | SomeThing 
+-------+--------+-----------
+       | itstwo | 
+(1 row)
+
+\c :provider_dsn
+---------------------------------------------------
+-- Enhanced function tests covering basic plpgsql
+---------------------------------------------------
+CREATE FUNCTION func_plpgsql_simple(arg integer)
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN arg;
+END;
+$$;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+	row_filter := $rf$ func_plpgsql_simple(other) = 100 $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+-- Should FAIL due to dependency
+--
+-- FIXME: Succeeds incorrectly (RM#5880) leading to
+--     cache lookup failed for function" errors in logs if allowed to commit
+--
+BEGIN;
+DROP FUNCTION func_plpgsql_simple(integer);
+ROLLBACK;
+INSERT INTO basic_dml (other) VALUES (100), (101);
+SELECT other FROM basic_dml WHERE other IN (100,101);
+ other 
+-------
+   100
+   101
+(2 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT other FROM basic_dml WHERE other IN (100,101);
+ other 
+-------
+   100
+(1 row)
+
+\c :provider_dsn
+CREATE FUNCTION func_plpgsql_logic(arg integer)
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF arg = 200 THEN
+    RETURN arg;
+  ELSE
+    RETURN 0;
+  END IF;
+END;
+$$;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+	row_filter := $rf$ func_plpgsql_logic(other) = other $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO basic_dml (other) VALUES (200), (201);
+SELECT other FROM basic_dml WHERE other IN (200,201);
+ other 
+-------
+   200
+   201
+(2 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT other FROM basic_dml WHERE other IN (200,201);
+ other 
+-------
+   200
+(1 row)
+
+\c :provider_dsn
+CREATE FUNCTION func_plpgsql_security_definer(arg integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RAISE NOTICE 'c_u: %, s_u: %', current_user, session_user;
+  RETURN arg;
+END;
+$$;
+CREATE ROLE temp_owner;
+ALTER FUNCTION func_plpgsql_security_definer(integer) OWNER TO temp_owner;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+	row_filter := $rf$ func_plpgsql_security_definer(other) = 300 $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO basic_dml (other) VALUES (300), (301);
+SELECT other FROM basic_dml WHERE other IN (300,301);
+ other 
+-------
+   300
+   301
+(2 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT other FROM basic_dml WHERE other IN (300,301);
+ other 
+-------
+   300
+(1 row)
+
+\c :provider_dsn
+CREATE FUNCTION func_plpgsql_exception(arg integer)
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  BEGIN
+    SELECT arg/0;
+  EXCEPTION
+    WHEN division_by_zero THEN
+      RETURN arg;
+  END;
+  RAISE EXCEPTION 'should be unreachable';
+END;
+$$;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+	row_filter := $rf$ func_plpgsql_exception(other) = 400 $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO basic_dml (other) VALUES (400), (401);
+SELECT other FROM basic_dml WHERE other IN (400,401);
+ other 
+-------
+   400
+   401
+(2 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT other FROM basic_dml WHERE other IN (400,401);
+ other 
+-------
+   400
+(1 row)
+
+\c :provider_dsn
+-- Should not be able to use a SETOF or TABLE func directly
+-- but we can do it via a wrapper:
+CREATE FUNCTION func_plpgsql_srf_retq(arg integer)
+RETURNS TABLE (result integer, dummy boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY SELECT arg * x, true FROM generate_series(1,2) x;
+  RETURN;
+END;
+$$;
+-- fails with SRF context error
+BEGIN;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+	row_filter := $rf$ (func_plpgsql_srf_retq(other)).result = 500 $rf$);
+ERROR:  set-returning functions are not allowed in check constraints
+ROLLBACK;
+CREATE FUNCTION func_plpgsql_call_set(arg integer)
+RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN (SELECT true FROM func_plpgsql_srf_retq(arg) WHERE result = arg * 2);
+END;
+$$;
+SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+	row_filter := $rf$ func_plpgsql_call_set(other) $rf$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+INSERT INTO basic_dml (other) VALUES (500), (501);
+SELECT other FROM basic_dml WHERE other IN (500,501);
+ other 
+-------
+   500
+   501
+(2 rows)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT other FROM basic_dml WHERE other IN (500,501);
+ other 
+-------
+   500
+   501
+(2 rows)
+
+\c :provider_dsn
+DROP FUNCTION func_plpgsql_simple(integer);
+DROP FUNCTION func_plpgsql_logic(integer);
+DROP FUNCTION func_plpgsql_security_definer(integer);
+DROP FUNCTION func_plpgsql_exception(integer);
+DROP FUNCTION func_plpgsql_srf_retq(integer);
+DROP FUNCTION func_plpgsql_call_set(integer);
+DROP ROLE temp_owner;
+---------------------------------------------------
+-- ^^^ End plpgsql tests
+---------------------------------------------------
 \c :provider_dsn
 \set VERBOSITY terse
 DROP FUNCTION funcn_add(integer, integer);
