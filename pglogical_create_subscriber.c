@@ -796,7 +796,7 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		die(_("Could generate slot name: %s\n"), PQerrorMessage(provider_conn));
+		die(_("Could generate slot name: %s"), PQerrorMessage(conn));
 
 	slot_name = pstrdup(PQgetvalue(res, 0, 0));
 
@@ -810,7 +810,7 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		die(_("Could not fetch existing slot information: %s\n"), PQerrorMessage(provider_conn));
+		die(_("Could not fetch existing slot information: %s"), PQerrorMessage(conn));
 
 	/* Drop the existing slot when asked for it or error if it already exists. */
 	if (PQntuples(res) > 0)
@@ -831,8 +831,8 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 
 		res = PQexec(conn, query.data);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
-			die(_("Could not drop existing slot %s: %s\n"), slot_name,
-				PQerrorMessage(provider_conn));
+			die(_("Could not drop existing slot %s: %s"), slot_name,
+				PQerrorMessage(conn));
 	}
 
 	PQclear(res);
