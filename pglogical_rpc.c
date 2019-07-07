@@ -59,7 +59,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 	}
 
 	initStringInfo(&query);
-	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2))
+	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
 	{
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
@@ -140,7 +140,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	}
 
 	initStringInfo(&query);
-	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2))
+	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
 	{
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
@@ -322,30 +322,38 @@ pglogical_remote_node_info(PGconn *conn, Oid *nodeid, char **node_name, char **s
 
 bool
 pglogical_remote_function_exists(PGconn *conn, const char *nspname,
-								 const char *relname, int nargs)
+								 const char *proname, int nargs, char *argname)
 {
 	PGresult	   *res;
 	char			nargs_str[30];
-	const char	   *values[3];
-	Oid				types[3] = { TEXTOID, TEXTOID, INT4OID };
+	const char	   *values[2];
+	Oid				types[2] = { TEXTOID, TEXTOID };
 	bool			ret;
+	StringInfoData	query;
 
 	snprintf(nargs_str, sizeof(nargs_str) - 1, "%d", nargs);
-	values[0] = relname;
+	values[0] = proname;
 	values[1] = nspname;
-	values[2] = nargs_str;
 
-	res = PQexecParams(conn,
-					   "SELECT oid "
-					   "  FROM pg_catalog.pg_proc "
-					   " WHERE proname = $1 "
-                       "   AND pronamespace = "
-					   "       (SELECT oid "
-                       "          FROM pg_catalog.pg_namespace "
-                       "         WHERE nspname = $2) "
-                       "   AND pronargs = $3",
-					   3, types, values, NULL, NULL, 0);
+	initStringInfo(&query);
+	appendStringInfo(&query,
+					 "SELECT oid "
+					 "  FROM pg_catalog.pg_proc "
+					 " WHERE proname = $1 "
+					 "   AND pronamespace = "
+					 "       (SELECT oid "
+					 "          FROM pg_catalog.pg_namespace "
+					 "         WHERE nspname = $2)");
 
+	if (nargs >= 0)
+		appendStringInfo(&query,
+						 "   AND pronargs = '%d'", nargs);
+	if (argname != NULL)
+		appendStringInfo(&query,
+						 "   AND %s = ANY (proargnames)",
+						 PQescapeLiteral(conn, argname, strlen(argname)));
+
+	res = PQexecParams(conn, query.data, 2, types, values, NULL, NULL, 0);
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		elog(ERROR, "could not fetch remote function info: %s\n",

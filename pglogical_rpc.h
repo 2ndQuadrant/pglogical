@@ -26,6 +26,6 @@ extern void pglogical_remote_node_info(PGconn *conn, Oid *nodeid,
 						   char **node_name, char **sysid, char **dbname,
 						   char **replication_sets);
 extern bool pglogical_remote_function_exists(PGconn *conn, const char *nspname,
-								 const char *relname, int nargs);
+								 const char *proname, int nargs, char *argname);
 
 #endif /* PGLOGICAL_RPC_H */
