@@ -1,0 +1,15 @@
+site_name: pglogical
+docs_dir: .
+site_dir: ../docs-site
+theme:
+    name: 2qmkdocs
+    one_page: true
+copyright: 'Copyright 2019 © 2ndQuadrant Limited'
+nav:
+    - pglogical: README.md
+markdown_extensions:
+    - codehilite:
+        css_class: highlight
+        guess_lang: true
+plugins:
+    - search
