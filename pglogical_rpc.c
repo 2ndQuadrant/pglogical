@@ -325,13 +325,11 @@ pglogical_remote_function_exists(PGconn *conn, const char *nspname,
 								 const char *proname, int nargs, char *argname)
 {
 	PGresult	   *res;
-	char			nargs_str[30];
 	const char	   *values[2];
 	Oid				types[2] = { TEXTOID, TEXTOID };
 	bool			ret;
 	StringInfoData	query;
 
-	snprintf(nargs_str, sizeof(nargs_str) - 1, "%d", nargs);
 	values[0] = proname;
 	values[1] = nspname;
 
