@@ -1,6 +1,6 @@
-# pglogical
+# pglogical 2
 
-The pglogical extension provides logical streaming replication for PostgreSQL,
+The pglogical 2 extension provides logical streaming replication for PostgreSQL,
 using a publish/subscribe model. It is based on technology developed as part
 of the BDR project (http://2ndquadrant.com/BDR).
 
@@ -10,7 +10,7 @@ reused from the earlier Slony technology:
 * Providers and Subscribers - roles taken by Nodes
 * Replication Set - a collection of tables
 
-pglogical is new technology utilising the latest in-core features, so we have these version restrictions:
+pglogical is utilising the latest in-core features, so we have these version restrictions:
 * Provider & subscriber nodes must run PostgreSQL 9.4+
 * PostgreSQL 9.5+ is required for replication origin filtering and conflict detection
 * Additionally, subscriber can be Postgres-XL 9.5+
