@@ -56,8 +56,76 @@ Some additional requirements are covered in "Limitations and Restrictions", belo
 
 ### Packages
 
-There are RPM and deb packages at
-[2ndQuadrant.com](http://2ndquadrant.com/en/resources/pglogical/pglogical-installation-instructions/).
+pglogical is available as RPMs via yum for Fedora, CentOS, & RHEL, and as DEBs
+via apt for Debian and Ubuntu, or as source code here. Please see below for
+instructions on installing from source.
+
+#### Installing pglogical with YUM
+
+The instructions below are valid for Red Hat family of operating systems (RHEL, CentOS, Fedora).
+Pre-Requisites
+
+##### Pre-requisites
+
+These RPMs all require the PGDG PostgreSQL releases from http://yum.postgresql.org/.
+You cannot use them with stock PostgreSQL releases included in Fedora and RHEL.
+If you don’t have PostgreSQL already:
+
+ - Install the appropriate PGDG repo rpm from http://yum.postgresql.org/repopackages.php
+ - Install PostgreSQL
+    - PostgreSQL 9.4: `yum install postgresql94-server postgresql94-contrib`
+    - PostgreSQL 9.5: `yum install postgresql95-server postgresql95-contrib`
+    - PostgreSQL 9.6: `yum install postgresql96-server postgresql96-contrib`
+    - PostgreSQL 10: `yum install postgresql10-server postgresql10-contrib`
+    - PostgreSQL 11: `yum install postgresql11-server postgresql11-contrib`
+
+Then install the “2ndQuadrant’s General Public” repository for your PostgreSQL
+version, by running the following instructions as root on the destination Linux server:
+
+ - PostgreSQL 9.4: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/9.4/rpm | bash`
+ - PostgreSQL 9.5: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/9.5/rpm | bash`
+ - PostgreSQL 9.6: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/9.6/rpm | bash`
+ - PostgreSQL 10: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/10/rpm | bash`
+ - PostgreSQL 11: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/11/rpm | bash`
+
+##### Installation
+
+Once the repository is installed, you can proceed to pglogical for your PostgreSQL version:
+
+ - PostgreSQL 9.4: `yum install postgresql94-pglogical`
+ - PostgreSQL 9.5: `yum install postgresql95-pglogical`
+ - PostgreSQL 9.6: `yum install postgresql96-pglogical`
+ - PostgreSQL 10: `yum install postgresql10-pglogical`
+ - PostgreSQL 11: `yum install postgresql11-pglogical`
+
+You may be prompted to accept the repository GPG key for package signing:
+
+    Retrieving key from file:///etc/pki/rpm-gpg/RPM-GPG-KEY-2NDQ-DL-DEFAULT Importing GPG key 0xD6BAF0C3: Userid : "Public repository signing key 2ndQuadrant <ci@2ndquadrant.com>" Fingerprint: 8565 305c ea7d 0b66 4933 d250 9904 cd4b d6ba f0c3 From : /etc/pki/rpm-gpg/RPM-GPG-KEY-2NDQ-DL-DEFAULT Is this ok [y/N]:
+
+If so, accept the key (if it matches the above) by pressing ‘y’ then enter.
+(It’s signed by the 2ndQuadrant master packaging key, if you want to verify that.)
+
+#### Installing pglogical with APT
+
+The instructions below are valid for Debian and all Linux flavors based on
+Debian (e.g. Ubuntu).
+
+##### Pre-requisites
+
+You can install the “2ndQuadrant’s General Public” repository by running the
+following instructions as root on the destination Linux server: `curl http://access.2ndquadrant.com/api/repository/dl/default/release/deb | bash`
+
+ - Add the http://apt.postgresql.org/ repository. See the site for instructions.
+
+##### Installation
+
+Once pre-requisites are complete, installing pglogical is simply a matter of executing the following for your version of PostgreSQL:
+
+ - PostgreSQL 9.4: `sudo apt-get install postgresql-9.4-pglogical`
+ - PostgreSQL 9.5: `sudo apt-get install postgresql-9.5-pglogical`
+ - PostgreSQL 9.6: `sudo apt-get install postgresql-9.6-pglogical`
+ - PostgreSQL 10: `sudo apt-get install postgresql-10-pglogical`
+ - PostgreSQL 11: `sudo apt-get install postgresql-11-pglogical`
 
 ### From source code
 
