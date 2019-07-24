@@ -117,7 +117,7 @@ my $pgbench_handle = IPC::Run::start(
 # Wait for pgbench to connect
 $node_provider->poll_query_until('postgres',
 	q[SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench')])
-	or BAIL_OUT('subscription failed to reach "replicating" state');
+	or BAIL_OUT('pgbench process is not running currently');
 
 $node_provider->safe_psql('postgres', q[ALTER SYSTEM SET log_statement = 'ddl']);
 $node_provider->safe_psql('postgres', q[SELECT pg_reload_conf();]);
