@@ -27,6 +27,7 @@
 
 #include "pglogical_relcache.h"
 
+#define PGLOGICALRELATIONHASH_INITIAL_SIZE 128
 static HTAB *PGLogicalRelationHash = NULL;
 
 
@@ -265,8 +266,9 @@ pglogical_relcache_init(void)
 	hashflags |= HASH_BLOBS;
 #endif
 
-	PGLogicalRelationHash = hash_create("pglogical relation cache", 128, &ctl,
-										hashflags);
+	PGLogicalRelationHash = hash_create("pglogical relation cache",
+                                            PGLOGICALRELATIONHASH_INITIAL_SIZE,
+                                            &ctl, hashflags);
 
 	/* Watch for invalidation events. */
 	CacheRegisterRelcacheCallback(pglogical_relcache_invalidate_callback,

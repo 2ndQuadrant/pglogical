@@ -554,6 +554,9 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	}
 
 	PQclear(res);
+
+	elog(INFO, "finished synchronization of data for table %s.%s",
+		 remoterel->nspname, remoterel->relname);
 }
 
 /*
@@ -1693,7 +1696,7 @@ set_table_sync_status(Oid subid, const char *nspname, const char *relname,
  * in TopMemoryContext.
  */
 bool
-wait_for_sync_status_change(Oid subid, char *nspname, char *relname,
+wait_for_sync_status_change(Oid subid, const char *nspname, const char *relname,
 							char desired_state, XLogRecPtr *lsn)
 {
 	int rc;

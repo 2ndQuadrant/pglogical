@@ -101,6 +101,7 @@ typedef struct RepSetTableTuple
 #define Anum_repset_table_row_filter	4
 
 
+#define REPSETTABLEHASH_INITIAL_SIZE 128
 static HTAB *RepSetTableHash = NULL;
 
 /*
@@ -260,8 +261,9 @@ repset_relcache_init(void)
 	hashflags |= HASH_BLOBS;
 #endif
 
-	RepSetTableHash = hash_create("pglogical repset table cache", 128,
-									 &ctl, hashflags);
+	RepSetTableHash = hash_create("pglogical repset table cache",
+                                      REPSETTABLEHASH_INITIAL_SIZE, &ctl,
+                                      hashflags);
 
 	/*
 	 * Watch for invalidation events fired when the relcache changes.
@@ -299,8 +301,8 @@ get_node_replication_sets(Oid nodeid)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		RepSetTableTuple	*t = (RepSetTableTuple *) GETSTRUCT(tuple);
-		PGLogicalRepSet	    *repset = get_replication_set(t->setid);
+		RepSetTuple	*t = (RepSetTuple *) GETSTRUCT(tuple);
+		PGLogicalRepSet	    *repset = get_replication_set(t->id);
 		replication_sets = lappend(replication_sets, repset);
 	}
 
@@ -466,7 +468,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 				if (repset->replicate_delete)
 					entry->replicate_delete = true;
 
-				/* Uppdate replicated column map. */
+				/* Update replicated column map. */
 				d = heap_getattr(tuple, Anum_repset_table_att_list,
 								 repset_rel_desc, &isnull);
 				if (!isnull)
@@ -1130,7 +1132,7 @@ replication_set_add_seq(Oid setid, Oid seqoid)
 	if (!RelationNeedsWAL(targetrel))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("UNLOGGED and TEMP sequwnces cannot be replicated")));
+				 errmsg("UNLOGGED and TEMP sequences cannot be replicated")));
 
 	/* Ensure track the state of the sequence. */
 	pglogical_create_sequence_state_record(seqoid);
@@ -1387,7 +1389,7 @@ replication_set_from_tuple(HeapTuple tuple)
 }
 
 /*
- * Get (cached) oid of the replicatin set table.
+ * Get (cached) oid of the replication set table.
  */
 Oid
 get_replication_set_rel_oid(void)
@@ -1401,7 +1403,7 @@ get_replication_set_rel_oid(void)
 }
 
 /*
- * Get (cached) oid of the replicatin set table mapping table.
+ * Get (cached) oid of the replication set table mapping table.
  */
 Oid
 get_replication_set_table_rel_oid(void)
@@ -1415,7 +1417,7 @@ get_replication_set_table_rel_oid(void)
 }
 
 /*
- * Get (cached) oid of the replicatin set sequence mapping table.
+ * Get (cached) oid of the replication set sequence mapping table.
  */
 Oid
 get_replication_set_seq_rel_oid(void)

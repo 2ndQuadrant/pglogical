@@ -326,7 +326,7 @@ hook was successfully activated because no error is seen.
 
 Hook functions are called in the context of the backend doing logical decoding.
 Except for the startup hook, hooks see the catalog state as it was at the time
-the transaction or row change being examined was made. Access to to non-catalog
+the transaction or row change being examined was made. Access to non-catalog
 tables is unsafe unless they have the `user_catalog_table` reloption set. Among
 other things this means that it's not safe to invoke arbitrary functions,
 user-defined procedures, etc, from hooks.
