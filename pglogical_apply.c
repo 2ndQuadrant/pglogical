@@ -1496,7 +1496,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 #endif
 	MemoryContext oldcontext;
 	ErrorContextCallback errcallback;
-	const char       *cached_debug_query_string = NULL;
+	const char       *save_debug_query_string = NULL;
 
 	oldcontext = MemoryContextSwitchTo(MessageContext);
 
@@ -1508,7 +1508,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	if (!debug_query_string)
 		debug_query_string = cmdstr;
 	else
-		cached_debug_query_string = debug_query_string;
+		save_debug_query_string = debug_query_string;
 
 	/*
 	 * XL distributes individual statements using just executing them as plain
@@ -1604,7 +1604,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	if (error_context_stack == &errcallback)
 		error_context_stack = errcallback.previous;
 
-	debug_query_string = cached_debug_query_string;
+	debug_query_string = save_debug_query_string;
 }
 
 /*
