@@ -482,11 +482,13 @@ void
 pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 							XLogRecPtr start_pos, const char *forward_origins,
 							const char *replication_sets,
-							const char *replicate_only_table)
+							const char *replicate_only_table,
+							bool force_text_transfer)
 {
 	StringInfoData	command;
 	PGresult	   *res;
 	char		   *sqlstate;
+	const char	   *want_binary = (force_text_transfer ? "0" : "1");
 
 	initStringInfo(&command);
 	appendStringInfo(&command, "START_REPLICATION SLOT \"%s\" LOGICAL %X/%X (",
@@ -502,8 +504,8 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 	appendStringInfo(&command, ", startup_params_format '1'");
 
 	/* Binary protocol compatibility. */
-	appendStringInfo(&command, ", \"binary.want_internal_basetypes\" '1'");
-	appendStringInfo(&command, ", \"binary.want_binary_basetypes\" '1'");
+	appendStringInfo(&command, ", \"binary.want_internal_basetypes\" '%s'", want_binary);
+	appendStringInfo(&command, ", \"binary.want_binary_basetypes\" '%s'", want_binary);
 	appendStringInfo(&command, ", \"binary.basetypes_major_version\" '%u'",
 					 PG_VERSION_NUM/100);
 	appendStringInfo(&command, ", \"binary.sizeof_datum\" '%zu'",

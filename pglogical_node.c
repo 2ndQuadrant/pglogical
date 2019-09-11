@@ -87,7 +87,7 @@ typedef struct SubscriptionTuple
 	NameData	sub_slot_name;
 } SubscriptionTuple;
 
-#define Natts_subscription			11
+#define Natts_subscription			12
 #define Anum_sub_id					1
 #define Anum_sub_name				2
 #define Anum_sub_origin				3
@@ -99,6 +99,7 @@ typedef struct SubscriptionTuple
 #define Anum_sub_replication_sets	9
 #define Anum_sub_forward_origins	10
 #define Anum_sub_apply_delay		11
+#define Anum_sub_force_text_transfer 12
 
 /*
  * We impose same validation rules as replication slot name validation does.
@@ -740,6 +741,8 @@ create_subscription(PGLogicalSubscription *sub)
 	else
 		nulls[Anum_sub_apply_delay - 1] = true;
 
+	values[Anum_sub_force_text_transfer - 1] = BoolGetDatum(sub->force_text_transfer);
+
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
 	/* Insert the tuple to the catalog. */
@@ -823,6 +826,7 @@ alter_subscription(PGLogicalSubscription *sub)
 		nulls[Anum_sub_forward_origins - 1] = true;
 
 	values[Anum_sub_apply_delay - 1] = IntervalPGetDatum(sub->apply_delay);
+	values[Anum_sub_force_text_transfer - 1] = BoolGetDatum(sub->force_text_transfer);
 
 	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
@@ -925,6 +929,13 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 		sub->apply_delay = NULL;
 	else
 		sub->apply_delay = DatumGetIntervalP(d);
+
+	/* Get force_text_transfer. */
+	d = heap_getattr(tuple, Anum_sub_force_text_transfer, desc, &isnull);
+	if (isnull)
+		sub->force_text_transfer = false;
+	else
+		sub->force_text_transfer = DatumGetBool(d);
 
 	return sub;
 }

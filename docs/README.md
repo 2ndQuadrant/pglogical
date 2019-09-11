@@ -295,6 +295,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
     replication between the nodes), or "{all}" which means replicate all
     changes no matter what is their origin, default is "{all}"
   - `apply_delay` - how much to delay replication, default is 0 seconds
+  - `force_text_transfer` - force the provider to replicate all columns
+    using a text representation (which is slower, but may be used to
+    change the type of a replicated column on the subscriber), default
+    is false
 
   The `subscription_name` is used as `application_name` by the replication
   connection. This means that it's visible in the `pg_stat_replication`

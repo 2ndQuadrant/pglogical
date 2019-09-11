@@ -1265,7 +1265,8 @@ pglogical_sync_main(Datum main_arg)
 	pglogical_identify_system(streamConn, NULL, NULL, NULL, NULL);
 
 	pglogical_start_replication(streamConn, MySubscription->slot_name,
-								status_lsn, "all", NULL, tablename);
+								status_lsn, "all", NULL, tablename,
+								MySubscription->force_text_transfer);
 
 	/* Leave it to standard apply code to do the replication. */
 	apply_work(streamConn);
