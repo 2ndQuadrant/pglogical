@@ -1475,8 +1475,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		appendStringInfo(&json, ",\"table_name\": ");
 		escape_json(&json, reltarget);
 		appendStringInfo(&json, "}");
-
-		/* Queue the truncate for replication. */
+		/* Queue the synchronize request for replication. */
 		queue_message(list_make1(repset->name), GetUserId(),
 					  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
 	}
