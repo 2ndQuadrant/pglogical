@@ -1,0 +1,124 @@
+-- This should be done with pg_regress's --create-role option
+-- but it's blocked by bug 37906
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+SET client_min_messages = 'warning';
+CREATE SCHEMA relations_only;
+CREATE TABLE relations_only.rel_only(id int primary key);
+CREATE TABLE relations_only.rel_seq(id serial primary key);
+CREATE SEQUENCE relations_only.seq_only;
+CREATE TABLE relations_only.no_rel_only(id int primary key);
+CREATE TABLE relations_only.no_rel_seq(id serial primary key);
+CREATE SEQUENCE relations_only.no_seq_only;
+SELECT * FROM pglogical.create_replication_set('repset_relations_only');
+ create_replication_set 
+------------------------
+             3691617396
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_relations_only', 'relations_only.rel_only', true);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('repset_relations_only', 'relations_only.rel_seq', true);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_sequence('repset_relations_only', 'relations_only.seq_only', true);
+ replication_set_add_sequence 
+------------------------------
+ t
+(1 row)
+
+-- test adding a sequence with add_all_sequences (special case to get schema and
+-- relation names)
+CREATE SEQUENCE test_sequence;
+SELECT * FROM pglogical.replication_set_add_all_sequences('repset_relations_only', '{public}');
+ replication_set_add_all_sequences 
+-----------------------------------
+ t
+(1 row)
+
+\c :subscriber_dsn
+SET client_min_messages = 'warning';
+CREATE SCHEMA relations_only;
+BEGIN;
+SELECT * FROM pglogical.create_subscription(
+    subscription_name := 'test_subscription_relations_only',
+    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
+	synchronize_structure := 'relations_only',
+	forward_origins := '{}',
+        replication_sets := '{repset_relations_only}');
+ create_subscription 
+---------------------
+          3241649517
+(1 row)
+
+COMMIT;
+BEGIN;
+SET LOCAL statement_timeout = '30s';
+SELECT pglogical.wait_for_subscription_sync_complete('test_subscription_relations_only');
+ wait_for_subscription_sync_complete 
+-------------------------------------
+ 
+(1 row)
+
+COMMIT;
+select table_name from information_schema.tables where table_schema = 'relations_only' order by 1;
+ table_name 
+------------
+ rel_only
+ rel_seq
+(2 rows)
+
+select sequence_name from information_schema.sequences where sequence_schema = 'relations_only' order by 1;
+ sequence_name  
+----------------
+ rel_seq_id_seq
+ seq_only
+(2 rows)
+
+select sequence_name from information_schema.sequences where sequence_name = 'test_sequence' order by 1;
+ sequence_name 
+---------------
+ test_sequence
+(1 row)
+
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |  sync_nspname  | sync_relname | ?column? 
+-----------+------------+----------------+--------------+----------
+ f         | 3241649517 | relations_only | rel_only     | t
+ f         | 3241649517 | relations_only | rel_seq      | t
+ l         | 3241649517 |                |              | t
+ f         | 3848008564 |                |              | t
+(4 rows)
+
+SELECT * FROM pglogical.drop_subscription('test_subscription_relations_only');
+ drop_subscription 
+-------------------
+                 1
+(1 row)
+
+DROP SCHEMA relations_only CASCADE;
+DROP SEQUENCE test_sequence CASCADE;
+\c :provider_dsn
+SELECT * FROM pglogical.drop_replication_set('repset_relations_only');
+ drop_replication_set 
+----------------------
+ t
+(1 row)
+
+DROP SCHEMA relations_only CASCADE;
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to table relations_only.rel_only
+drop cascades to table relations_only.rel_seq
+drop cascades to sequence relations_only.seq_only
+drop cascades to table relations_only.no_rel_only
+drop cascades to table relations_only.no_rel_seq
+drop cascades to sequence relations_only.no_seq_only
+DROP SEQUENCE test_sequence CASCADE;

@@ -1101,7 +1101,7 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 					  "subscription_name := %s, provider_dsn := %s, "
 					  "replication_sets := %s, "
 					  "apply_delay := '%d seconds'::interval, "
-					  "synchronize_structure := false, "
+					  "synchronize_structure := 'none', "
 					  "synchronize_data := false);",
 					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
 					  PQescapeLiteral(conn, provider_dsn, strlen(provider_dsn)),

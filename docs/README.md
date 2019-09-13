@@ -272,10 +272,11 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 ### Subscription management
 
 - `pglogical.create_subscription(subscription_name name, provider_dsn text,
-  replication_sets text[], synchronize_structure boolean,
+  replication_sets text[], synchronize_structure text(none,all,relations_only),
   synchronize_data boolean, forward_origins text[], apply_delay interval)`
-  Creates a subscription from current node to the provider node. Command does
-  not block, just initiates the action.
+  Creates a subscription from current node to the provider node, with option to
+  synchronize part or all the structure. Command does not block, just initiates
+  the action.
 
   Parameters:
   - `subscription_name` - name of the subscription, must be unique
@@ -283,7 +284,9 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `replication_sets` - array of replication sets to subscribe to, these must
     already exist, default is "{default,default_insert_only,ddl_sql}"
   - `synchronize_structure` - specifies if to synchronize structure from
-    provider to the subscriber, default false
+    provider to the subscriber, default `none`. `all` for all objects,
+    `relations_only` for replicated tables and sequences only (in this last case
+    schemas themselves are not created on the subscriber).
   - `synchronize_data` - specifies if to synchronize data from provider to
     the subscriber, default true
   - `forward_origins` - array of origin names to forward, currently only
@@ -298,6 +301,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   monitoring view. It can also be used in `synchronous_standby_names` when
   pglogical is used as part of
   [synchronous replication](#synchronous-replication) setup.
+
+  Pglogical currently executes `pg_dump` with a list of `-t TABLE/SEQUENCE`
+  parameter to synchronize relations only. The limitation of the system apply
+  and can limit the length of the command line.
 
   Use `pglogical.wait_for_subscription_sync_complete(sub_name)` to wait for the
   subscription to asynchronously start replicating and complete any needed
