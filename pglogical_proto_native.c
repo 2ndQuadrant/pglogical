@@ -52,12 +52,10 @@ static void pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
  */
 void
 pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
-					Bitmapset *att_list)
+					Bitmapset *att_list, const char *nsptarget, const char *reltarget)
 {
-	char	   *nspname;
-	uint8		nspnamelen;
-	const char *relname;
-	uint8		relnamelen;
+	uint8		nsptargetlen;
+	uint8		reltargetlen;
 	uint8		flags = 0;
 
 	pq_sendbyte(out, 'R');		/* sending RELATION */
@@ -68,25 +66,16 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel,
 	/* use Oid as relation identifier */
 	pq_sendint(out, RelationGetRelid(rel), 4);
 
-	nspname = get_namespace_name(rel->rd_rel->relnamespace);
-	if (nspname == NULL)
-		elog(ERROR, "cache lookup failed for namespace %u",
-			 rel->rd_rel->relnamespace);
-	nspnamelen = strlen(nspname) + 1;
+	nsptargetlen = strlen(nsptarget) + 1;
+	pq_sendbyte(out, nsptargetlen);		/* schema name length */
+	pq_sendbytes(out, nsptarget, nsptargetlen);
 
-	relname = NameStr(rel->rd_rel->relname);
-	relnamelen = strlen(relname) + 1;
-
-	pq_sendbyte(out, nspnamelen);		/* schema name length */
-	pq_sendbytes(out, nspname, nspnamelen);
-
-	pq_sendbyte(out, relnamelen);		/* table name length */
-	pq_sendbytes(out, relname, relnamelen);
+	reltargetlen = strlen(reltarget) + 1;
+	pq_sendbyte(out, reltargetlen);		/* table name length */
+	pq_sendbytes(out, reltarget, reltargetlen);
 
 	/* send the attribute info */
 	pglogical_write_attrs(out, rel, att_list);
-
-	pfree(nspname);
 }
 
 /*

@@ -17,7 +17,7 @@
 
 extern List *pg_logical_get_remote_repset_tables(PGconn *conn,
 									List *replication_sets);
-extern PGLogicalRemoteRel *pg_logical_get_remote_repset_table(PGconn *conn,
+extern List *pg_logical_get_remote_repset_table(PGconn *conn,
 								  RangeVar *rv, List *replication_sets);
 extern List *pg_logical_get_remote_repset_sequences(PGconn *conn,
 									List *replication_sets);

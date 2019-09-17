@@ -78,11 +78,15 @@ typedef struct RepSetSeqTuple
 {
 	Oid			id;
 	Oid			seqoid;
+	NameData	nsptarget;
+	NameData	seqtarget;
 } RepSetSeqTuple;
 
-#define Natts_repset_seq				2
+#define Natts_repset_seq				4
 #define Anum_repset_seq_setid			1
 #define Anum_repset_seq_seqoid			2
+#define Anum_repset_seq_nsptarget		3
+#define Anum_repset_seq_seqtarget		4
 
 typedef struct RepSetTableTuple
 {
@@ -91,14 +95,18 @@ typedef struct RepSetTableTuple
 #if 0 /* Only for info here. */
 	text		att_list[1];
 	text		row_filter;
+	NameData	nsptarget;
+	NameData	reltarget;
 #endif
 } RepSetTableTuple;
 
-#define Natts_repset_table				4
+#define Natts_repset_table				6
 #define Anum_repset_table_setid			1
 #define Anum_repset_table_reloid		2
 #define Anum_repset_table_att_list	3
 #define Anum_repset_table_row_filter	4
+#define Anum_repset_table_nsptarget		5
+#define Anum_repset_table_reltarget		6
 
 
 #define REPSETTABLEHASH_INITIAL_SIZE 128
@@ -216,6 +224,8 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 			if (list_length(entry->row_filter))
 				list_free_deep(entry->row_filter);
 			entry->row_filter = NIL;
+			entry->nsptarget = NULL;
+			entry->reltarget = NULL;
 		}
 	}
 	else if ((entry = hash_search(RepSetTableHash, &reloid,
@@ -228,6 +238,8 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 		if (list_length(entry->row_filter))
 			list_free_deep(entry->row_filter);
 		entry->row_filter = NIL;
+		entry->nsptarget = NULL;
+		entry->reltarget = NULL;
 	}
 }
 
@@ -412,6 +424,8 @@ get_table_replication_info(Oid nodeid, Relation table,
 	entry->replicate_delete = false;
 	entry->att_list = NULL;
 	entry->row_filter = NIL;
+	entry->nsptarget = get_namespace_name(RelationGetNamespace(table));
+	entry->reltarget = RelationGetRelationName(table);
 
 	/*
 	 * Check for match between table's replication sets and the subscription
@@ -503,6 +517,16 @@ get_table_replication_info(Oid nodeid, Relation table,
 					entry->row_filter = lappend(entry->row_filter, row_filter);
 					MemoryContextSwitchTo(olctx);
 				}
+
+                /* Add namespace target. NOT NULL */
+				d = heap_getattr(tuple, Anum_repset_table_nsptarget,
+								 repset_rel_desc, &isnull);
+                entry->nsptarget = pstrdup(NameStr(*DatumGetName(d)));
+
+				/* Add relation target. NOT NULL */
+				d = heap_getattr(tuple, Anum_repset_table_reltarget,
+								 repset_rel_desc, &isnull);
+                entry->reltarget = pstrdup(NameStr(*DatumGetName(d)));
 			}
 		}
 	}
@@ -512,6 +536,147 @@ get_table_replication_info(Oid nodeid, Relation table,
 	entry->isvalid = true;
 
 	return entry;
+}
+
+List *
+get_table_replication_info_by_target(Oid nodeid, char *nsptarget, char *reltarget,
+						   List *subs_replication_sets)
+{
+	RangeVar	   *rv;
+	Oid			repset_reloid;
+	Relation		repset_rel;
+	ScanKeyData		key[2];
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	List			*tablesinfo = NIL;
+	TupleDesc		table_desc,
+				repset_rel_desc;
+
+    // XXX use cache like in the previous function ?
+
+    /*
+	 * Check for match between table's replication sets and the subscription
+	 * list of replication sets that was given as parameter.
+	 *
+	 * Note that tables can have no replication sets. This will be commonly
+	 * true for example for internal tables which are created during table
+	 * rewrites, so if we'll want to support replicating those, we'll have
+	 * to have special handling for them.
+	 */
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
+	repset_reloid = RangeVarGetRelid(rv, RowExclusiveLock, true);
+	/* Backwards compat with 1.1/1.2 where the relation name was different. */
+	if (!OidIsValid(repset_reloid))
+	{
+		rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_RELATION, -1);
+		repset_reloid = RangeVarGetRelid(rv, RowExclusiveLock, true);
+		if (!OidIsValid(repset_reloid))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_TABLE),
+					 errmsg("relation \"%s.%s\" does not exist",
+							rv->schemaname, rv->relname)));
+	}
+	repset_rel = heap_open(repset_reloid, NoLock);
+	repset_rel_desc = RelationGetDescr(repset_rel);
+
+	ScanKeyInit(&key[0],
+				Anum_repset_table_nsptarget,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(nsptarget));
+	ScanKeyInit(&key[1],
+				Anum_repset_table_reltarget,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(reltarget));
+
+	/* TODO: use index */
+	scan = systable_beginscan(repset_rel, 0, true, NULL, 2, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+      PGLogicalTableRepInfo *entry = palloc0(sizeof(PGLogicalTableRepInfo));
+		RepSetTableTuple   *t = (RepSetTableTuple *) GETSTRUCT(tuple);
+		ListCell		   *lc;
+
+        /* Fill the entry */
+        entry->reloid = InvalidOid;
+        entry->replicate_insert = false;
+        entry->replicate_update = false;
+        entry->replicate_delete = false;
+        entry->att_list = NULL;
+        entry->row_filter = NIL;
+        entry->nsptarget = nsptarget;
+        entry->reltarget = reltarget;
+        entry->isvalid = false;
+
+		foreach (lc, subs_replication_sets)
+		{
+			PGLogicalRepSet	   *repset = lfirst(lc);
+			bool				isnull;
+			Datum				d;
+
+			if (t->setid == repset->id)
+			{
+			    /* Update the OID */
+			    entry->reloid = t->reloid;
+
+				/* Update the action filter. */
+				if (repset->replicate_insert)
+					entry->replicate_insert = true;
+				if (repset->replicate_update)
+					entry->replicate_update = true;
+				if (repset->replicate_delete)
+					entry->replicate_delete = true;
+
+				/* Update replicated column map. */
+				d = heap_getattr(tuple, Anum_repset_table_att_list,
+								 repset_rel_desc, &isnull);
+				if (!isnull)
+				{
+					Datum	   *elems;
+					int			nelems, i;
+                    Relation	rel;
+
+					deconstruct_array(DatumGetArrayTypePCopy(d),
+									  TEXTOID, -1, false, 'i',
+									  &elems, NULL, &nelems);
+
+					rel = heap_open(entry->reloid, AccessShareLock);
+					table_desc = RelationGetDescr(rel);
+					for (i = 0; i < nelems; i++)
+					{
+						const char *attname = TextDatumGetCString(elems[i]);
+						int			attnum = get_att_num_by_name(table_desc,
+																 attname);
+
+						MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
+						entry->att_list = bms_add_member(entry->att_list,
+								attnum - FirstLowInvalidHeapAttributeNumber);
+						MemoryContextSwitchTo(olctx);
+					}
+                    heap_close(rel, AccessShareLock);
+				}
+
+				/* Add row filter if any. */
+				d = heap_getattr(tuple, Anum_repset_table_row_filter,
+								 repset_rel_desc, &isnull);
+				if (!isnull)
+				{
+					MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
+					Node   *row_filter = stringToNode(TextDatumGetCString(d));
+					entry->row_filter = lappend(entry->row_filter, row_filter);
+					MemoryContextSwitchTo(olctx);
+				}
+			}
+		}
+        if (entry->reloid == InvalidOid)
+          continue;
+        entry->isvalid = true;
+        tablesinfo = lappend(tablesinfo, entry);
+	}
+
+	systable_endscan(scan);
+	heap_close(repset_rel, RowExclusiveLock);
+    return tablesinfo;
 }
 
 List *
@@ -637,6 +802,113 @@ get_seq_replication_sets(Oid nodeid, Oid seqoid)
 	heap_close(rel, RowExclusiveLock);
 
 	return replication_sets;
+}
+
+List *
+get_seq_replication_sets_targets(Oid nodeid, Oid seqoid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	ScanKeyData		key[1];
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	List		   *seq_targets = NIL;
+
+	Assert(IsTransactionState());
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+
+	ScanKeyInit(&key[0],
+				Anum_repset_seq_seqoid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(seqoid));
+
+	/* TODO: use index */
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		RepSetSeqTuple	  *t = (RepSetSeqTuple *) GETSTRUCT(tuple);
+		PGLogicalRepSet	  *repset = get_replication_set(t->id);
+		PGLogicalRepSetSeq  *seqtarget;
+
+		if (repset->nodeid != nodeid)
+			continue;
+
+		seqtarget = (PGLogicalRepSetSeq *) palloc(sizeof(PGLogicalRepSetSeq));
+		seqtarget->seqoid = t->seqoid;
+		seqtarget->nsptarget = pstrdup(NameStr(t->nsptarget));
+		seqtarget->seqtarget = pstrdup(NameStr(t->seqtarget));
+		seqtarget->repset_name = pstrdup(repset->name);
+		seq_targets = lappend(seq_targets, seqtarget);
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return seq_targets;
+}
+
+List *
+get_table_replication_sets_targets(Oid nodeid, Oid reloid)
+{
+	RangeVar	   *rv;
+	Relation		rel;
+	ScanKeyData		key[1];
+	SysScanDesc		scan;
+	HeapTuple		tuple;
+	List		   *rel_targets = NIL;
+	TupleDesc		rel_desc;
+
+	Assert(IsTransactionState());
+
+	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
+	rel = heap_openrv(rv, RowExclusiveLock);
+	rel_desc = RelationGetDescr(rel);
+
+	ScanKeyInit(&key[0],
+				Anum_repset_table_reloid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(reloid));
+
+	/* TODO: use index */
+	scan = systable_beginscan(rel, 0, true, NULL, 1, key);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+		RepSetTableTuple	*t = (RepSetTableTuple *) GETSTRUCT(tuple);
+		PGLogicalRepSet	    *repset = get_replication_set(t->setid);
+		PGLogicalRepSetRel  *reltarget = (PGLogicalRepSetRel *) palloc(sizeof(PGLogicalRepSetRel));
+		bool				isnull;
+		Datum				d;
+
+		if (repset->nodeid != nodeid)
+			continue;
+		reltarget->reloid = t->reloid;
+
+		/* Add namespace target. */
+		d = heap_getattr(tuple, Anum_repset_table_nsptarget,
+						 rel_desc, &isnull);
+		if (isnull)
+			elog(ERROR, "nsptarget is NULL!");
+		reltarget->nsptarget = pstrdup(NameStr(*DatumGetName(d)));
+
+		/* Add relation target. */
+		d = heap_getattr(tuple, Anum_repset_table_reltarget,
+						 rel_desc, &isnull);
+		if (isnull)
+			elog(ERROR, "reltarget is NULL!");
+		reltarget->reltarget = pstrdup(NameStr(*DatumGetName(d)));
+
+		reltarget->repset_name = pstrdup(repset->name);
+		rel_targets = lappend(rel_targets, reltarget);
+	}
+
+	systable_endscan(scan);
+	heap_close(rel, RowExclusiveLock);
+
+	return rel_targets;
 }
 
 /*
@@ -1014,13 +1286,16 @@ drop_node_replication_sets(Oid nodeid)
  */
 void
 replication_set_add_table(Oid setid, Oid reloid, List *att_list,
-						  Node *row_filter)
+						  Node *row_filter, char *nsptarget, char *reltarget)
 {
 	RangeVar   *rv;
 	Relation	rel;
 	Relation	targetrel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
+	SysScanDesc scan;
+	ScanKeyData key[3];
+	HeapTuple	tuple;
 	Datum		values[Natts_repset_table];
 	bool		nulls[Natts_repset_table];
 	PGLogicalRepSet *repset = get_replication_set(setid);
@@ -1053,10 +1328,43 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 
 	heap_close(targetrel, NoLock);
 
+	if (!nsptarget)
+			nsptarget = get_namespace_name(RelationGetNamespace(targetrel));
+	if (!reltarget)
+			reltarget = RelationGetRelationName(targetrel);
+
 	/* Open the catalog. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
+
+	/* Check that another reloid does not exists with the same targets. */
+	ScanKeyInit(&key[0],
+				Anum_repset_table_setid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(setid));
+	ScanKeyInit(&key[1],
+				Anum_repset_table_nsptarget,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(nsptarget));
+	ScanKeyInit(&key[2],
+				Anum_repset_table_reltarget,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(reltarget));
+	scan = systable_beginscan(rel, 0, false, NULL, 3, key);
+
+	/* And if it does ERROR out. */
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+			RepSetTableTuple	   *r = (RepSetTableTuple *) GETSTRUCT(tuple);
+			if (r->reloid == reloid)
+					continue;
+			elog(ERROR,"Table %s.%s already replicated from %s.%s in the same set, cannot add another source",
+				 nsptarget, reltarget,
+				 get_namespace_name(RelationGetNamespace(targetrel)),
+				 RelationGetRelationName(targetrel));
+	}
+	systable_endscan(scan);
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
@@ -1075,6 +1383,20 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 			CStringGetTextDatum(nodeToString(row_filter));
 	else
 		nulls[Anum_repset_table_row_filter - 1] = true;
+
+	if (nsptarget)
+		values[Anum_repset_table_nsptarget - 1] =
+			CStringGetDatum(nsptarget);
+	else
+		values[Anum_repset_table_nsptarget - 1] =
+			CStringGetDatum(get_namespace_name(RelationGetNamespace(targetrel)));
+
+	if (reltarget)
+		values[Anum_repset_table_reltarget - 1] =
+			CStringGetDatum(reltarget);
+	else
+		values[Anum_repset_table_reltarget - 1] =
+			CStringGetDatum(RelationGetRelationName(targetrel));
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -1112,13 +1434,16 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
  * Insert new replication set / sequence mapping.
  */
 void
-replication_set_add_seq(Oid setid, Oid seqoid)
+replication_set_add_seq(Oid setid, Oid seqoid, char *nsptarget, char *reltarget)
 {
 	RangeVar   *rv;
 	Relation	rel;
 	Relation	targetrel;
 	TupleDesc	tupDesc;
 	HeapTuple	tup;
+	SysScanDesc scan;
+	ScanKeyData key[3];
+	HeapTuple	tuple;
 	Datum		values[Natts_repset_table];
 	bool		nulls[Natts_repset_table];
 	PGLogicalRepSet *repset = get_replication_set(setid);
@@ -1139,16 +1464,58 @@ replication_set_add_seq(Oid setid, Oid seqoid)
 
 	heap_close(targetrel, NoLock);
 
+	if (!nsptarget)
+			nsptarget = get_namespace_name(RelationGetNamespace(targetrel));
+	if (!reltarget)
+			reltarget = RelationGetRelationName(targetrel);
+
 	/* Open the catalog. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
+
+	/* Check that another seqoid does not exists with the same targets. */
+	ScanKeyInit(&key[0],
+				Anum_repset_seq_nsptarget,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(nsptarget));
+	ScanKeyInit(&key[1],
+				Anum_repset_seq_seqtarget,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum(reltarget));
+	scan = systable_beginscan(rel, 0, false, NULL, 2, key);
+
+	/* And if it does ERROR out. */
+	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
+	{
+			RepSetSeqTuple	   *s = (RepSetSeqTuple *) GETSTRUCT(tuple);
+			if (s->seqoid == seqoid)
+					continue;
+			elog(ERROR,"Sequence %s.%s already replicated from %s.%s, cannot add another source",
+				 nsptarget, reltarget,
+				 get_namespace_name(RelationGetNamespace(targetrel)),
+				 RelationGetRelationName(targetrel));
+	}
 
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
 	values[Anum_repset_seq_setid - 1] = ObjectIdGetDatum(repset->id);
 	values[Anum_repset_seq_seqoid - 1] = ObjectIdGetDatum(seqoid);
+
+	if (nsptarget)
+		values[Anum_repset_seq_nsptarget - 1] =
+			CStringGetDatum(nsptarget);
+	else
+		values[Anum_repset_seq_nsptarget - 1] =
+			CStringGetDatum(get_namespace_name(RelationGetNamespace(targetrel)));
+
+	if (reltarget)
+		values[Anum_repset_seq_seqtarget - 1] =
+			CStringGetDatum(reltarget);
+	else
+		values[Anum_repset_seq_seqtarget - 1] =
+			CStringGetDatum(RelationGetRelationName(targetrel));
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -1169,6 +1536,8 @@ replication_set_add_seq(Oid setid, Oid seqoid)
 
 	pglogical_recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
 
+	/* Cleanup. */
+	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();

@@ -26,6 +26,14 @@ typedef struct PGLogicalRepSet
 	bool		replicate_truncate;
 } PGLogicalRepSet;
 
+typedef struct PGLogicalRepSetSeq
+{
+	Oid			seqoid;
+	char		*nsptarget;
+	char		*seqtarget;
+	char        *repset_name;
+} PGLogicalRepSetSeq;
+
 #define DEFAULT_REPSET_NAME "default"
 #define DEFAULT_INSONLY_REPSET_NAME "default_insert_only"
 #define DDL_SQL_REPSET_NAME "ddl_sql"
@@ -46,19 +54,34 @@ typedef struct PGLogicalTableRepInfo
 										   otherwise each replicated column
 										   is a member */
 	List		   *row_filter;			/* compiled row_filter nodes */
+
+	char		   *nsptarget;			/* namespace name to expose */
+	char		   *reltarget;			/* relation name to expose */
 } PGLogicalTableRepInfo;
+
+typedef struct PGLogicalRepSetRel
+{
+	Oid		reloid;
+	char	*nsptarget;
+	char	*reltarget;
+	char	*repset_name;
+} PGLogicalRepSetRel;
+
 
 extern PGLogicalRepSet *get_replication_set(Oid setid);
 extern PGLogicalRepSet *get_replication_set_by_name(Oid nodeid,
 													const char *setname,
 													bool missing_ok);
 
+extern List *get_table_replication_sets_targets(Oid nodeid, Oid reloid);
 extern List *get_node_replication_sets(Oid nodeid);
 extern List *get_replication_sets(Oid nodeid, List *replication_set_names,
 								  bool missing_ok);
-
 extern PGLogicalTableRepInfo *get_table_replication_info(Oid nodeid,
 						   Relation table, List *subs_replication_sets);
+
+extern List *get_table_replication_info_by_target(Oid nodeid,
+						   char *nsptarget, char *reltarget, List *subs_replication_sets);
 
 extern void create_replication_set(PGLogicalRepSet *repset);
 extern void alter_replication_set(PGLogicalRepSet *repset);
@@ -66,8 +89,10 @@ extern void drop_replication_set(Oid setid);
 extern void drop_node_replication_sets(Oid nodeid);
 
 extern void replication_set_add_table(Oid setid, Oid reloid,
-						  List *att_list, Node *row_filter);
-extern void replication_set_add_seq(Oid setid, Oid seqoid);
+						  List *att_list, Node *row_filter,
+						  char *nsptarget, char *reltarget);
+extern void replication_set_add_seq(Oid setid, Oid seqoid,
+						  char *nsptarget, char *seqtarget);
 extern List *replication_set_get_tables(Oid setid);
 extern List *replication_set_get_seqs(Oid setid);
 extern PGDLLEXPORT void replication_set_remove_table(Oid setid, Oid reloid,
@@ -77,6 +102,8 @@ extern PGDLLEXPORT void replication_set_remove_seq(Oid setid, Oid reloid,
 
 extern List *get_table_replication_sets(Oid nodeid, Oid reloid);
 extern List *get_seq_replication_sets(Oid nodeid, Oid seqoid);
+extern List *get_table_replication_sets_targets(Oid nodeid, Oid reloid);
+extern List *get_seq_replication_sets_targets(Oid nodeid, Oid seqoid);
 
 extern PGLogicalRepSet *replication_set_from_tuple(HeapTuple tuple);
 

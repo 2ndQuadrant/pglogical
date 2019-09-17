@@ -536,10 +536,10 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	/* Build COPY FROM query. */
 	resetStringInfo(&query);
 	appendStringInfo(&query, "COPY %s.%s ",
-					 PQescapeIdentifier(origin_conn, remoterel->nspname,
-										strlen(remoterel->nspname)),
-					 PQescapeIdentifier(origin_conn, remoterel->relname,
-										strlen(remoterel->relname)));
+					 PQescapeIdentifier(target_conn, remoterel->nsptarget,
+										strlen(remoterel->nsptarget)),
+					 PQescapeIdentifier(target_conn, remoterel->reltarget,
+										strlen(remoterel->reltarget)));
 	if (list_length(attnamelist))
 		appendStringInfo(&query, "(%s) ", attlist.data);
 	appendStringInfoString(&query, "FROM stdin");
@@ -588,7 +588,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	PQclear(res);
 
 	elog(INFO, "finished synchronization of data for table %s.%s",
-		 remoterel->nspname, remoterel->relname);
+		 remoterel->nsptarget, remoterel->reltarget);
 }
 
 /*
@@ -621,10 +621,10 @@ list_replication_sets_objects(const char *dsn, const char *name, const char *sna
 
 		initStringInfo(&object);
 		appendStringInfo(&object, "%s.%s",
-						 PQescapeLiteral(origin_conn, remoterel->nspname,
-											strlen(remoterel->nspname)),
-						 PQescapeLiteral(origin_conn, remoterel->relname,
-											strlen(remoterel->relname)));
+						 PQescapeLiteral(origin_conn, remoterel->nsptarget,
+											strlen(remoterel->nsptarget)),
+						 PQescapeLiteral(origin_conn, remoterel->reltarget,
+											strlen(remoterel->reltarget)));
 		res = lappend(res, object.data);
 
 		/* XXX probably not required here */
@@ -672,7 +672,7 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
-	ListCell   *lc;
+	ListCell   *lc, *lcr;
 
 	/* Connect to origin node. */
 	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
@@ -686,12 +686,14 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 	foreach (lc, tables)
 	{
 		RangeVar	*rv = lfirst(lc);
-		PGLogicalRemoteRel	*remoterel;
-
-		remoterel = pg_logical_get_remote_repset_table(origin_conn, rv,
+        List		*remoterels = NIL;
+		remoterels = pg_logical_get_remote_repset_table(origin_conn, rv,
 													   replication_sets);
-
-		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
+        foreach(lcr, remoterels)
+        {
+          PGLogicalRemoteRel	*remoterel = lfirst(lcr);
+          copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
+        }
 
 		CHECK_FOR_INTERRUPTS();
 	}
@@ -951,12 +953,13 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 						PGLogicalSyncStatus	   *oldsync;
 
 						oldsync = get_table_sync_status(sub->id,
-														remoterel->nspname,
-														remoterel->relname, true);
+														remoterel->nsptarget,
+														remoterel->reltarget,
+														true);
 						if (oldsync)
 						{
-							set_table_sync_status(sub->id, remoterel->nspname,
-												  remoterel->relname,
+							set_table_sync_status(sub->id, remoterel->nsptarget,
+												  remoterel->reltarget,
 												  SYNC_STATUS_READY,
 												  lsn);
 						}
@@ -966,8 +969,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 							newsync.kind = SYNC_KIND_FULL;
 							newsync.subid = sub->id;
-							namestrcpy(&newsync.nspname, remoterel->nspname);
-							namestrcpy(&newsync.relname, remoterel->relname);
+							namestrcpy(&newsync.nspname, remoterel->nsptarget);
+							namestrcpy(&newsync.relname, remoterel->reltarget);
 							newsync.status = SYNC_STATUS_READY;
 							newsync.statuslsn = lsn;
 							create_local_sync_status(&newsync);
@@ -1354,7 +1357,6 @@ drop_subscription_sync_status(Oid subid)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
-
 }
 
 static PGLogicalSyncStatus *
@@ -1527,7 +1529,6 @@ drop_table_sync_status(const char *nspname, const char *relname)
 	/* Cleanup. */
 	systable_endscan(scan);
 	heap_close(rel, RowExclusiveLock);
-
 }
 
 /* Remove table sync status record from catalog. */

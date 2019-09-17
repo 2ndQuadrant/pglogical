@@ -189,35 +189,33 @@ pglogical_finish_truncate(void)
 	foreach (tlc, pglogical_truncated_tables)
 	{
 		Oid			reloid = lfirst_oid(tlc);
-		char	   *nspname;
-		char	   *relname;
-		List	   *repsets;
-		StringInfoData	json;
+		List		*reltargets;
+		ListCell	*lc;
 
-		/* Format the query. */
-		nspname = get_namespace_name(get_rel_namespace(reloid));
-		relname = get_rel_name(reloid);
+		/* And now prepare the messages for the queue */
+		reltargets = get_table_replication_sets_targets(local_node->node->id, reloid);
 
-		/* It's easier to construct json manually than via Jsonb API... */
-		initStringInfo(&json);
-		appendStringInfo(&json, "{\"schema_name\": ");
-		escape_json(&json, nspname);
-		appendStringInfo(&json, ",\"table_name\": ");
-		escape_json(&json, relname);
-		appendStringInfo(&json, "}");
-
-		repsets = get_table_replication_sets(local_node->node->id, reloid);
-
-		if (list_length(repsets))
+		/*
+		 * Compute a message for each unique (reloid,nsptarget,reltarget) triplet
+		 */
+		foreach (lc, reltargets)
 		{
-			List	   *repset_names = NIL;
-			ListCell   *rlc;
+			StringInfoData		json;
+			List				*repset_names = NIL;
+			char				*nspname;
+			char				*relname;
+			PGLogicalRepSetRel	*t = (PGLogicalRepSetRel *) lfirst(lc);
 
-			foreach (rlc, repsets)
-			{
-				PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(rlc);
-				repset_names = lappend(repset_names, pstrdup(repset->name));
-			}
+			nspname = pstrdup(t->nsptarget);
+			relname = pstrdup(t->reltarget);
+			repset_names = lappend(repset_names, t->repset_name);
+
+			initStringInfo(&json);
+			appendStringInfoString(&json, "{\"schema_name\": ");
+			escape_json(&json, nspname);
+			appendStringInfoString(&json, ",\"table_name\": ");
+			escape_json(&json, relname);
+			appendStringInfo(&json, "}");
 
 			/* Queue the truncate for replication. */
 			queue_message(repset_names, GetUserId(),

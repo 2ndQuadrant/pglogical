@@ -37,7 +37,7 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended conflict
 		  toasted replication_set add_table relations_only matview bidirectional \
 		  primary_key interfaces foreign_key functions copy triggers parallel row_filter \
 		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
-		  node_origin_cascade drop
+		  map node_origin_cascade drop
 
 EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
 			   compat96/pglogical_compat.o compat10/pglogical_compat.o \
