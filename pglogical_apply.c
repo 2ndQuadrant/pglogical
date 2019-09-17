@@ -1960,7 +1960,8 @@ pglogical_apply_main(Datum main_arg)
 	pglogical_identify_system(streamConn, NULL, NULL, NULL, NULL);
 
 	pglogical_start_replication(streamConn, MySubscription->slot_name,
-								origin_startpos, origins, repsets, NULL);
+								origin_startpos, origins, repsets, NULL,
+								MySubscription->force_text_transfer);
 	pfree(repsets);
 
 	CommitTransactionCommand();

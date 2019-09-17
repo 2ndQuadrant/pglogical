@@ -392,6 +392,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	bool					sync_data = PG_GETARG_BOOL(4);
 	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(5);
 	Interval			   *apply_delay = PG_GETARG_INTERVAL_P(6);
+	bool					force_text_transfer = PG_GETARG_BOOL(7);
 	PGconn				   *conn;
 	PGLogicalSubscription	sub;
 	PGLogicalSyncStatus		sync;
@@ -506,6 +507,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 				  origin.name, sub_name);
 	sub.slot_name = pstrdup(NameStr(slot_name));
 	sub.apply_delay = apply_delay;
+	sub.force_text_transfer = force_text_transfer;
 
 	create_subscription(&sub);
 

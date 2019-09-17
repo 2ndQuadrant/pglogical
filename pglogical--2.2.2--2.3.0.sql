@@ -1,6 +1,9 @@
+ALTER TABLE pglogical.subscription ADD COLUMN sub_force_text_transfer boolean NOT NULL DEFAULT 'f';
+
 CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
 	    replication_sets text[] = '{default,default_insert_only,ddl_sql}', synchronize_structure text = 'none',
-	    synchronize_data boolean = true, forward_origins text[] = '{all}', apply_delay interval DEFAULT '0')
+	    synchronize_data boolean = true, forward_origins text[] = '{all}', apply_delay interval DEFAULT '0',
+	    force_text_transfer boolean = false)
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';
 
 DROP FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,

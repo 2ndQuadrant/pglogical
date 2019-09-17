@@ -103,7 +103,8 @@ static void pglogical_subscribe(PGconn *conn, char *subscriber_name,
 								char *subscriber_dsn,
 								char *provider_connstr,
 								char *replication_sets,
-								int apply_delay);
+								int apply_delay,
+								bool force_text_transfer);
 
 static RemoteInfo *get_remote_info(PGconn* conn);
 
@@ -175,6 +176,7 @@ main(int argc, char **argv)
 			   *pg_hba_conf = NULL,
 			   *recovery_conf = NULL;
 	int			apply_delay = 0;
+	bool		force_text_transfer = false;
 	char	  **slot_names;
 	char       *sub_connstr;
 	char       *prov_connstr;
@@ -201,6 +203,7 @@ main(int argc, char **argv)
 		{"apply-delay", required_argument, NULL, 8},
 		{"databases", required_argument, NULL, 9},
 		{"extra-basebackup-args", required_argument, NULL, 10},
+		{"text-types", no_argument, NULL, 11},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -279,6 +282,9 @@ main(int argc, char **argv)
 				break;
 			case 10:
 				extra_basebackup_args = pg_strdup(optarg);
+				break;
+			case 11:
+				force_text_transfer = true;
 				break;
 			default:
 				fprintf(stderr, _("Unknown option\n"));
@@ -545,7 +551,8 @@ main(int argc, char **argv)
 		print_msg(VERBOSITY_VERBOSE, _("Replication sets: %s\n"), replication_sets);
 
 		pglogical_subscribe(subscriber_conn, subscriber_name, sub_connstr,
-							prov_connstr, replication_sets, apply_delay);
+							prov_connstr, replication_sets, apply_delay,
+							force_text_transfer);
 
 		PQfinish(subscriber_conn);
 		subscriber_conn = NULL;
@@ -1069,7 +1076,7 @@ create_restore_point(PGconn *conn, char *restore_point_name)
 static void
 pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 					char *provider_dsn, char *replication_sets,
-					int apply_delay)
+					int apply_delay, bool force_text_transfer)
 {
 	PQExpBufferData		query;
 	PQExpBufferData		repsets;
@@ -1102,11 +1109,12 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 					  "replication_sets := %s, "
 					  "apply_delay := '%d seconds'::interval, "
 					  "synchronize_structure := 'none', "
-					  "synchronize_data := false);",
+					  "synchronize_data := false, "
+					  "force_text_transfer := '%s');",
 					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
 					  PQescapeLiteral(conn, provider_dsn, strlen(provider_dsn)),
 					  PQescapeLiteral(conn, repsets.data, repsets.len),
-					  apply_delay);
+					  apply_delay, (force_text_transfer ? "t" : "f"));
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
