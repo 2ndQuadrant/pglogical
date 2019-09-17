@@ -48,7 +48,12 @@ pglogical_wait_slot_confirm_lsn(PG_FUNCTION_ARGS)
 		slot_name = PG_GETARG_NAME(0);
 
 	if (PG_ARGISNULL(1))
-		target_lsn = GetXLogWriteRecPtr();
+	{
+		if (XLogRecPtrIsInvalid(XactLastCommitEnd))
+			target_lsn = GetXLogInsertRecPtr();
+		else
+			target_lsn = XactLastCommitEnd;
+	}
 	else
 		target_lsn = PG_GETARG_LSN(1);
 
