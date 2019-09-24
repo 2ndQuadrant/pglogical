@@ -144,7 +144,11 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 	}
 
 	initStringInfo(&command);
+#if PG_VERSION_NUM >= 90600
 	appendStringInfo(&command, "\"%s\" --strict-names --snapshot=\"%s\" %s %s -s -F c -f \"%s\" \"%s\"",
+#else
+	appendStringInfo(&command, "\"%s\" --snapshot=\"%s\" %s %s -s -F c -f \"%s\" \"%s\"",
+#endif
 					 pg_dump, snapshot,
 					 schema_filter.data, table_filter.data,
 					 destfile, sub->origin_if->dsn);
