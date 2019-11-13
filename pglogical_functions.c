@@ -50,6 +50,7 @@
 #include "replication/reorderbuffer.h"
 #include "replication/slot.h"
 
+#include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/proc.h"
 
@@ -592,6 +593,8 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		/* Wait for the apply to die. */
 		for (;;)
 		{
+			int rc;
+
 			LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 			apply = pglogical_apply_find(MyDatabaseId, sub->id);
 			if (!pglogical_worker_running(apply))
@@ -603,8 +606,11 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 
 			CHECK_FOR_INTERRUPTS();
 
-			(void) WaitLatch(&MyProc->procLatch,
-							 WL_LATCH_SET | WL_TIMEOUT, 1000L);
+			rc = WaitLatch(&MyProc->procLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
+
+			if (rc & WL_POSTMASTER_DEATH)
+				proc_exit(1);
 
 			ResetLatch(&MyProc->procLatch);
 		}
@@ -2318,6 +2324,7 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 		PGLogicalSyncStatus	   *subsync;
 		List				   *tables;
 		bool					isdone = false;
+		int						rc;
 
 		/* We need to see the latest rows */
 		PushActiveSnapshot(GetLatestSnapshot());
@@ -2364,8 +2371,11 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 		CHECK_FOR_INTERRUPTS();
 
 		/* some kind of backoff could be useful here */
-		(void) WaitLatch(&MyProc->procLatch,
-						 WL_LATCH_SET | WL_TIMEOUT, 200L);
+		rc = WaitLatch(&MyProc->procLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 200L);
+
+		if (rc & WL_POSTMASTER_DEATH)
+			proc_exit(1);
 
 		ResetLatch(&MyProc->procLatch);
 	} while (1);
