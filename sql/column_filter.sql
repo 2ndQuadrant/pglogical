@@ -162,7 +162,7 @@ BEGIN;
 ALTER TABLE public.basic_dml DROP COLUMN data;
 SELECT nspname, relname, set_name FROM pglogical.tables
 WHERE relid = 'public.basic_dml'::regclass;
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
 ROLLBACK;
 
 -- Even when wrapped (RM#5916)
@@ -172,7 +172,7 @@ ALTER TABLE public.basic_dml DROP COLUMN data;
 $$);
 SELECT nspname, relname, set_name FROM pglogical.tables
 WHERE relid = 'public.basic_dml'::regclass;
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
 ROLLBACK;
 
 -- CASCADE should be allowed though
@@ -180,7 +180,7 @@ BEGIN;
 ALTER TABLE public.basic_dml DROP COLUMN data CASCADE;
 SELECT nspname, relname, set_name FROM pglogical.tables
 WHERE relid = 'public.basic_dml'::regclass;
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
 SELECT nspname, relname, set_name FROM pglogical.tables
 WHERE relid = 'public.basic_dml'::regclass;
 ROLLBACK;
@@ -189,7 +189,7 @@ BEGIN;
 SELECT pglogical.replicate_ddl_command($$
 ALTER TABLE public.basic_dml DROP COLUMN data CASCADE;
 $$);
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
 SELECT nspname, relname, set_name FROM pglogical.tables
 WHERE relid = 'public.basic_dml'::regclass;
 ROLLBACK;

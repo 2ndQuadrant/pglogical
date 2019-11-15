@@ -280,10 +280,10 @@ WHERE relid = 'public.basic_dml'::regclass;
  public  | basic_dml | default
 (1 row)
 
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
- nspname |    relname     |      att_list       | has_row_filter 
----------+----------------+---------------------+----------------
- public  | basic_oids_dml | {id,data,something} | f
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
+ nspname |  relname  |    att_list    | has_row_filter 
+---------+-----------+----------------+----------------
+ public  | basic_dml | {id,something} | f
 (1 row)
 
 ROLLBACK;
@@ -304,10 +304,10 @@ WHERE relid = 'public.basic_dml'::regclass;
  public  | basic_dml | default
 (1 row)
 
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
- nspname |    relname     |      att_list       | has_row_filter 
----------+----------------+---------------------+----------------
- public  | basic_oids_dml | {id,data,something} | f
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
+ nspname |  relname  |    att_list    | has_row_filter 
+---------+-----------+----------------+----------------
+ public  | basic_dml | {id,something} | f
 (1 row)
 
 ROLLBACK;
@@ -321,10 +321,10 @@ WHERE relid = 'public.basic_dml'::regclass;
  public  | basic_dml | default
 (1 row)
 
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
- nspname |    relname     |      att_list       | has_row_filter 
----------+----------------+---------------------+----------------
- public  | basic_oids_dml | {id,data,something} | f
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
+ nspname |  relname  |    att_list    | has_row_filter 
+---------+-----------+----------------+----------------
+ public  | basic_dml | {id,something} | f
 (1 row)
 
 SELECT nspname, relname, set_name FROM pglogical.tables
@@ -344,10 +344,10 @@ $$);
  t
 (1 row)
 
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
- nspname |    relname     |      att_list       | has_row_filter 
----------+----------------+---------------------+----------------
- public  | basic_oids_dml | {id,data,something} | f
+SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_dml'::regclass, ARRAY['default']);
+ nspname |  relname  |    att_list    | has_row_filter 
+---------+-----------+----------------+----------------
+ public  | basic_dml | {id,something} | f
 (1 row)
 
 SELECT nspname, relname, set_name FROM pglogical.tables
