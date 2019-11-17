@@ -260,7 +260,8 @@ finish_apply_exec_state(ApplyExecState *aestate)
 	AfterTriggerEndQuery(aestate->estate);
 
 	/* Terminate EPQ execution if active. */
-	EvalPlanQualEnd(&aestate->epqstate);
+	if (aestate->resultRelInfo->ri_TrigDesc)
+		EvalPlanQualEnd(&aestate->epqstate);
 
 	/* Cleanup tuple table. */
 	ExecResetTupleTable(aestate->estate->es_tupleTable, true);
