@@ -79,67 +79,6 @@ WHERE relid = 'public.basic_dml'::regclass;
 -- data should get replicated to subscriber
 SELECT id, data, something FROM basic_dml ORDER BY id;
 
--- Test for Table with oids
-\c :provider_dsn
-CREATE TABLE public.basic_oids_dml (
-	id serial primary key,
-	other integer,
-	data text,
-	something interval
-) with oids ;
-
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
-
-SELECT nspname, relname, set_name FROM pglogical.tables
-WHERE relid = 'public.basic_oids_dml'::regclass;
-
--- Fails: cannot use system column 'oid' explicitly
-SELECT * FROM pglogical.replication_set_add_table('default', 'basic_oids_dml', columns := '{oid, id, data, something}');
-
-SELECT nspname, relname, set_name FROM pglogical.tables
-WHERE relid = 'public.basic_oids_dml'::regclass;
-
--- WITH OIDS table OK
-SELECT * FROM pglogical.replication_set_add_table('default', 'basic_oids_dml', columns := '{id, data, something}');
-
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
-
-SELECT nspname, relname, set_name FROM pglogical.tables
-WHERE relid = 'public.basic_oids_dml'::regclass;
-
-SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
-
-\c :subscriber_dsn
-
-CREATE TABLE public.basic_oids_dml (
-	id serial primary key,
-	data text,
-	something interval,
-	subonly integer,
-	subonly_def integer DEFAULT 99
-) with oids;
-
-\c :provider_dsn
-
--- check basic insert replication
-INSERT INTO basic_oids_dml(other, data, something)
-VALUES (5, 'foo', '1 minute'::interval),
-       (4, 'bar', '12 weeks'::interval),
-       (3, 'baz', '2 years 1 hour'::interval),
-       (2, 'qux', '8 months 2 days'::interval),
-       (1, NULL, NULL);
-
-SELECT nspname, relname, att_list, has_row_filter FROM pglogical.show_repset_table_info('basic_oids_dml'::regclass, ARRAY['default']);
-
-UPDATE basic_oids_dml SET other = '40', data = NULL, something = '3 days'::interval WHERE id = 4;
-
-SELECT * from basic_oids_dml ORDER BY id;
-
-SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
-
-\c :subscriber_dsn
-SELECT id, data, something FROM basic_oids_dml ORDER BY id;
-
 \c :provider_dsn
 
 -- Adding a table that's already selectively replicated fails
@@ -204,6 +143,5 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.basic_dml CASCADE;
-	DROP TABLE public.basic_oids_dml CASCADE;
 $$);
 
