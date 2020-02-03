@@ -36,7 +36,11 @@
 #include "nodes/parsenodes.h"
 
 #include "optimizer/clauses.h"
+#if PG_VERSION_NUM >= 120000
+#include "optimizer/optimizer.h"
+#else
 #include "optimizer/planner.h"
+#endif
 
 #include "replication/origin.h"
 #include "replication/reorderbuffer.h"
@@ -85,10 +89,21 @@ typedef struct ApplyMIState
 	CommandId			cid;
 	BulkInsertState		bistate;
 
+#if PG_VERSION_NUM >= 120000
+	TupleTableSlot	  **buffered_tuples;
+#else
 	HeapTuple		   *buffered_tuples;
+#endif
 	int					maxbuffered_tuples;
 	int					nbuffered_tuples;
 } ApplyMIState;
+
+
+#if PG_VERSION_NUM >= 120000
+#define TTS_TUP(slot) (((HeapTupleTableSlot *)slot)->tuple)
+#else
+#define TTS_TUP(slot) (slot->tts_tuple)
+#endif
 
 
 static ApplyMIState *pglmistate = NULL;
@@ -112,7 +127,9 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 	if (estate->es_result_relation_info->ri_NumIndices > 0)
 	{
 		recheckIndexes = ExecInsertIndexTuples(slot,
+#if PG_VERSION_NUM < 120000
 											   &slot->tts_tuple->t_self,
+#endif
 											   estate
 #if PG_VERSION_NUM >= 90500
 											   , false, NULL, NIL
@@ -289,8 +306,12 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
+#if PG_VERSION_NUM >= 120000
+	localslot = table_slot_create(rel->rel, &aestate->estate->es_tupleTable);
+#else
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+#endif
 
 	/* Get snapshot */
 	PushActiveSnapshot(GetTransactionSnapshot());
@@ -316,18 +337,24 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	remotetuple = heap_form_tuple(RelationGetDescr(rel->rel),
 								  newtup->values, newtup->nulls);
 	MemoryContextSwitchTo(oldctx);
-	ExecStoreTuple(remotetuple, aestate->slot, InvalidBuffer, true);
+	ExecStoreHeapTuple(remotetuple, aestate->slot, true);
 
 	if (aestate->resultRelInfo->ri_TrigDesc &&
 		aestate->resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
 		has_before_triggers = true;
 
+#if PG_VERSION_NUM >= 120000
+		if (!ExecBRInsertTriggers(aestate->estate,
+								  aestate->resultRelInfo,
+								  aestate->slot))
+#else
 		aestate->slot = ExecBRInsertTriggers(aestate->estate,
 											 aestate->resultRelInfo,
 											 aestate->slot);
 
 		if (aestate->slot == NULL)		/* "do nothing" */
+#endif
 		{
 			PopActiveSnapshot();
 			finish_apply_exec_state(aestate);
@@ -337,7 +364,11 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	}
 
 	/* trigger might have changed tuple */
+#if PG_VERSION_NUM >= 120000
+	remotetuple = ExecFetchSlotHeapTuple(aestate->slot, true, NULL);
+#else
 	remotetuple = ExecMaterializeSlot(aestate->slot);
+#endif
 
 	/* Did we find matching key in any candidate-key index? */
 	if (OidIsValid(conflicts_idx_id))
@@ -348,16 +379,16 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 		bool				apply;
 		bool				local_origin_found;
 
-		local_origin_found = get_tuple_origin(localslot->tts_tuple, &xmin,
+		local_origin_found = get_tuple_origin(TTS_TUP(localslot), &xmin,
 											  &local_origin, &local_ts);
 
 		/* Tuple already exists, try resolving conflict. */
-		apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
+		apply = try_resolve_conflict(rel->rel, TTS_TUP(localslot),
 									 remotetuple, &applytuple,
 									 &resolution);
 
 		pglogical_report_conflict(CONFLICT_INSERT_INSERT, rel,
-								  localslot->tts_tuple, NULL, remotetuple,
+								  TTS_TUP(localslot), NULL, remotetuple,
 								  applytuple, resolution, xmin,
 								  local_origin_found, local_origin,
 								  local_ts, conflicts_idx_id,
@@ -365,20 +396,33 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 		if (apply)
 		{
+#if PG_VERSION_NUM >= 120000
+			bool update_indexes;
+#endif
+
 			if (applytuple != remotetuple)
-				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
+				ExecStoreHeapTuple(applytuple, aestate->slot, false);
 
 			if (aestate->resultRelInfo->ri_TrigDesc &&
 				aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
 			{
+#if PG_VERSION_NUM >= 120000
+				if (!ExecBRUpdateTriggers(aestate->estate,
+										  &aestate->epqstate,
+										  aestate->resultRelInfo,
+										  &(TTS_TUP(localslot)->t_self),
+										  NULL,
+										  aestate->slot))
+#else
 				aestate->slot = ExecBRUpdateTriggers(aestate->estate,
 													 &aestate->epqstate,
 													 aestate->resultRelInfo,
-													 &localslot->tts_tuple->t_self,
+													 &(TTS_TUP(localslot)->t_self),
 													 NULL,
 													 aestate->slot);
 
 				if (aestate->slot == NULL)		/* "do nothing" */
+#endif
 				{
 					PopActiveSnapshot();
 					finish_apply_exec_state(aestate);
@@ -388,24 +432,42 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 			}
 
 			/* trigger might have changed tuple */
+#if PG_VERSION_NUM >= 120000
+			remotetuple = ExecFetchSlotHeapTuple(aestate->slot, true, NULL);
+#else
 			remotetuple = ExecMaterializeSlot(aestate->slot);
+#endif
 
 			/* Check the constraints of the tuple */
 			if (rel->rel->rd_att->constr)
 				ExecConstraints(aestate->resultRelInfo, aestate->slot,
 								aestate->estate);
 
-			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
-							   aestate->slot->tts_tuple);
-
-			if (!HeapTupleIsHeapOnly(aestate->slot->tts_tuple))
+#if PG_VERSION_NUM >= 120000
+			simple_table_tuple_update(rel->rel,
+									  &(localslot->tts_tid),
+									  aestate->slot,
+									  aestate->estate->es_snapshot,
+									  &update_indexes);
+			if (update_indexes)
+#else
+			simple_heap_update(rel->rel, &(TTS_TUP(localslot)->t_self),
+							   TTS_TUP(aestate->slot));
+			if (!HeapTupleIsHeapOnly(TTS_TUP(aestate->slot)))
+#endif
 				recheckIndexes = UserTableUpdateOpenIndexes(aestate->estate,
 															aestate->slot);
 
 			/* AFTER ROW UPDATE Triggers */
+#if PG_VERSION_NUM >= 120000
 			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
-								 &localslot->tts_tuple->t_self,
+								 &(TTS_TUP(localslot)->t_self),
+								 NULL, aestate->slot, recheckIndexes);
+#else
+			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
+								 &(TTS_TUP(localslot)->t_self),
 								 NULL, applytuple, recheckIndexes);
+#endif
 		}
 	}
 	else
@@ -415,12 +477,21 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 			ExecConstraints(aestate->resultRelInfo, aestate->slot,
 							aestate->estate);
 
-		simple_heap_insert(rel->rel, aestate->slot->tts_tuple);
+#if PG_VERSION_NUM >= 120000
+		simple_table_tuple_insert(aestate->resultRelInfo->ri_RelationDesc, aestate->slot);
+#else
+		simple_heap_insert(rel->rel, TTS_TUP(aestate->slot));
+#endif
 		UserTableUpdateOpenIndexes(aestate->estate, aestate->slot);
 
 		/* AFTER ROW INSERT Triggers */
+#if PG_VERSION_NUM >= 120000
+		ExecARInsertTriggers(aestate->estate, aestate->resultRelInfo,
+							 aestate->slot, recheckIndexes);
+#else
 		ExecARInsertTriggers(aestate->estate, aestate->resultRelInfo,
 							 remotetuple, recheckIndexes);
+#endif
 	}
 
 	PopActiveSnapshot();
@@ -448,8 +519,12 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
+#if PG_VERSION_NUM >= 120000
+	localslot = table_slot_create(rel->rel, &aestate->estate->es_tupleTable);
+#else
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+#endif
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
@@ -475,27 +550,34 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		/* Process and store remote tuple in the slot */
 		oldctx = MemoryContextSwitchTo(GetPerTupleMemoryContext(aestate->estate));
 		fill_missing_defaults(rel, aestate->estate, newtup);
-		remotetuple = heap_modify_tuple(localslot->tts_tuple,
+		remotetuple = heap_modify_tuple(TTS_TUP(localslot),
 										RelationGetDescr(rel->rel),
 										newtup->values,
 										newtup->nulls,
 										newtup->changed);
 		MemoryContextSwitchTo(oldctx);
-		ExecStoreTuple(remotetuple, aestate->slot, InvalidBuffer, true);
-
+		ExecStoreHeapTuple(remotetuple, aestate->slot, true);
 
 		if (aestate->resultRelInfo->ri_TrigDesc &&
 			aestate->resultRelInfo->ri_TrigDesc->trig_update_before_row)
 		{
 			has_before_triggers = true;
 
+#if PG_VERSION_NUM >= 120000
+			if (!ExecBRUpdateTriggers(aestate->estate,
+									  &aestate->epqstate,
+									  aestate->resultRelInfo,
+									  &(TTS_TUP(localslot)->t_self),
+									  NULL, aestate->slot))
+#else
 			aestate->slot = ExecBRUpdateTriggers(aestate->estate,
 												 &aestate->epqstate,
 												 aestate->resultRelInfo,
-												 &localslot->tts_tuple->t_self,
+												 &(TTS_TUP(localslot)->t_self),
 												 NULL, aestate->slot);
 
 			if (aestate->slot == NULL)		/* "do nothing" */
+#endif
 			{
 				PopActiveSnapshot();
 				finish_apply_exec_state(aestate);
@@ -504,9 +586,12 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		}
 
 		/* trigger might have changed tuple */
+#if PG_VERSION_NUM >= 120000
+		remotetuple = ExecFetchSlotHeapTuple(aestate->slot, true, NULL);
+#else
 		remotetuple = ExecMaterializeSlot(aestate->slot);
-
-		local_origin_found = get_tuple_origin(localslot->tts_tuple, &xmin,
+#endif
+		local_origin_found = get_tuple_origin(TTS_TUP(localslot), &xmin,
 											  &local_origin, &local_ts);
 
 		/*
@@ -519,19 +604,19 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 		{
 			PGLogicalConflictResolution resolution;
 
-			apply = try_resolve_conflict(rel->rel, localslot->tts_tuple,
+			apply = try_resolve_conflict(rel->rel, TTS_TUP(localslot),
 										 remotetuple, &applytuple,
 										 &resolution);
 
 			pglogical_report_conflict(CONFLICT_UPDATE_UPDATE, rel,
-									  localslot->tts_tuple, oldtup,
+									  TTS_TUP(localslot), oldtup,
 									  remotetuple, applytuple, resolution,
 									  xmin, local_origin_found, local_origin,
 									  local_ts, replident_idx_id,
 									  has_before_triggers);
 
 			if (applytuple != remotetuple)
-				ExecStoreTuple(applytuple, aestate->slot, InvalidBuffer, false);
+				ExecStoreHeapTuple(applytuple, aestate->slot, false);
 		}
 		else
 		{
@@ -541,16 +626,29 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 		if (apply)
 		{
+#if PG_VERSION_NUM >= 120000
+			bool update_indexes;
+#endif
+
 			/* Check the constraints of the tuple */
 			if (rel->rel->rd_att->constr)
 				ExecConstraints(aestate->resultRelInfo, aestate->slot,
 								aestate->estate);
 
-			simple_heap_update(rel->rel, &localslot->tts_tuple->t_self,
-							   aestate->slot->tts_tuple);
+#if PG_VERSION_NUM >= 120000
+			simple_table_tuple_update(rel->rel,
+									  &(localslot->tts_tid),
+									  aestate->slot,
+									  aestate->estate->es_snapshot,
+									  &update_indexes);
+			if (update_indexes)
+#else
+			simple_heap_update(rel->rel, &(TTS_TUP(localslot)->t_self),
+							   TTS_TUP(aestate->slot));
 
 			/* Only update indexes if it's not HOT update. */
-			if (!HeapTupleIsHeapOnly(aestate->slot->tts_tuple))
+			if (!HeapTupleIsHeapOnly(TTS_TUP(aestate->slot)))
+#endif
 			{
 				ExecOpenIndices(aestate->resultRelInfo
 #if PG_VERSION_NUM >= 90500
@@ -562,9 +660,15 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 			}
 
 			/* AFTER ROW UPDATE Triggers */
+#if PG_VERSION_NUM >= 120000
 			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
-								 &localslot->tts_tuple->t_self,
+								 &(TTS_TUP(localslot)->t_self),
+								 NULL, aestate->slot, recheckIndexes);
+#else
+			ExecARUpdateTriggers(aestate->estate, aestate->resultRelInfo,
+								 &(TTS_TUP(localslot)->t_self),
 								 NULL, applytuple, recheckIndexes);
+#endif
 		}
 	}
 	else
@@ -604,8 +708,12 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 	/* Initialize the executor state. */
 	aestate = init_apply_exec_state(rel);
+#if PG_VERSION_NUM >= 120000
+	localslot = table_slot_create(rel->rel, &aestate->estate->es_tupleTable);
+#else
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
+#endif
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
@@ -618,7 +726,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 			bool dodelete = ExecBRDeleteTriggers(aestate->estate,
 												 &aestate->epqstate,
 												 aestate->resultRelInfo,
-												 &localslot->tts_tuple->t_self,
+												 &(TTS_TUP(localslot)->t_self),
 												 NULL);
 
 			has_before_triggers = true;
@@ -633,11 +741,11 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 		}
 
 		/* Tuple found, delete it. */
-		simple_heap_delete(rel->rel, &localslot->tts_tuple->t_self);
+		simple_heap_delete(rel->rel, &(TTS_TUP(localslot)->t_self));
 
 		/* AFTER ROW DELETE Triggers */
 		ExecARDeleteTriggers(aestate->estate, aestate->resultRelInfo,
-							 &localslot->tts_tuple->t_self, NULL);
+							 &(TTS_TUP(localslot)->t_self), NULL);
 	}
 	else
 	{
@@ -749,7 +857,11 @@ pglogical_apply_heap_mi_start(PGLogicalRelation *rel)
 	pglmistate->bistate = GetBulkInsertState();
 
 	/* Make the space for buffer. */
+#if PG_VERSION_NUM >= 120000
+	pglmistate->buffered_tuples = palloc0(pglmistate->maxbuffered_tuples * sizeof(TupleTableSlot *));
+#else
 	pglmistate->buffered_tuples = palloc0(pglmistate->maxbuffered_tuples * sizeof(HeapTuple));
+#endif
 	pglmistate->nbuffered_tuples = 0;
 
 	MemoryContextSwitchTo(oldctx);
@@ -785,14 +897,21 @@ pglogical_apply_heap_mi_flush(void)
 	{
 		for (i = 0; i < pglmistate->nbuffered_tuples; i++)
 		{
-			List	   *recheckIndexes;
+			List	   *recheckIndexes = NIL;
 
+#if PG_VERSION_NUM < 120000
 			ExecStoreTuple(pglmistate->buffered_tuples[i],
 						   pglmistate->aestate->slot,
 						   InvalidBuffer, false);
+#endif
 			recheckIndexes =
-				ExecInsertIndexTuples(pglmistate->aestate->slot,
+				ExecInsertIndexTuples(
+#if PG_VERSION_NUM >= 120000
+									  pglmistate->buffered_tuples[i],
+#else
+									  pglmistate->aestate->slot,
 									  &(pglmistate->buffered_tuples[i]->t_self),
+#endif
 									  pglmistate->aestate->estate
 #if PG_VERSION_NUM >= 90500
 									  , false, NULL, NIL
@@ -861,22 +980,30 @@ pglogical_apply_heap_mi_add_tuple(PGLogicalRelation *rel,
 	MemoryContextSwitchTo(TopTransactionContext);
 	slot = aestate->slot;
 	/* Store the tuple in slot, but make sure it's not freed. */
-	ExecStoreTuple(remotetuple, slot, InvalidBuffer, false);
+	ExecStoreHeapTuple(remotetuple, slot, false);
 
 	if (aestate->resultRelInfo->ri_TrigDesc &&
 		aestate->resultRelInfo->ri_TrigDesc->trig_insert_before_row)
 	{
+#if PG_VERSION_NUM >= 120000
+		if (!ExecBRInsertTriggers(aestate->estate,
+								 aestate->resultRelInfo,
+								 slot))
+#else
 		slot = ExecBRInsertTriggers(aestate->estate,
 									aestate->resultRelInfo,
 									slot);
 
 		if (slot == NULL)
+#endif
 		{
 			MemoryContextSwitchTo(oldctx);
 			return;
 		}
+#if PG_VERSION_NUM < 120000
 		else
 			remotetuple = ExecMaterializeSlot(slot);
+#endif
 	}
 
 	/* Check the constraints of the tuple */
@@ -884,7 +1011,13 @@ pglogical_apply_heap_mi_add_tuple(PGLogicalRelation *rel,
 		ExecConstraints(aestate->resultRelInfo, slot,
 						aestate->estate);
 
-	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples++] = remotetuple;
+	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples++] =
+#if PG_VERSION_NUM >= 120000
+		slot
+#else
+		remotetuple
+#endif
+		;
 	MemoryContextSwitchTo(oldctx);
 }
 

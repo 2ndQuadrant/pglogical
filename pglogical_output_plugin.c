@@ -24,6 +24,7 @@
 #include "executor/executor.h"
 #include "catalog/namespace.h"
 #include "storage/fd.h"
+#include "storage/lmgr.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -489,8 +490,12 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		if (change->action == REORDER_BUFFER_CHANGE_INSERT)
 		{
 			HeapTuple		tup = &change->data.tp.newtuple->tuple;
-			QueuedMessage  *q = queued_message_from_tuple(tup);
+			QueuedMessage  *q;
 			ListCell	   *qlc;
+
+			LockRelation(relation, AccessShareLock);
+			q = queued_message_from_tuple(tup);
+			UnlockRelation(relation, AccessShareLock);
 
 			/*
 			 * No replication set means global message, those are always
@@ -617,8 +622,7 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		estate = create_estate_for_relation(relation, false);
 		econtext = prepare_per_tuple_econtext(estate, tupdesc);
 
-		ExecStoreTuple(newtup ? newtup : oldtup, econtext->ecxt_scantuple,
-					   InvalidBuffer, false);
+		ExecStoreHeapTuple(newtup ? newtup : oldtup, econtext->ecxt_scantuple, false);
 
 		/* Next try the row_filters if there are any. */
 		foreach (lc, tblinfo->row_filter)

@@ -21,6 +21,9 @@
 
 #include "postgres.h"
 
+#if PG_VERSION_NUM >= 120000
+#include "access/heapam.h"
+#endif
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
@@ -82,7 +85,9 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
+#if PG_VERSION_NUM < 120000
 #include "utils/tqual.h"
+#endif
 
 #include "pglogical_dependency.h"
 #include "pglogical_sync.h"
@@ -461,7 +466,7 @@ findDependentObjects(const ObjectAddress *object,
 #endif
 				/* no problem */
 				break;
-#if PG_VERSION_NUM >= 110000
+#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 120000
 			case DEPENDENCY_INTERNAL_AUTO:
 #endif
 			case DEPENDENCY_INTERNAL:
@@ -545,7 +550,7 @@ findDependentObjects(const ObjectAddress *object,
 				 * other words, we don't follow the links back to the owning
 				 * object.
 				 */
-#if PG_VERSION_NUM >= 110000
+#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 120000
 				if (foundDep->deptype == DEPENDENCY_INTERNAL_AUTO)
 					break;
 #endif
@@ -683,7 +688,7 @@ findDependentObjects(const ObjectAddress *object,
 				break;
 #endif
 			case DEPENDENCY_INTERNAL:
-#if PG_VERSION_NUM >= 110000
+#if PG_VERSION_NUM >= 110000 && PG_VERSION_NUM < 120000
 			case DEPENDENCY_INTERNAL_AUTO:
 #endif
 				subflags = DEPFLAG_INTERNAL;

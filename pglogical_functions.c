@@ -1333,6 +1333,9 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	pstate = make_parsestate(NULL);
 	rte = addRangeTableEntryForRelation(pstate,
 										rel,
+#if PG_VERSION_NUM >= 120000
+										AccessShareLock,
+#endif
 										NULL,
 										false,
 										true);
@@ -2138,7 +2141,7 @@ filter_tuple(HeapTuple htup, ExprContext *econtext, List *row_filter_list)
 {
 	ListCell	   *lc;
 
-	ExecStoreTuple(htup, econtext->ecxt_scantuple, InvalidBuffer, false);
+	ExecStoreHeapTuple(htup, econtext->ecxt_scantuple, false);
 
 	foreach (lc, row_filter_list)
 	{
@@ -2178,7 +2181,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	ListCell   *lc;
 	TupleDesc	tupdesc;
 	TupleDesc	reltupdesc;
-	HeapScanDesc scandesc;
+	TableScanDesc scandesc;
 	HeapTuple	htup;
 	List	   *row_filter_list = NIL;
 	EState		   *estate;
@@ -2276,7 +2279,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 
 
 	/* Scan the table. */
-	scandesc = heap_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+	scandesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
 
 	while (HeapTupleIsValid(htup = heap_getnext(scandesc, ForwardScanDirection)))
 	{
