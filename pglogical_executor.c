@@ -32,7 +32,11 @@
 
 #include "nodes/nodeFuncs.h"
 
+#if PG_VERSION_NUM >= 120000
+#include "optimizer/optimizer.h"
+#else
 #include "optimizer/planner.h"
+#endif
 
 #include "parser/parse_coerce.h"
 
@@ -86,7 +90,9 @@ create_estate_for_relation(Relation rel, bool forwrite)
 	estate->es_result_relations = resultRelInfo;
 	estate->es_num_result_relations = 1;
 	estate->es_result_relation_info = resultRelInfo;
-#if PG_VERSION_NUM >= 110000 && SECONDQ_VERSION_NUM >= 103
+#if PG_VERSION_NUM >= 120000
+	ExecInitRangeTable(estate, list_make1(rte));
+#elif PG_VERSION_NUM >= 110000 && SECONDQ_VERSION_NUM >= 103
 	/* 2ndQPostgres 11 r1.3 changes executor API */
 	estate->es_range_table = alist_add(NULL, rte);
 #else
@@ -110,8 +116,10 @@ create_estate_for_relation(Relation rel, bool forwrite)
 			palloc0(n * sizeof(List *));
 #endif
 
+#if PG_VERSION_NUM < 120000
 		/* Triggers might need a slot */
 		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
+#endif
 	}
 	else
 	{

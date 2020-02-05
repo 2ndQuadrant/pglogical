@@ -25,6 +25,7 @@
 #include "utils/inval.h"
 #include "utils/rel.h"
 
+#include "pglogical.h"
 #include "pglogical_relcache.h"
 
 #define PGLOGICALRELATIONHASH_INITIAL_SIZE 128
@@ -85,7 +86,7 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 
 		rv->schemaname = (char *) entry->nspname;
 		rv->relname = (char *) entry->relname;
-		entry->rel = heap_openrv(rv, lockmode);
+		entry->rel = table_openrv(rv, lockmode);
 
 		desc = RelationGetDescr(entry->rel);
 		for (i = 0; i < entry->natts; i++)
@@ -116,7 +117,7 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 		}
 	}
 	else if (!entry->rel)
-		entry->rel = heap_open(entry->reloid, lockmode);
+		entry->rel = table_open(entry->reloid, lockmode);
 
 	return entry;
 }
@@ -197,7 +198,7 @@ pglogical_relation_cache_updater(PGLogicalRemoteRel *remoterel)
 void
 pglogical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 {
-	heap_close(rel->rel, lockmode);
+	table_close(rel->rel, lockmode);
 	rel->rel = NULL;
 }
 

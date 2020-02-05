@@ -89,7 +89,7 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 							 );
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_QUEUE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
@@ -114,7 +114,7 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 
 	/* Cleanup. */
 	heap_freetuple(tup);
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 }
 
 
@@ -135,7 +135,7 @@ queued_message_from_tuple(HeapTuple queue_tup)
 
 	/* Open relation to get the tuple descriptor. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_QUEUE, -1);
-	rel = heap_openrv(rv, NoLock);
+	rel = table_openrv(rv, NoLock);
 	tupDesc = RelationGetDescr(rel);
 
 	res = (QueuedMessage *) palloc(sizeof(QueuedMessage));
@@ -165,7 +165,7 @@ queued_message_from_tuple(HeapTuple queue_tup)
 		DirectFunctionCall1(jsonb_in, DirectFunctionCall1(json_out, d)));
 
 	/* Close the relation. */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	return res;
 }

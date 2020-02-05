@@ -68,14 +68,14 @@ sequence_get_last_value(Oid seqoid)
 	int64				last_value;
 	Form_pg_sequence	seq;
 
-	seqrel = heap_open(seqoid, AccessShareLock);
+	seqrel = table_open(seqoid, AccessShareLock);
 	scan = systable_beginscan(seqrel, 0, false, NULL, 0, NULL);
 	tup = systable_getnext(scan);
 	Assert(HeapTupleIsValid(tup));
 	seq = (Form_pg_sequence) GETSTRUCT(tup);
 	last_value = seq->last_value;
 	systable_endscan(scan);
-	heap_close(seqrel, AccessShareLock);
+	table_close(seqrel, AccessShareLock);
 
 	return last_value;
 }
@@ -106,7 +106,7 @@ synchronize_sequences(void)
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SEQUENCE_STATE, -1);
 
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	scan = systable_beginscan(rel, 0, true, NULL, 0, NULL);
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
@@ -181,7 +181,7 @@ synchronize_sequences(void)
 
 	/* Cleanup */
 	systable_endscan(scan);
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	CommitTransactionCommand();
 
@@ -208,7 +208,7 @@ synchronize_sequence(Oid seqoid)
 	PGLogicalLocalNode	   *local_node = get_local_node(true, false);
 
 	/* Check if the oid points to actual sequence. */
-	seqrel = heap_open(seqoid, AccessShareLock);
+	seqrel = table_open(seqoid, AccessShareLock);
 
 	if (seqrel->rd_rel->relkind != RELKIND_SEQUENCE)
 		ereport(ERROR,
@@ -218,7 +218,7 @@ synchronize_sequence(Oid seqoid)
 
 	/* Now search for it in our tracking table. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SEQUENCE_STATE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_sequence_state_seqoid,
@@ -275,8 +275,8 @@ synchronize_sequence(Oid seqoid)
 
 	/* Cleanup */
 	systable_endscan(scan);
-	heap_close(rel, NoLock);
-	heap_close(seqrel, AccessShareLock);
+	table_close(rel, NoLock);
+	table_close(seqrel, AccessShareLock);
 }
 
 /*
@@ -293,7 +293,7 @@ pglogical_create_sequence_state_record(Oid seqoid)
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SEQUENCE_STATE, -1);
 
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Check if the state record already exists. */
 	ScanKeyInit(&key[0],
@@ -328,7 +328,7 @@ pglogical_create_sequence_state_record(Oid seqoid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }
@@ -347,7 +347,7 @@ pglogical_drop_sequence_state_record(Oid seqoid)
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_SEQUENCE_STATE, -1);
 
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Check if the state record already exists. */
 	ScanKeyInit(&key[0],
@@ -363,7 +363,7 @@ pglogical_drop_sequence_state_record(Oid seqoid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }

@@ -61,4 +61,19 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 
 #define IndexRelationGetNumberOfKeyAttributes(rel) RelationGetNumberOfAttributes(rel)
 
+/* deprecated in PG12, removed in PG13 */
+#define table_open(r, l)		heap_open(r, l)
+#define table_openrv(r, l)		heap_openrv(r, l)
+#define table_openrv_extended(r, l, m)	heap_openrv_extended(r, l, m)
+#define table_close(r, l)		heap_close(r, l)
+
+/* 29c94e03c7 */
+#define ExecStoreHeapTuple(tuple, slot, shouldFree) ExecStoreTuple(tuple, slot, InvalidBuffer, shouldFree)
+
+/* c2fe139c20 */
+#define TableScanDesc HeapScanDesc
+#define table_beginscan(relation, snapshot, nkeys, keys) heap_beginscan(relation, snapshot, nkeys, keys)
+#define table_beginscan_catalog(relation, nkeys, keys) heap_beginscan_catalog(relation, nkeys, keys)
+#define table_endscan(scan) heap_endscan(scan)
+
 #endif

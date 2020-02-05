@@ -1,6 +1,10 @@
 #ifndef PG_LOGICAL_COMPAT_H
 #define PG_LOGICAL_COMPAT_H
 
+#include "access/amapi.h"
+#include "access/heapam.h"
+#include "access/table.h"
+#include "access/tableam.h"
 #include "utils/varlena.h"
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
@@ -43,11 +47,11 @@
 #define InitResultRelInfo(resultRelInfo, resultRelationDesc, resultRelationIndex, instrument_options) \
 	InitResultRelInfo(resultRelInfo, resultRelationDesc, resultRelationIndex, NULL, instrument_options)
 
-#define ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newtuple, recheckIndexes) \
-	ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newtuple, recheckIndexes, NULL)
+#define ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newslot, recheckIndexes) \
+	ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newslot, recheckIndexes, NULL)
 
-#define ExecARInsertTriggers(estate, relinfo, trigtuple, recheckIndexes) \
-	ExecARInsertTriggers(estate, relinfo, trigtuple, recheckIndexes, NULL)
+#define ExecARInsertTriggers(estate, relinfo, slot, recheckIndexes) \
+	ExecARInsertTriggers(estate, relinfo, slot, recheckIndexes, NULL)
 
 #define ExecARDeleteTriggers(estate, relinfo, tupleid, fdw_trigtuple) \
 	ExecARDeleteTriggers(estate, relinfo, tupleid, fdw_trigtuple, NULL)
@@ -73,7 +77,7 @@
 
 /* ad7dbee368a */
 #define ExecInitExtraTupleSlot(estate) \
-	ExecInitExtraTupleSlot(estate, NULL)
+	ExecInitExtraTupleSlot(estate, NULL, &TTSOpsHeapTuple)
 
 #define ACL_OBJECT_RELATION OBJECT_TABLE
 #define ACL_OBJECT_SEQUENCE OBJECT_SEQUENCE
@@ -83,19 +87,10 @@
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum, tupledesc)
 
-/* deprecated in PG12, removed in PG13 */
-#define table_open(r, l)		heap_open(r, l)
-#define table_openrv(r, l)		heap_openrv(r, l)
-#define table_openrv_extended(r, l, m)	heap_openrv_extended(r, l, m)
-#define table_close(r, l)		heap_close(r, l)
+/* 578b229718e8 */
+#define HeapTupleGetOid(tup) ((Form_pg_type) GETSTRUCT(tup))->oid
 
-/* 29c94e03c7 */
-#define ExecStoreHeapTuple(tuple, slot, shouldFree) ExecStoreTuple(tuple, slot, InvalidBuffer, shouldFree)
-
-/* c2fe139c20 */
-#define TableScanDesc HeapScanDesc
-#define table_beginscan(relation, snapshot, nkeys, keys) heap_beginscan(relation, snapshot, nkeys, keys)
-#define table_beginscan_catalog(relation, nkeys, keys) heap_beginscan_catalog(relation, nkeys, keys)
-#define table_endscan(scan) heap_endscan(scan)
+#define CreateTemplateTupleDesc(natts, hasoid) \
+	(AssertMacro(!hasoid), CreateTemplateTupleDesc(natts))
 
 #endif

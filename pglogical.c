@@ -374,7 +374,7 @@ pglogical_manage_extension(void)
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	/* make sure we're operating without other pglogical workers interfering */
-	extrel = heap_open(ExtensionRelationId, ShareUpdateExclusiveLock);
+	extrel = table_open(ExtensionRelationId, ShareUpdateExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_pg_extension_extname,
@@ -412,7 +412,7 @@ pglogical_manage_extension(void)
 	}
 
 	systable_endscan(scandesc);
-	heap_close(extrel, NoLock);
+	table_close(extrel, NoLock);
 
 	PopActiveSnapshot();
 }
@@ -600,12 +600,12 @@ static void
 start_manager_workers(void)
 {
 	Relation	rel;
-	HeapScanDesc scan;
+	TableScanDesc scan;
 	HeapTuple	tup;
 
 	/* Run manager worker for every connectable database. */
-	rel = heap_open(DatabaseRelationId, AccessShareLock);
-	scan = heap_beginscan_catalog(rel, 0, NULL);
+	rel = table_open(DatabaseRelationId, AccessShareLock);
+	scan = table_beginscan_catalog(rel, 0, NULL);
 
 	while (HeapTupleIsValid(tup = heap_getnext(scan, ForwardScanDirection)))
 	{
@@ -639,8 +639,8 @@ start_manager_workers(void)
 		pglogical_worker_register(&worker);
 	}
 
-	heap_endscan(scan);
-	heap_close(rel, AccessShareLock);
+	table_endscan(scan);
+	table_close(rel, AccessShareLock);
 }
 
 /*
