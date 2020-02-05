@@ -405,12 +405,12 @@ handle_commit(StringInfo s)
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 
 #if PG_VERSION_NUM >= 90500
-		replorigin_rel = heap_open(ReplicationOriginRelationId, RowExclusiveLock);
+		replorigin_rel = table_open(ReplicationOriginRelationId, RowExclusiveLock);
 #endif
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
 #if PG_VERSION_NUM >= 90500
-		heap_close(replorigin_rel, RowExclusiveLock);
+		table_close(replorigin_rel, RowExclusiveLock);
 #endif
 	}
 
@@ -602,11 +602,11 @@ handle_insert(StringInfo s)
 
 		heap_freetuple(ht);
 
-		qrel = heap_open(QueueRelid, RowExclusiveLock);
+		qrel = table_open(QueueRelid, RowExclusiveLock);
 
 		UnlockRelationIdForSession(&lockid, RowExclusiveLock);
 
-		heap_close(qrel, NoLock);
+		table_close(qrel, NoLock);
 
 		apply_api.on_begin();
 		MemoryContextSwitchTo(MessageContext);

@@ -896,7 +896,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	char				   *nspname,
 						   *relname;
 
-	rel = heap_open(reloid, AccessShareLock);
+	rel = table_open(reloid, AccessShareLock);
 
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
@@ -927,7 +927,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 		create_local_sync_status(&newsync);
 	}
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	if (truncate)
 		truncate_table(nspname, relname);
@@ -1417,7 +1417,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	 * Make sure the relation exists (lock mode has to be the same one as
 	 * in replication_set_add_relation).
 	 */
-	rel = heap_open(reloid, ShareRowExclusiveLock);
+	rel = table_open(reloid, ShareRowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	nspname = get_namespace_name(RelationGetNamespace(rel));
@@ -1490,7 +1490,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	}
 
 	/* Cleanup. */
-	heap_close(rel, ShareRowExclusiveLock);
+	table_close(rel, ShareRowExclusiveLock);
 
 	PG_RETURN_BOOL(true);
 }
@@ -1523,7 +1523,7 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 	 * Make sure the relation exists (lock mode has to be the same one as
 	 * in replication_set_add_relation).
 	 */
-	rel = heap_open(reloid, ShareRowExclusiveLock);
+	rel = table_open(reloid, ShareRowExclusiveLock);
 
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
@@ -1556,7 +1556,7 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 	}
 
 	/* Cleanup. */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	PG_RETURN_BOOL(true);}
 
@@ -1585,7 +1585,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 	existing_relations = list_concat_unique_oid(existing_relations,
 												replication_set_get_seqs(repset->id));
 
-	rel = heap_open(RelationRelationId, RowExclusiveLock);
+	rel = table_open(RelationRelationId, RowExclusiveLock);
 
 	foreach (lc, textarray_to_list(nsp_names))
 	{
@@ -1667,7 +1667,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 		systable_endscan(sysscan);
 	}
 
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	PG_RETURN_BOOL(true);
 }
@@ -1966,7 +1966,7 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 		elog(ERROR, "return type must be a row type");
 	rettupdesc = BlessTupleDesc(rettupdesc);
 
-	rel = heap_open(reloid, AccessShareLock);
+	rel = table_open(reloid, AccessShareLock);
 	reldesc = RelationGetDescr(rel);
 	replication_sets = textarray_to_list(rep_set_names);
 	replication_sets = get_replication_sets(node->node->id,
@@ -2010,7 +2010,7 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 
 	htup = heap_form_tuple(rettupdesc, values, nulls);
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
 }
@@ -2089,7 +2089,7 @@ pglogical_show_repset_table_info_by_target(PG_FUNCTION_ARGS)
 			List	   *att_list = NIL;
 			PGLogicalTableRepInfo *tableinfo = (PGLogicalTableRepInfo *) lfirst(lc);
 
-			rel = heap_open(tableinfo->reloid, AccessShareLock);
+			rel = table_open(tableinfo->reloid, AccessShareLock);
 			reldesc = RelationGetDescr(rel);
 
 			nspname = get_namespace_name(RelationGetNamespace(rel));
@@ -2124,7 +2124,7 @@ pglogical_show_repset_table_info_by_target(PG_FUNCTION_ARGS)
 			values[6] = CStringGetTextDatum(tableinfo->reltarget);
 
 			tuplestore_putvalues(tupstore, tupdesc, values, nulls);
-			heap_close(rel, NoLock);
+			table_close(rel, NoLock);
 	}
 
 	// XXX not required
@@ -2248,7 +2248,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	MemoryContextSwitchTo(oldcontext);
 
 	/* Check output type and table row type are the same. */
-	rel = heap_open(reloid, AccessShareLock);
+	rel = table_open(reloid, AccessShareLock);
 	reltupdesc = RelationGetDescr(rel);
 	if (!equalTupleDescs(tupdesc, reltupdesc))
 		ereport(ERROR,
@@ -2294,7 +2294,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	FreeExecutorState(estate);
 
 	heap_endscan(scandesc);
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	PG_RETURN_NULL();
 }

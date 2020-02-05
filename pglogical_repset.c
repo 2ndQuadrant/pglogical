@@ -128,7 +128,7 @@ get_replication_set(Oid setid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
@@ -145,7 +145,7 @@ get_replication_set(Oid setid)
 	repset = replication_set_from_tuple(tuple);
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return repset;
 }
@@ -166,7 +166,7 @@ get_replication_set_by_name(Oid nodeid, const char *setname, bool missing_ok)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
@@ -186,7 +186,7 @@ get_replication_set_by_name(Oid nodeid, const char *setname, bool missing_ok)
 		if (missing_ok)
 		{
 			systable_endscan(scan);
-			heap_close(rel, RowExclusiveLock);
+			table_close(rel, RowExclusiveLock);
 			return NULL;
 		}
 
@@ -196,7 +196,7 @@ get_replication_set_by_name(Oid nodeid, const char *setname, bool missing_ok)
 	repset = replication_set_from_tuple(tuple);
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return repset;
 }
@@ -302,7 +302,7 @@ get_node_replication_sets(Oid nodeid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_nodeid,
@@ -319,7 +319,7 @@ get_node_replication_sets(Oid nodeid)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return replication_sets;
 }
@@ -336,7 +336,7 @@ get_replication_sets(Oid nodeid, List *replication_set_names, bool missing_ok)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Setup common part of key. */
 	ScanKeyInit(&key[0],
@@ -379,7 +379,7 @@ get_replication_sets(Oid nodeid, List *replication_set_names, bool missing_ok)
 		systable_endscan(scan);
 	}
 
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return replication_sets;
 }
@@ -449,7 +449,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 					 errmsg("relation \"%s.%s\" does not exist",
 							rv->schemaname, rv->relname)));
 	}
-	repset_rel = heap_open(repset_reloid, NoLock);
+	repset_rel = table_open(repset_reloid, NoLock);
 	repset_rel_desc = RelationGetDescr(repset_rel);
 	table_desc = RelationGetDescr(table);
 
@@ -532,7 +532,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 	}
 
 	systable_endscan(scan);
-	heap_close(repset_rel, RowExclusiveLock);
+	table_close(repset_rel, RowExclusiveLock);
 	entry->isvalid = true;
 
 	return entry;
@@ -576,7 +576,7 @@ get_table_replication_info_by_target(Oid nodeid, char *nsptarget, char *reltarge
 					 errmsg("relation \"%s.%s\" does not exist",
 							rv->schemaname, rv->relname)));
 	}
-	repset_rel = heap_open(repset_reloid, NoLock);
+	repset_rel = table_open(repset_reloid, NoLock);
 	repset_rel_desc = RelationGetDescr(repset_rel);
 
 	ScanKeyInit(&key[0],
@@ -640,7 +640,7 @@ get_table_replication_info_by_target(Oid nodeid, char *nsptarget, char *reltarge
 									  TEXTOID, -1, false, 'i',
 									  &elems, NULL, &nelems);
 
-					rel = heap_open(entry->reloid, AccessShareLock);
+					rel = table_open(entry->reloid, AccessShareLock);
 					table_desc = RelationGetDescr(rel);
 					for (i = 0; i < nelems; i++)
 					{
@@ -653,7 +653,7 @@ get_table_replication_info_by_target(Oid nodeid, char *nsptarget, char *reltarge
 								attnum - FirstLowInvalidHeapAttributeNumber);
 						MemoryContextSwitchTo(olctx);
 					}
-                    heap_close(rel, AccessShareLock);
+                    table_close(rel, AccessShareLock);
 				}
 
 				/* Add row filter if any. */
@@ -675,7 +675,7 @@ get_table_replication_info_by_target(Oid nodeid, char *nsptarget, char *reltarge
 	}
 
 	systable_endscan(scan);
-	heap_close(repset_rel, RowExclusiveLock);
+	table_close(repset_rel, RowExclusiveLock);
     return tablesinfo;
 }
 
@@ -705,7 +705,7 @@ get_table_replication_sets(Oid nodeid, Oid reloid)
 					 errmsg("relation \"%s.%s\" does not exist",
 							rv->schemaname, rv->relname)));
 	}
-	rel = heap_open(relid, NoLock);
+	rel = table_open(relid, NoLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_table_reloid,
@@ -727,7 +727,7 @@ get_table_replication_sets(Oid nodeid, Oid reloid)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return replication_sets;
 }
@@ -745,7 +745,7 @@ sequence_has_replication_sets(Oid nodeid, Oid seqoid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_seq_seqoid,
@@ -759,7 +759,7 @@ sequence_has_replication_sets(Oid nodeid, Oid seqoid)
 		res = true;
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return res;
 }
@@ -777,7 +777,7 @@ get_seq_replication_sets(Oid nodeid, Oid seqoid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_table_reloid,
@@ -799,7 +799,7 @@ get_seq_replication_sets(Oid nodeid, Oid seqoid)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return replication_sets;
 }
@@ -817,7 +817,7 @@ get_seq_replication_sets_targets(Oid nodeid, Oid seqoid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_seq_seqoid,
@@ -845,7 +845,7 @@ get_seq_replication_sets_targets(Oid nodeid, Oid seqoid)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return seq_targets;
 }
@@ -864,7 +864,7 @@ get_table_replication_sets_targets(Oid nodeid, Oid reloid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	rel_desc = RelationGetDescr(rel);
 
 	ScanKeyInit(&key[0],
@@ -906,7 +906,7 @@ get_table_replication_sets_targets(Oid nodeid, Oid reloid)
 	}
 
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return rel_targets;
 }
@@ -949,7 +949,7 @@ create_replication_set(PGLogicalRepSet *repset)
 	}
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Form a tuple. */
@@ -975,7 +975,7 @@ create_replication_set(PGLogicalRepSet *repset)
 
 	/* Cleanup. */
 	heap_freetuple(tup);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }
@@ -998,7 +998,7 @@ alter_replication_set(PGLogicalRepSet *repset)
 	bool			replaces[Natts_repset];
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Search for repset record. */
@@ -1026,7 +1026,7 @@ alter_replication_set(PGLogicalRepSet *repset)
 		ScanKeyData		tableskey[1];
 
 		tablesrv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-		tablesrel = heap_openrv(tablesrv, RowExclusiveLock);
+		tablesrel = table_openrv(tablesrv, RowExclusiveLock);
 
 		/* Search for the record. */
 		ScanKeyInit(&tableskey[0],
@@ -1042,7 +1042,7 @@ alter_replication_set(PGLogicalRepSet *repset)
 			RepSetTableTuple   *t = (RepSetTableTuple *) GETSTRUCT(tablestup);
 			Relation			targetrel;
 
-			targetrel = heap_open(t->reloid, AccessShareLock);
+			targetrel = table_open(t->reloid, AccessShareLock);
 
 			/* Check of relation has replication index. */
 			if (RelationGetForm(targetrel)->relkind == RELKIND_RELATION)
@@ -1060,11 +1060,11 @@ alter_replication_set(PGLogicalRepSet *repset)
 									repset->name)));
 			}
 
-			heap_close(targetrel, NoLock);
+			table_close(targetrel, NoLock);
 		}
 
 		systable_endscan(tablesscan);
-		heap_close(tablesrel, RowExclusiveLock);
+		table_close(tablesrel, RowExclusiveLock);
 	}
 
 	/* Everything ok, form a new tuple. */
@@ -1092,7 +1092,7 @@ alter_replication_set(PGLogicalRepSet *repset)
 	/* Cleanup. */
 	heap_freetuple(newtup);
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 /*
@@ -1109,7 +1109,7 @@ replication_set_remove_tables(Oid setid, Oid nodeid)
 	ObjectAddress	myself;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	myself.classId = get_replication_set_table_rel_oid();
 	myself.objectId = setid;
@@ -1138,7 +1138,7 @@ replication_set_remove_tables(Oid setid, Oid nodeid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 /*
@@ -1155,7 +1155,7 @@ replication_set_remove_seqs(Oid setid, Oid nodeid)
 	ObjectAddress	myself;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Search for the record. */
 	ScanKeyInit(&key[0],
@@ -1190,7 +1190,7 @@ replication_set_remove_seqs(Oid setid, Oid nodeid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 
@@ -1208,7 +1208,7 @@ drop_replication_set(Oid setid)
 	RepSetTuple	   *repset;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Search for repset record. */
 	ScanKeyInit(&key[0],
@@ -1234,7 +1234,7 @@ drop_replication_set(Oid setid)
 	/* Cleanup. */
 	CacheInvalidateRelcache(rel);
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }
@@ -1251,7 +1251,7 @@ drop_node_replication_sets(Oid nodeid)
 	Assert(IsTransactionState());
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	ScanKeyInit(&key[0],
 				Anum_repset_nodeid,
@@ -1276,7 +1276,7 @@ drop_node_replication_sets(Oid nodeid)
 	/* Cleanup. */
 	CacheInvalidateRelcache(rel);
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }
@@ -1303,7 +1303,7 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 	ObjectAddress	myself;
 
 	/* Open the relation. */
-	targetrel = heap_open(reloid, ShareRowExclusiveLock);
+	targetrel = table_open(reloid, ShareRowExclusiveLock);
 
 	/* UNLOGGED and TEMP relations cannot be part of replication set. */
 	if (!RelationNeedsWAL(targetrel))
@@ -1326,7 +1326,7 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 
 	create_truncate_trigger(targetrel);
 
-	heap_close(targetrel, NoLock);
+	table_close(targetrel, NoLock);
 
 	if (!nsptarget)
 			nsptarget = get_namespace_name(RelationGetNamespace(targetrel));
@@ -1335,7 +1335,7 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 
 	/* Open the catalog. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Check that another reloid does not exists with the same targets. */
@@ -1425,7 +1425,7 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 												  DEPENDENCY_NORMAL);
 	}
 
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }
@@ -1451,7 +1451,7 @@ replication_set_add_seq(Oid setid, Oid seqoid, char *nsptarget, char *reltarget)
 	ObjectAddress	myself;
 
 	/* Open the relation. */
-	targetrel = heap_open(seqoid, ShareRowExclusiveLock);
+	targetrel = table_open(seqoid, ShareRowExclusiveLock);
 
 	/* UNLOGGED and TEMP relations cannot be part of replication set. */
 	if (!RelationNeedsWAL(targetrel))
@@ -1462,7 +1462,7 @@ replication_set_add_seq(Oid setid, Oid seqoid, char *nsptarget, char *reltarget)
 	/* Ensure track the state of the sequence. */
 	pglogical_create_sequence_state_record(seqoid);
 
-	heap_close(targetrel, NoLock);
+	table_close(targetrel, NoLock);
 
 	if (!nsptarget)
 			nsptarget = get_namespace_name(RelationGetNamespace(targetrel));
@@ -1471,7 +1471,7 @@ replication_set_add_seq(Oid setid, Oid seqoid, char *nsptarget, char *reltarget)
 
 	/* Open the catalog. */
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Check that another seqoid does not exists with the same targets. */
@@ -1538,7 +1538,7 @@ replication_set_add_seq(Oid setid, Oid seqoid, char *nsptarget, char *reltarget)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	CommandCounterIncrement();
 }
@@ -1558,7 +1558,7 @@ replication_set_get_tables(Oid setid)
 	List		   *res = NIL;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Setup the search. */
 	ScanKeyInit(&key[0],
@@ -1578,7 +1578,7 @@ replication_set_get_tables(Oid setid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return res;
 }
@@ -1597,7 +1597,7 @@ replication_set_get_seqs(Oid setid)
 	List		   *res = NIL;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Setup the search. */
 	ScanKeyInit(&key[0],
@@ -1617,7 +1617,7 @@ replication_set_get_seqs(Oid setid)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return res;
 }
@@ -1636,7 +1636,7 @@ replication_set_remove_table(Oid setid, Oid reloid, bool from_drop)
 	ObjectAddress	myself;
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_TABLE, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Search for the record. */
 	ScanKeyInit(&key[0],
@@ -1676,7 +1676,7 @@ replication_set_remove_table(Oid setid, Oid reloid, bool from_drop)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 /*
@@ -1694,7 +1694,7 @@ replication_set_remove_seq(Oid setid, Oid seqoid, bool from_drop)
 	PGLogicalRepSet *repset = get_replication_set(setid);
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_REPSET_SEQ, -1);
-	rel = heap_openrv(rv, RowExclusiveLock);
+	rel = table_openrv(rv, RowExclusiveLock);
 
 	/* Search for the record. */
 	ScanKeyInit(&key[0],
@@ -1736,7 +1736,7 @@ replication_set_remove_seq(Oid setid, Oid seqoid, bool from_drop)
 
 	/* Cleanup. */
 	systable_endscan(scan);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 /*

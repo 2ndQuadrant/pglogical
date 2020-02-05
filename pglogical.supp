@@ -471,6 +471,15 @@
    fun:heap_openrv
 }
 
+{
+   pg_table_openrv
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:*lloc*
+   ...
+   fun:table_openrv
+}
+
 #
 # Tupledescs are refcounted. Any check we do during a txn
 # will show such output.

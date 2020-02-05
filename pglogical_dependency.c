@@ -310,7 +310,7 @@ pglogical_recordMultipleDependencies(const ObjectAddress *depender,
 	if (nreferenced <= 0)
 		return;					/* nothing to do */
 
-	dependDesc = heap_open(get_pglogical_depend_rel_oid(),
+	dependDesc = table_open(get_pglogical_depend_rel_oid(),
 						   RowExclusiveLock);
 
 	memset(nulls, false, sizeof(nulls));
@@ -338,7 +338,7 @@ pglogical_recordMultipleDependencies(const ObjectAddress *depender,
 		heap_freetuple(tup);
 	}
 
-	heap_close(dependDesc, RowExclusiveLock);
+	table_close(dependDesc, RowExclusiveLock);
 }
 
 
@@ -1918,7 +1918,7 @@ void pglogical_tryDropDependencies(const ObjectAddress *object,
 	 * We save some cycles by opening pglogical_depend just once and passing the
 	 * Relation pointer down to all the recursive deletion steps.
 	 */
-	depRel = heap_open(get_pglogical_depend_rel_oid(), RowExclusiveLock);
+	depRel = table_open(get_pglogical_depend_rel_oid(), RowExclusiveLock);
 
 	/*
 	 * Construct a list of objects to delete (ie, the given object plus
@@ -1958,7 +1958,7 @@ void pglogical_tryDropDependencies(const ObjectAddress *object,
 	/* And clean up */
 	free_object_addresses(targetObjects);
 
-	heap_close(depRel, RowExclusiveLock);
+	table_close(depRel, RowExclusiveLock);
 }
 
 /*
