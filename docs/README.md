@@ -114,7 +114,7 @@ Debian (e.g. Ubuntu).
 ##### Pre-requisites
 
 You can install the “2ndQuadrant’s General Public” repository by running the
-following instructions as root on the destination Linux server: `curl http://access.2ndquadrant.com/api/repository/dl/default/release/deb | bash`
+following instructions as root on the destination Linux server: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/deb | bash`
 
  - Add the http://apt.postgresql.org/ repository. See the site for instructions.
 
