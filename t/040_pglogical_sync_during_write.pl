@@ -111,13 +111,26 @@ $node_subscriber->poll_query_until('postgres',
 diag "provider is" . $node_provider->name;
 diag "max_connections is " . $node_provider->safe_psql('postgres', 'SHOW max_connections;');
 
+my $pgbench_stdout='';
+my $pgbench_stderr='';
 my $pgbench_handle = IPC::Run::start(
-	[ 'pgbench', '-T', $PGBENCH_TIME, '-j', $PGBENCH_JOBS, '-s', $PGBENCH_SCALE, '-c', $PGBENCH_CLIENTS, $node_provider->connstr('postgres')]);
+	[ 'pgbench', '-T', $PGBENCH_TIME, '-j', $PGBENCH_JOBS, '-s', $PGBENCH_SCALE, '-c', $PGBENCH_CLIENTS, $node_provider->connstr('postgres')],
+        '>', \$pgbench_stdout, '2>', \$pgbench_stderr);
 
-# Wait for pgbench to connect
-$node_provider->poll_query_until('postgres',
-	q[SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench')])
-	or BAIL_OUT('pgbench process is not running currently');
+
+
+# Wait for Pgbench to finish and make various assertions
+$pgbench_handle->finish;
+note "##### output of pgbench #####";
+note $pgbench_stdout;
+note "##### end of output #####";
+
+is($pgbench_handle->full_result(0), 0, "pgbench run successfull ");
+
+## Wait for pgbench to connect
+#$node_provider->poll_query_until('postgres',
+#	q[SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench')])
+#	or BAIL_OUT('pgbench process is not running currently');
 
 $node_provider->safe_psql('postgres', q[ALTER SYSTEM SET log_statement = 'ddl']);
 $node_provider->safe_psql('postgres', q[SELECT pg_reload_conf();]);
