@@ -119,7 +119,7 @@ static bool check_data_dir(char *data_dir, RemoteInfo *remoteinfo);
 static char *read_sysid(const char *data_dir);
 
 static void WriteRecoveryConf(PQExpBuffer contents);
-static void CopyConfFile(char *fromfile, char *tofile);
+static void CopyConfFile(char *fromfile, char *tofile, bool append);
 
 static char *get_connstr_dbname(char *connstr);
 static char *get_connstr(char *connstr, char *dbname);
@@ -128,7 +128,7 @@ static void appendPQExpBufferConnstrValue(PQExpBuffer buf, const char *str);
 
 static bool file_exists(const char *path);
 static bool is_pg_dir(const char *path);
-static void copy_file(char *fromfile, char *tofile);
+static void copy_file(char *fromfile, char *tofile, bool append);
 static char *find_other_exec_or_die(const char *argv0, const char *target);
 static bool postmaster_is_alive(pid_t pid);
 static long get_pgpid(void);
@@ -263,7 +263,7 @@ main(int argc, char **argv)
 				{
 					recovery_conf = pg_strdup(optarg);
 					if (recovery_conf != NULL && !file_exists(recovery_conf))
-						die(_("The specified recovery.conf file does not exist."));
+						die(_("The specified recovery configuration file does not exist."));
 					break;
 				}
 			case 'v':
@@ -448,11 +448,17 @@ main(int argc, char **argv)
 			  _("Bringing subscriber node to the restore point ...\n"));
 	if (recovery_conf)
 	{
-		CopyConfFile(recovery_conf, "recovery.conf");
+#if PG_VERSION_NUM >= 120000
+		CopyConfFile(recovery_conf, "postgresql.auto.conf", true);
+#else
+		CopyConfFile(recovery_conf, "recovery.conf", false);
+#endif
 	}
 	else
 	{
+#if PG_VERSION_NUM < 120000
 		appendPQExpBuffer(recoveryconfcontents, "standby_mode = 'on'\n");
+#endif
 		appendPQExpBuffer(recoveryconfcontents, "primary_conninfo = '%s'\n",
 								escape_single_quotes_ascii(prov_connstr));
 	}
@@ -602,7 +608,7 @@ usage(void)
 	printf(_("\nConfiguration files override:\n"));
 	printf(_("  --hba-conf              path to the new pg_hba.conf\n"));
 	printf(_("  --postgresql-conf       path to the new postgresql.conf\n"));
-	printf(_("  --recovery-conf         path to the template recovery.conf\n"));
+	printf(_("  --recovery-conf         path to the template recovery configuration\n"));
 }
 
 /*
@@ -741,9 +747,9 @@ initialize_data_dir(char *data_dir, char *connstr,
 	}
 
 	if (postgresql_conf)
-		CopyConfFile(postgresql_conf, "postgresql.conf");
+		CopyConfFile(postgresql_conf, "postgresql.conf", false);
 	if (pg_hba_conf)
-		CopyConfFile(pg_hba_conf, "pg_hba.conf");
+		CopyConfFile(pg_hba_conf, "pg_hba.conf", false);
 }
 
 /*
@@ -1337,7 +1343,7 @@ read_sysid(const char *data_dir)
 }
 
 /*
- * Write contents of recovery.conf
+ * Write contents of recovery.conf or postgresql.auto.conf
  */
 static void
 WriteRecoveryConf(PQExpBuffer contents)
@@ -1345,9 +1351,15 @@ WriteRecoveryConf(PQExpBuffer contents)
 	char		filename[MAXPGPATH];
 	FILE	   *cf;
 
+#if PG_VERSION_NUM >= 120000
+	sprintf(filename, "%s/postgresql.auto.conf", data_dir);
+
+	cf = fopen(filename, "a");
+#else
 	sprintf(filename, "%s/recovery.conf", data_dir);
 
 	cf = fopen(filename, "w");
+#endif
 	if (cf == NULL)
 	{
 		die(_("%s: could not create file \"%s\": %s\n"), progname, filename, strerror(errno));
@@ -1360,13 +1372,26 @@ WriteRecoveryConf(PQExpBuffer contents)
 	}
 
 	fclose(cf);
+
+#if PG_VERSION_NUM >= 120000
+	{
+		sprintf(filename, "%s/standby.signal", data_dir);
+		cf = fopen(filename, "w");
+		if (cf == NULL)
+		{
+			die(_("%s: could not create file \"%s\": %s\n"), progname, filename, strerror(errno));
+		}
+
+		fclose(cf);
+	}
+#endif
 }
 
 /*
  * Copy file to data
  */
 static void
-CopyConfFile(char *fromfile, char *tofile)
+CopyConfFile(char *fromfile, char *tofile, bool append)
 {
 	char		filename[MAXPGPATH];
 
@@ -1374,7 +1399,7 @@ CopyConfFile(char *fromfile, char *tofile)
 
 	print_msg(VERBOSITY_DEBUG, _("Copying \"%s\" to \"%s\".\n"),
 			  fromfile, filename);
-	copy_file(fromfile, filename);
+	copy_file(fromfile, filename, append);
 }
 
 
@@ -1590,7 +1615,7 @@ is_pg_dir(const char *path)
  * copy one file
  */
 static void
-copy_file(char *fromfile, char *tofile)
+copy_file(char *fromfile, char *tofile, bool append)
 {
 	char	   *buffer;
 	int			srcfd;
@@ -1609,7 +1634,7 @@ copy_file(char *fromfile, char *tofile)
 	if (srcfd < 0)
 		die(_("could not open file \"%s\""), fromfile);
 
-	dstfd = open(tofile, O_RDWR | O_CREAT | O_TRUNC | PG_BINARY,
+	dstfd = open(tofile, O_RDWR | O_CREAT | (append ? O_APPEND : O_TRUNC) | PG_BINARY,
 							  S_IRUSR | S_IWUSR);
 	if (dstfd < 0)
 		die(_("could not create file \"%s\""), tofile);
