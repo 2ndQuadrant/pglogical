@@ -20,6 +20,8 @@ my $WALSENDER_TIMEOUT = $ENV{PGBENCH_TIMEOUT} // '5s';
 $SIG{__DIE__} = sub { Carp::confess @_ };
 $SIG{INT}  = sub { die("interupted by SIGINT"); };
 
+my $dbname="pgltest";
+my $super_user="super";
 my $node_provider = get_new_node('provider');
 $node_provider->init();
 $node_provider->append_conf('postgresql.conf', qq[
@@ -35,6 +37,7 @@ pglogical.synchronous_commit = true
 ]);
 $node_provider->dump_info;
 $node_provider->start;
+$node_provider->safe_psql('postgres', "CREATE DATABASE $dbname");
 
 my $node_subscriber = get_new_node('subscriber');
 $node_subscriber->init();
@@ -50,36 +53,37 @@ log_line_prefix = '%t %p '
 ]);
 $node_subscriber->dump_info;
 $node_subscriber->start;
+$node_subscriber->safe_psql('postgres', "CREATE DATABASE $dbname");
 
 # Create provider node on master:
-$node_provider->safe_psql('postgres',
-        "CREATE USER super SUPERUSER;");
-$node_provider->safe_psql('postgres',
+$node_provider->safe_psql($dbname,
+        "CREATE USER $super_user SUPERUSER;");
+$node_provider->safe_psql($dbname,
         "CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';");
-$node_provider->safe_psql('postgres',
+$node_provider->safe_psql($dbname,
         "ALTER EXTENSION pglogical UPDATE;");
 
 my $provider_connstr = $node_provider->connstr;
 print "node_provider - connstr : $provider_connstr\n";
 
-$node_provider->safe_psql('postgres',
-        "SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := '$provider_connstr dbname=postgres user=super');");
+$node_provider->safe_psql($dbname,
+        "SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := '$provider_connstr dbname=$dbname user=$super_user');");
 
 # Create subscriber node on subscriber:
-$node_subscriber->safe_psql('postgres',
-        "CREATE USER super SUPERUSER;");
-$node_subscriber->safe_psql('postgres',
+$node_subscriber->safe_psql($dbname,
+        "CREATE USER $super_user SUPERUSER;");
+$node_subscriber->safe_psql($dbname,
         "CREATE EXTENSION IF NOT EXISTS pglogical VERSION '1.0.0';");
-$node_subscriber->safe_psql('postgres',
+$node_subscriber->safe_psql($dbname,
         "ALTER EXTENSION pglogical UPDATE;");
 my $subscriber_connstr = $node_subscriber->connstr;
 print "node_subscriber - connstr : $subscriber_connstr\n";
 
-$node_subscriber->safe_psql('postgres',
-        "SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := '$subscriber_connstr dbname=postgres user=super');");
+$node_subscriber->safe_psql($dbname,
+        "SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := '$subscriber_connstr dbname=$dbname user=$super_user');");
 
 # Initialise pgbench on provider and print initial data count in tables
-$node_provider->command_ok([ 'pgbench', '-i', '-s', $PGBENCH_SCALE],
+$node_provider->command_ok([ 'pgbench', '-i', '-s', $PGBENCH_SCALE, $dbname],
         'initialize pgbench');
 
 my @pgbench_tables = ('pgbench_accounts', 'pgbench_tellers', 'pgbench_history');
@@ -89,19 +93,19 @@ for my $tbl (@pgbench_tables)
 {
 	my $setname = 'default';
 	$setname = 'default_insert_only' if ($tbl eq 'pgbench_history');
-	$node_provider->safe_psql('postgres',
+	$node_provider->safe_psql($dbname,
 			"SELECT * FROM pglogical.replication_set_add_table('$setname', '$tbl', false);");
 }
 
-$node_subscriber->safe_psql('postgres',
+$node_subscriber->safe_psql($dbname,
         "SELECT pglogical.create_subscription(
     subscription_name := 'test_subscription',
     synchronize_structure := 'all',
     synchronize_data := true,
-    provider_dsn := '$provider_connstr dbname=postgres user=super'
+    provider_dsn := '$provider_connstr dbname=$dbname user=$super_user'
 );");
 
-$node_subscriber->poll_query_until('postgres',
+$node_subscriber->poll_query_until($dbname,
 	q[SELECT EXISTS (SELECT 1 FROM pglogical.show_subscription_status() where subscription_name = 'test_subscription' AND status = 'replicating')])
 	or BAIL_OUT('subscription failed to reach "replicating" state');
 
@@ -109,31 +113,23 @@ $node_subscriber->poll_query_until('postgres',
 # with this TPC-B-ish run. Run it in the background.
 
 diag "provider is" . $node_provider->name;
-diag "max_connections is " . $node_provider->safe_psql('postgres', 'SHOW max_connections;');
+diag "max_connections is " . $node_provider->safe_psql($dbname, 'SHOW max_connections;');
 
 my $pgbench_stdout='';
 my $pgbench_stderr='';
 my $pgbench_handle = IPC::Run::start(
-	[ 'pgbench', '-T', $PGBENCH_TIME, '-j', $PGBENCH_JOBS, '-s', $PGBENCH_SCALE, '-c', $PGBENCH_CLIENTS, $node_provider->connstr('postgres')],
+	[ 'pgbench', '-T', $PGBENCH_TIME, '-j', $PGBENCH_JOBS, '-s', $PGBENCH_SCALE, '-c', $PGBENCH_CLIENTS, $node_provider->connstr($dbname)],
         '>', \$pgbench_stdout, '2>', \$pgbench_stderr);
+$pgbench_handle->pump();
 
 
+# Wait for pgbench to connect
+$node_provider->poll_query_until($dbname,
+	q[SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE query like 'UPDATE pgbench%')])
+	or BAIL_OUT('pgbench process is not running currently');
 
-# Wait for Pgbench to finish and make various assertions
-$pgbench_handle->finish;
-note "##### output of pgbench #####";
-note $pgbench_stdout;
-note "##### end of output #####";
-
-is($pgbench_handle->full_result(0), 0, "pgbench run successfull ");
-
-## Wait for pgbench to connect
-#$node_provider->poll_query_until('postgres',
-#	q[SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench')])
-#	or BAIL_OUT('pgbench process is not running currently');
-
-$node_provider->safe_psql('postgres', q[ALTER SYSTEM SET log_statement = 'ddl']);
-$node_provider->safe_psql('postgres', q[SELECT pg_reload_conf();]);
+$node_provider->safe_psql($dbname, q[ALTER SYSTEM SET log_statement = 'ddl']);
+$node_provider->safe_psql($dbname, q[SELECT pg_reload_conf();]);
 
 # Let it warm up for a while
 note "warming up pgbench for " . ($PGBENCH_TIME/10) . "s";
@@ -145,8 +141,8 @@ open(my $publog, "<", $node_provider->logfile)
 open(my $sublog, "<", $node_subscriber->logfile)
 	or die "can't open log file for subscriber at " . $node_subscriber->logfile . ": $!";
 
-my $walsender_pid = int($node_provider->safe_psql('postgres', q[SELECT pid FROM pg_stat_activity WHERE application_name = 'test_subscription']));
-my $apply_pid = int($node_subscriber->safe_psql('postgres', q[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%apply%']));
+my $walsender_pid = int($node_provider->safe_psql($dbname, q[SELECT pid FROM pg_stat_activity WHERE application_name = 'test_subscription']));
+my $apply_pid = int($node_subscriber->safe_psql($dbname, q[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%apply%']));
 note "wal sender pid is $walsender_pid; apply worker pid is $apply_pid";
 
 # Seek to log EOF
@@ -164,13 +160,13 @@ do {
 		my $resync_start = [Time::HiRes::gettimeofday()];
 
 		eval {
-			$node_subscriber->safe_psql('postgres',
+			$node_subscriber->safe_psql($dbname,
 					"SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', '$tbl');");
 		};
 		if ($@)
 		{
 			diag "attempt to resync $tbl failed with $@; sync_status is currently " .
-				$node_subscriber->safe_psql('postgres', "SELECT sync_status FROM pglogical.local_sync_status WHERE sync_relname = '$tbl'");
+				$node_subscriber->safe_psql($dbname, "SELECT sync_status FROM pglogical.local_sync_status WHERE sync_relname = '$tbl'");
 			fail("$tbl didn't sync: resync request failed");
 			next EACH_TABLE;
 		}
@@ -179,10 +175,10 @@ do {
 		{
 			Time::HiRes::usleep(100);
 
-			my $running = $node_subscriber->safe_psql('postgres',
+			my $running = $node_subscriber->safe_psql($dbname,
 				qq[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%sync%']);
 
-			my $status = $node_subscriber->safe_psql('postgres',
+			my $status = $node_subscriber->safe_psql($dbname,
 				qq[SELECT sync_status FROM pglogical.local_sync_status WHERE sync_relname = '$tbl']);
 
 			if ($status eq 'r')
@@ -219,7 +215,7 @@ do {
 				$timeout_line = $line;
 
 				diag "status line after failed sync is "
-					. $node_subscriber->safe_psql('postgres',
+					. $node_subscriber->safe_psql($dbname,
 					 	qq[SELECT * FROM pglogical.local_sync_status WHERE sync_relname = '$tbl']);
 
 				if ($line =~ qr/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [A-Z]+ (\d+) LOG:/)
@@ -234,7 +230,7 @@ do {
 					else
 					{
 						diag "terminated walsender was not for apply worker, looking for a sync worker";
-						my $sync_pid = int($node_subscriber->safe_psql('postgres', q[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%sync%']));
+						my $sync_pid = int($node_subscriber->safe_psql($dbname, q[SELECT pid FROM pg_stat_activity WHERE application_name LIKE '%sync%']));
 						if ($sync_pid)
 						{
 							diag "found running sync worker $sync_pid, trying to make core";
@@ -273,25 +269,29 @@ do {
 	$i ++;
 
 	# and repeat until pgbench exits
-} while ($node_provider->safe_psql('postgres', q[SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench']));
+} while ($node_provider->safe_psql($dbname, q[SELECT 1 FROM pg_stat_activity WHERE application_name = 'pgbench']));
 
-note "pgbench run done, cleaning up";
 $pgbench_handle->finish;
+note "##### output of pgbench #####";
+note $pgbench_stdout;
+note "##### end of output #####";
+
+is($pgbench_handle->full_result(0), 0, "pgbench run successfull ");
 
 note " waiting for catchup";
 
 # Wait for catchup
-$node_provider->safe_psql('postgres', 'SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);');
+$node_provider->safe_psql($dbname, 'SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);');
 
 note "comparing tables";
 
 # Compare final table entries on provider and subscriber.
 for my $tbl (@pgbench_tables)
 {
-	my $rowcount_provider = $node_provider->safe_psql('postgres',
+	my $rowcount_provider = $node_provider->safe_psql($dbname,
 			"SELECT count(*) FROM $tbl;");
 
-	my $rowcount_subscriber = $node_subscriber->safe_psql('postgres',
+	my $rowcount_subscriber = $node_subscriber->safe_psql($dbname,
 			"SELECT count(*) FROM $tbl;");
 
 	my $matched = is($rowcount_subscriber, $rowcount_provider,
@@ -310,9 +310,9 @@ for my $tbl (@pgbench_tables)
 		}
 
 		# Compare the tables
-		$node_provider->safe_psql('postgres', qq[\\copy (SELECT * FROM $tbl ORDER BY $sortkey) to tmp_check/$tbl-provider]);
-		$node_subscriber->safe_psql('postgres', qq[\\copy (SELECT * FROM $tbl ORDER BY $sortkey) to tmp_check/$tbl-subscriber]);
-		$node_subscriber->safe_psql('postgres', qq[\\copy (SELECT * FROM $tbl, pglogical.xact_commit_timestamp_origin($tbl.xmin) ORDER BY $sortkey) to tmp_check/$tbl-subscriber-detail]);
+		$node_provider->safe_psql($dbname, qq[\\copy (SELECT * FROM $tbl ORDER BY $sortkey) to tmp_check/$tbl-provider]);
+		$node_subscriber->safe_psql($dbname, qq[\\copy (SELECT * FROM $tbl ORDER BY $sortkey) to tmp_check/$tbl-subscriber]);
+		$node_subscriber->safe_psql($dbname, qq[\\copy (SELECT * FROM $tbl, pglogical.xact_commit_timestamp_origin($tbl.xmin) ORDER BY $sortkey) to tmp_check/$tbl-subscriber-detail]);
 		IPC::Run::run(['diff', '-u', "tmp_check/$tbl-provider", "tmp_check/$tbl-subscriber"], '>', "tmp_check/$tbl-diff");
 		diag "differences between $tbl on provider and subscriber recorded in tmp_check/";
 	}
