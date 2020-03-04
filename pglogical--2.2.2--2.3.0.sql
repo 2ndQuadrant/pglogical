@@ -11,11 +11,11 @@ DROP FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn
     synchronize_data boolean, forward_origins text[], apply_delay interval);
 
 ALTER TABLE pglogical.replication_set_table
-      ADD COLUMN set_nsptarget name NOT NULL
-    , ADD COLUMN set_reltarget name NOT NULL;
+      ADD COLUMN set_nsptarget name
+    , ADD COLUMN set_reltarget name ;
 ALTER TABLE pglogical.replication_set_seq
-      ADD COLUMN set_nsptarget name NOT NULL
-    , ADD COLUMN set_seqtarget name NOT NULL;
+      ADD COLUMN set_nsptarget name
+    , ADD COLUMN set_seqtarget name;
 DROP FUNCTION pglogical.show_repset_table_info(regclass, text[]);
 CREATE FUNCTION pglogical.show_repset_table_info(relation regclass, repsets text[], OUT relid oid, OUT nspname text,
    OUT relname text, OUT att_list text[], OUT has_row_filter boolean, OUT nsptarget text, OUT reltarget text)
@@ -39,6 +39,12 @@ FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.oid = set_seqoid;
 
+ALTER TABLE pglogical.replication_set_table
+      ALTER COLUMN set_nsptarget SET NOT NULL
+    , ALTER COLUMN set_reltarget SET NOT NULL;
+ALTER TABLE pglogical.replication_set_seq
+      ALTER COLUMN set_nsptarget SET NOT NULL
+    , ALTER COLUMN set_seqtarget SET NOT NULL;
 -- a VACUUM FULL of the table above would be nice here.
 
 DROP FUNCTION pglogical.replication_set_add_table(name, regclass, boolean,
