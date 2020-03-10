@@ -490,7 +490,6 @@ main(int argc, char **argv)
 	print_msg(VERBOSITY_VERBOSE,
 			  _("Removing old pglogical configuration ...\n"));
 
-
 	for (dbnum = 0; dbnum < n_databases; dbnum++)
 	{
 		char *db = database_list[dbnum];
@@ -968,7 +967,7 @@ remove_unwanted_data(PGconn *conn)
 	PGresult		   *res;
 
 	/*
-	 * Remove replication identifiers (9.4 will get the removed by dropping
+	 * Remove replication identifiers (9.4 will get them removed by dropping
 	 * the extension later as we emulate them there).
 	 */
 	if (PQserverVersion(conn) >= 90500)
@@ -1088,10 +1087,7 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 	PQExpBufferData		repsets;
 	PGresult		   *res;
 
-					  PQescapeLiteral(conn, subscriber_dsn, strlen(subscriber_dsn)),
-
 	initPQExpBuffer(&query);
-
 	printfPQExpBuffer(&query,
 					  "SELECT pglogical.create_node(node_name := %s, dsn := %s);",
 					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
