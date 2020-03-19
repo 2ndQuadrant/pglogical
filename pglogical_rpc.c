@@ -134,9 +134,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	StringInfoData  relname;
 
 	initStringInfo(&relname);
-	appendStringInfo(&relname, "%s.%s",
-					 PQescapeLiteral(conn, rv->schemaname, strlen(rv->schemaname)),
-					 PQescapeLiteral(conn, rv->relname, strlen(rv->relname)));
+	appendStringInfo(&relname, "%s.%s", rv->schemaname, rv->relname);
 
 	initStringInfo(&repsetarr);
 	foreach (lc, replication_sets)
