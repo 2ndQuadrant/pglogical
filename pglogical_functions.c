@@ -517,12 +517,8 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 
 	if (SyncStructureAll(sync_structure) && sync_data)
 		sync.kind = SYNC_KIND_FULL;
-	else if (SyncStructureRelOnly(sync_structure) && sync_data)
-		sync.kind = SYNC_KIND_FULL_REL;
 	else if (SyncStructureAll(sync_structure))
 		sync.kind = SYNC_KIND_STRUCTURE;
-	else if (SyncStructureRelOnly(sync_structure))
-		sync.kind = SYNC_KIND_STRUCTURE_REL;
 	else if (sync_data)
 		sync.kind = SYNC_KIND_DATA;
 	else

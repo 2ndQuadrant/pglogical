@@ -181,62 +181,6 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	return remoterel;
 }
 
-/*
- * Fetch list of sequences that are grouped in specified replication sets.
- */
-List *
-pg_logical_get_remote_repset_sequences(PGconn *conn, List *replication_sets)
-{
-	PGresult   *res;
-	int			i;
-	List	   *sequences = NIL;
-	ListCell   *lc;
-	bool		first = true;
-	StringInfoData	query;
-	StringInfoData	repsetarr;
-
-	initStringInfo(&repsetarr);
-	foreach (lc, replication_sets)
-	{
-		char	   *repset_name = lfirst(lc);
-
-		if (first)
-			first = false;
-		else
-			appendStringInfoChar(&repsetarr, ',');
-
-		appendStringInfo(&repsetarr, "%s",
-						 PQescapeLiteral(conn, repset_name, strlen(repset_name)));
-	}
-
-	initStringInfo(&query);
-	// TODO limit to pglogical >= 2.3 ?
-	appendStringInfo(&query,
-			 "select c.relnamespace::regnamespace as set_nspname, c.relname as set_seqname FROM pglogical.replication_set_seq r "
-			 "join pg_class c on (c.oid = r.set_seqoid),"
-			 "pglogical.replication_set s, "
-			 "pglogical.local_node n "
-			 "WHERE s.set_nodeid = n.node_id AND s.set_id = r.set_id "
-			 "AND s.set_name = ANY(ARRAY[%s])", repsetarr.data);
-
-	res = PQexec(conn, query.data);
-	/* TODO: better error message? */
-	if (PQresultStatus(res) != PGRES_TUPLES_OK)
-		elog(ERROR, "could not get sequence list: %s", PQresultErrorMessage(res));
-
-	for (i = 0; i < PQntuples(res); i++)
-	{
-	  RangeVar *rv;
-          rv = makeRangeVar(pstrdup(PQgetvalue(res, i, 0)),
-			    pstrdup(PQgetvalue(res, i, 1)), -1);
-
-          sequences = lappend(sequences, rv);
-	}
-
-	PQclear(res);
-
-	return sequences;
-}
 
 /*
  * Is the remote slot active?.
