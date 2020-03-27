@@ -389,7 +389,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	ArrayType			   *rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
-	char					*sync_structure = text_to_cstring(PG_GETARG_TEXT_PP(3));
+	bool					sync_structure = PG_GETARG_BOOL(3);
 	bool					sync_data = PG_GETARG_BOOL(4);
 	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(5);
 	Interval			   *apply_delay = PG_GETARG_INTERVAL_P(6);
@@ -515,9 +515,9 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	/* Create synchronization status for the subscription. */
 	memset(&sync, 0, sizeof(PGLogicalSyncStatus));
 
-	if (SyncStructureAll(sync_structure) && sync_data)
+	if (sync_structure && sync_data)
 		sync.kind = SYNC_KIND_FULL;
-	else if (SyncStructureAll(sync_structure))
+	else if (sync_structure)
 		sync.kind = SYNC_KIND_STRUCTURE;
 	else if (sync_data)
 		sync.kind = SYNC_KIND_DATA;

@@ -61,7 +61,7 @@ system_or_bail 'psql', '-p', "$PGPORT", '-d', "postgres", '-c', "SELECT * FROM p
     provider_dsn := '$PROVIDER_DSN',
         replication_sets := '{delay}',
         forward_origins := '{}',
-        synchronize_structure := 'none',
+        synchronize_structure := false,
         synchronize_data := false
 )";
 

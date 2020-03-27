@@ -79,7 +79,7 @@ system_or_bail 'psql', '-p', "$PGPORT", '-c', "SELECT * FROM pglogical.create_su
     subscription_name := 'test_subscription',
     provider_dsn := '$PROVIDER_DSN',
     forward_origins := '{}',
-    synchronize_structure := 'none',
+    synchronize_structure := false,
     synchronize_data := false
 )";
 
@@ -89,7 +89,7 @@ system_or_bail 'psql', '-p', "$PGPORT", '-c', "SELECT * FROM pglogical.create_su
     provider_dsn := '$PROVIDER_DSN',
     replication_sets := '{delay}',
     forward_origins := '{}',
-    synchronize_structure := 'none',
+    synchronize_structure := false,
     synchronize_data := false,
     apply_delay := int2interval(1) -- 1 seconds
 )";

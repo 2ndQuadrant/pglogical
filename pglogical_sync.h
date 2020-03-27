@@ -40,13 +40,6 @@ typedef struct PGLogicalSyncStatus
 #define SyncKindStructure(kind) \
 	(kind == SYNC_KIND_FULL || kind == SYNC_KIND_STRUCTURE)
 
-#define SyncStructureAll(sync_structure) \
-	(strcmp(sync_structure, "all") == 0)
-
-/* XXX not used but document the sync_structure enum ... */
-#define SyncStructureNone(sync_structure) \
-	(strcmp(sync_structure, "none") == 0)
-
 #define SYNC_STATUS_NONE		'\0'	/* No sync. */
 #define SYNC_STATUS_INIT		'i'		/* Ask for sync. */
 #define SYNC_STATUS_STRUCTURE	's'     /* Sync structure */

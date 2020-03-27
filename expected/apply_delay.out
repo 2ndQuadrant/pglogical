@@ -25,7 +25,7 @@ SELECT * FROM pglogical.create_subscription(
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{delay}',
 	forward_origins := '{}',
-	synchronize_structure := 'none',
+	synchronize_structure := false,
 	synchronize_data := false,
 	apply_delay := int2interval(2) -- 2 seconds
 );

@@ -13,7 +13,7 @@ SELECT * FROM pglogical.create_subscription(
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel,default}',
 	forward_origins := '{}',
-	synchronize_structure := 'none',
+	synchronize_structure := false,
 	synchronize_data := false
 );
 ERROR:  existing subscription "test_subscription" to node "test_provider" already subscribes to replication set "default"
@@ -22,7 +22,7 @@ SELECT * FROM pglogical.create_subscription(
     provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super',
 	replication_sets := '{parallel}',
 	forward_origins := '{}',
-	synchronize_structure := 'none',
+	synchronize_structure := false,
 	synchronize_data := false
 );
  create_subscription 
