@@ -74,7 +74,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
 						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-						 "       i.has_row_filter, i.nspname as nsptarget, i.relname as reltarget"
+						 "       i.has_row_filter, i.nspname as i.nsptarget, i.relname as i.reltarget"
 						 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
 						 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
 						 repsetarr.data, repsetarr.data);
