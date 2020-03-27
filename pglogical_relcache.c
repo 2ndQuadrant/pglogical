@@ -181,8 +181,8 @@ pglogical_relation_cache_updater(PGLogicalRemoteRel *remoterel)
 
 	/* Make cached copy of the data */
 	oldcontext = MemoryContextSwitchTo(CacheMemoryContext);
-	entry->nspname = pstrdup(remoterel->nsptarget);
-	entry->relname = pstrdup(remoterel->reltarget);
+	entry->nspname = pstrdup(remoterel->nspname);
+	entry->relname = pstrdup(remoterel->relname);
 	entry->natts = remoterel->natts;
 	entry->attnames = palloc(remoterel->natts * sizeof(char *));
 	for (i = 0; i < remoterel->natts; i++)
