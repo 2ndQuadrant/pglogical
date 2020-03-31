@@ -143,6 +143,9 @@ PG_FUNCTION_INFO_V1(pglogical_max_proto_version);
 
 PG_FUNCTION_INFO_V1(pglogical_xact_commit_timestamp_origin);
 
+/* Compatibility for upgrading */
+PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info_by_target);
+
 static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
 						  const char *subscriber_name);
@@ -1976,6 +1979,16 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	table_close(rel, NoLock);
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
+}
+
+
+/*
+ * Dummy function to allow upgrading through all intermediate versions
+ */
+Datum
+pglogical_show_repset_table_info_by_target(PG_FUNCTION_ARGS)
+{
+	abort();
 }
 
 
