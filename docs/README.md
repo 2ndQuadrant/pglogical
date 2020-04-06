@@ -22,7 +22,6 @@ Use cases supported are:
 * Selective replication of table rows at either publisher or subscriber side (row_filter)
 * Selective replication of table columns at publisher side
 * Data gather/merge from multiple upstream servers
-* Data gather/merge from multiple upstream tables (distinct names)
 
 Architectural details:
 * pglogical works on a per-database level, not whole server level like
@@ -277,11 +276,10 @@ Nodes can be added and removed dynamically using the SQL interfaces.
 ### Subscription management
 
 - `pglogical.create_subscription(subscription_name name, provider_dsn text,
-  replication_sets text[], synchronize_structure text(none,all,relations_only),
+  replication_sets text[], synchronize_structure boolean,
   synchronize_data boolean, forward_origins text[], apply_delay interval)`
-  Creates a subscription from current node to the provider node, with option to
-  synchronize part or all the structure. Command does not block, just initiates
-  the action.
+  Creates a subscription from current node to the provider node. Command does
+  not block, just initiates the action.
 
   Parameters:
   - `subscription_name` - name of the subscription, must be unique
@@ -289,9 +287,7 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   - `replication_sets` - array of replication sets to subscribe to, these must
     already exist, default is "{default,default_insert_only,ddl_sql}"
   - `synchronize_structure` - specifies if to synchronize structure from
-    provider to the subscriber, default `none`. `all` for all objects,
-    `relations_only` for replicated tables and sequences only (in this last case
-    schemas themselves are not created on the subscriber).
+    provider to the subscriber, default false
   - `synchronize_data` - specifies if to synchronize data from provider to
     the subscriber, default true
   - `forward_origins` - array of origin names to forward, currently only
@@ -310,10 +306,6 @@ Nodes can be added and removed dynamically using the SQL interfaces.
   monitoring view. It can also be used in `synchronous_standby_names` when
   pglogical is used as part of
   [synchronous replication](#synchronous-replication) setup.
-
-  Pglogical currently executes `pg_dump` with a list of `-t TABLE/SEQUENCE`
-  parameter to synchronize relations only. The limitation of the system apply
-  and can limit the length of the command line.
 
   Use `pglogical.wait_for_subscription_sync_complete(sub_name)` to wait for the
   subscription to asynchronously start replicating and complete any needed
@@ -502,7 +494,7 @@ The following functions are provided for managing the replication sets:
   Parameters:
   - `set_name` - name of the existing replication set
 
-- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, columns text[], row_filter text, nsptarget text, reltarget text)`
+- `pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean, columns text[], row_filter text)`
   Adds a table to replication set.
 
   Parameters:
@@ -516,8 +508,6 @@ The following functions are provided for managing the replication sets:
   - `row_filter` - row filtering expression, default NULL (no filtering),
     see [Row Filtering](#row-filtering) for more info.
   **WARNING: Use caution when synchronizing data with a valid row filter.**
-  - `nsptarget` - name of the schema visible to the receiver
-  - `reltarget` - name of the relation visible to the receiver
 Using `synchronize_data=true` with a valid `row_filter` is like a one-time operation for a table.
 Executing it again with modified `row_filter` won't synchronize data to subscriber. Subscribers
 may need to call `pglogical.alter_subscription_resynchronize_table()` to fix it.
@@ -542,15 +532,13 @@ may need to call `pglogical.alter_subscription_resynchronize_table()` to fix it.
   - `set_name` - name of the existing replication set
   - `relation` - name or OID of the table to be removed from the set
 
-- `pglogical.replication_set_add_sequence(set_name name, relation regclass, synchronize_data boolean, nsptarget text, reltarget text)`
+- `pglogical.replication_set_add_sequence(set_name name, relation regclass, synchronize_data boolean)`
   Adds a sequence to a replication set.
 
   Parameters:
   - `set_name` - name of the existing replication set
   - `relation` - name or OID of the sequence to be added to the set
   - `synchronize_data` - if true, the sequence value will be synchronized immediately, default false
-  - `nsptarget` - name of the schema visible to the receiver
-  - `reltarget` - name of the relation visible to the receiver
 
 - `pglogical.replication_set_add_all_sequences(set_name name, schema_names text[], synchronize_data boolean)`
   Adds all sequences from the given schemas. Only existing sequences are added, any sequences that
@@ -660,14 +648,6 @@ It is required to mark any such triggers as either `ENABLE REPLICA` or
 `ENABLE ALWAYS` otherwise they will not be executed by the replication
 process.
 
-### Table and Sequence renaming
-
-It is possible to set distinct names for schema and/or relations while adding
-them to the replication set on the provider side. This way, the receiver does
-not know the original name and it's possible to merge 2 and more tables from the
-provider to a single table on the receiver, it also allows to "rename" tables
-(and sequence) from one side to the other.
-
 ## Synchronous Replication
 
 Synchronous replication is supported using same standard mechanism provided
@@ -677,13 +657,6 @@ The `synchronous_commit` and `synchronous_standby_names` settings will affect
 when `COMMIT` command reports success to client if pglogical subscription
 name is used in `synchronous_standby_names`. Refer to PostgreSQL
 documentation for more info about how to configure these two variables.
-
-# Table and Sequence names
-
-By default, relation and schema name are the same on the receiver and the
-provider. However 2 columns are used to track the target names to offer the
-user to change them, the receiver does not know about the original names,
-only those (mandatory) set for "target".
 
 ## Conflicts
 

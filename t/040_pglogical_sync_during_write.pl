@@ -100,7 +100,7 @@ for my $tbl (@pgbench_tables)
 $node_subscriber->safe_psql($dbname,
         "SELECT pglogical.create_subscription(
     subscription_name := 'test_subscription',
-    synchronize_structure := 'all',
+    synchronize_structure := true,
     synchronize_data := true,
     provider_dsn := '$provider_connstr dbname=$dbname user=$super_user'
 );");

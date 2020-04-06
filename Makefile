@@ -19,7 +19,10 @@ DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--2.2.0--2.2.1.sql pglogical--2.2.1.sql \
 	   pglogical--2.2.1--2.2.2.sql pglogical--2.2.2.sql \
 	   pglogical--2.2.2--2.3.0.sql \
-	   pglogical--2.3.0.sql
+	   pglogical--2.2.2--2.3.1.sql \
+	   pglogical--2.3.0.sql \
+	   pglogical--2.3.0--2.3.1.sql \
+	   pglogical--2.3.1.sql
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical.o pglogical_node.o pglogical_relcache.o \
@@ -34,10 +37,10 @@ OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 SCRIPTS_built = pglogical_create_subscriber
 
 REGRESS = preseed infofuncs init_fail init preseed_check basic extended conflict_secondary_unique \
-		  toasted replication_set add_table relations_only matview bidirectional \
-		  primary_key interfaces foreign_key functions copy triggers parallel row_filter \
+		  toasted replication_set add_table matview bidirectional primary_key \
+		  interfaces foreign_key functions copy triggers parallel row_filter \
 		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
-		  map node_origin_cascade drop
+		  node_origin_cascade drop
 
 EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
 			   compat96/pglogical_compat.o compat10/pglogical_compat.o \

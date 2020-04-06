@@ -133,7 +133,6 @@ PG_FUNCTION_INFO_V1(pglogical_dependency_check_trigger);
 PG_FUNCTION_INFO_V1(pglogical_gen_slot_name);
 PG_FUNCTION_INFO_V1(pglogical_node_info);
 PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info);
-PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info_by_target);
 PG_FUNCTION_INFO_V1(pglogical_table_data_filtered);
 
 /* Information */
@@ -143,6 +142,9 @@ PG_FUNCTION_INFO_V1(pglogical_min_proto_version);
 PG_FUNCTION_INFO_V1(pglogical_max_proto_version);
 
 PG_FUNCTION_INFO_V1(pglogical_xact_commit_timestamp_origin);
+
+/* Compatibility for upgrading */
+PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info_by_target);
 
 static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
@@ -390,7 +392,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *provider_dsn = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	ArrayType			   *rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
-	char					*sync_structure = text_to_cstring(PG_GETARG_TEXT_PP(3));
+	bool					sync_structure = PG_GETARG_BOOL(3);
 	bool					sync_data = PG_GETARG_BOOL(4);
 	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(5);
 	Interval			   *apply_delay = PG_GETARG_INTERVAL_P(6);
@@ -516,14 +518,10 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	/* Create synchronization status for the subscription. */
 	memset(&sync, 0, sizeof(PGLogicalSyncStatus));
 
-	if (SyncStructureAll(sync_structure) && sync_data)
+	if (sync_structure && sync_data)
 		sync.kind = SYNC_KIND_FULL;
-	else if (SyncStructureRelOnly(sync_structure) && sync_data)
-		sync.kind = SYNC_KIND_FULL_REL;
-	else if (SyncStructureAll(sync_structure))
+	else if (sync_structure)
 		sync.kind = SYNC_KIND_STRUCTURE;
-	else if (SyncStructureRelOnly(sync_structure))
-		sync.kind = SYNC_KIND_STRUCTURE_REL;
 	else if (sync_data)
 		sync.kind = SYNC_KIND_DATA;
 	else
@@ -834,8 +832,8 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 			/* We might delete the cell so advance it now. */
 			next = lnext(llc);
 
-			if (namestrcmp(&tablesync->nspname, remoterel->nsptarget) == 0 &&
-				namestrcmp(&tablesync->relname, remoterel->reltarget) == 0)
+			if (namestrcmp(&tablesync->nspname, remoterel->nspname) == 0 &&
+				namestrcmp(&tablesync->relname, remoterel->relname) == 0)
 			{
 				oldsync = tablesync;
 				local_tables = list_delete_cell(local_tables, llc, prev);
@@ -852,13 +850,13 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 			memset(&newsync, 0, sizeof(PGLogicalSyncStatus));
 			newsync.kind = SYNC_KIND_DATA;
 			newsync.subid = sub->id;
-			namestrcpy(&newsync.nspname, remoterel->nsptarget);
-			namestrcpy(&newsync.relname, remoterel->reltarget);
+			namestrcpy(&newsync.nspname, remoterel->nspname);
+			namestrcpy(&newsync.relname, remoterel->relname);
 			newsync.status = SYNC_STATUS_INIT;
 			create_local_sync_status(&newsync);
 
 			if (truncate)
-				truncate_table(remoterel->nsptarget, remoterel->reltarget);
+				truncate_table(remoterel->nspname, remoterel->relname);
 		}
 	}
 
@@ -1384,8 +1382,6 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	PGLogicalLocalNode *node;
 	char			   *nspname;
 	char			   *relname;
-	char			   *nsptarget;
-	char			   *reltarget;
 	StringInfoData		json;
 
 	/* Proccess for required parameters. */
@@ -1463,26 +1459,16 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 									  text_to_cstring(PG_GETARG_TEXT_PP(4)));
 	}
 
-	if (!PG_ARGISNULL(5))
-	  nsptarget = NameStr(*PG_GETARG_NAME(5));
-	else
-	  nsptarget = pstrdup(nspname);
-	if (!PG_ARGISNULL(6))
-	  reltarget = NameStr(*PG_GETARG_NAME(6));
-	else
-	  reltarget = pstrdup(relname);
-
-	replication_set_add_table(repset->id, reloid, att_list, row_filter,
-							  nsptarget, reltarget);
+	replication_set_add_table(repset->id, reloid, att_list, row_filter);
 
 	if (synchronize)
 	{
 		/* It's easier to construct json manually than via Jsonb API... */
 		initStringInfo(&json);
 		appendStringInfo(&json, "{\"schema_name\": ");
-		escape_json(&json, nsptarget);
+		escape_json(&json, nspname);
 		appendStringInfo(&json, ",\"table_name\": ");
-		escape_json(&json, reltarget);
+		escape_json(&json, relname);
 		appendStringInfo(&json, "}");
 		/* Queue the synchronize request for replication. */
 		queue_message(list_make1(repset->name), GetUserId(),
@@ -1490,7 +1476,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	}
 
 	/* Cleanup. */
-	table_close(rel, ShareRowExclusiveLock);
+	table_close(rel, NoLock);
 
 	PG_RETURN_BOOL(true);
 }
@@ -1509,8 +1495,6 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 	PGLogicalLocalNode *node;
 	char			   *nspname;
 	char			   *relname;
-	char			   *nsptarget;
-	char			   *reltarget;
 	StringInfoData		json;
 
 	node = check_local_node(true);
@@ -1525,27 +1509,19 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 	 */
 	rel = table_open(reloid, ShareRowExclusiveLock);
 
-	nspname = get_namespace_name(RelationGetNamespace(rel));
-	relname = RelationGetRelationName(rel);
-	if (!PG_ARGISNULL(3))
-	    nsptarget = NameStr(*PG_GETARG_NAME(3));
-	else
-	  nsptarget = pstrdup(nspname);
-	if (!PG_ARGISNULL(4))
-		reltarget = NameStr(*PG_GETARG_NAME(4));
-	else
-	  reltarget = pstrdup(relname);
-
-	replication_set_add_seq(repset->id, reloid, nsptarget, reltarget);
+	replication_set_add_seq(repset->id, reloid);
 
 	if (synchronize)
 	{
+		nspname = get_namespace_name(RelationGetNamespace(rel));
+		relname = RelationGetRelationName(rel);
+
 		/* It's easier to construct json manually than via Jsonb API... */
 		initStringInfo(&json);
 		appendStringInfo(&json, "{\"schema_name\": ");
-		escape_json(&json, nsptarget);
+		escape_json(&json, nspname);
 		appendStringInfo(&json, ",\"sequence_name\": ");
-		escape_json(&json, reltarget);
+		escape_json(&json, relname);
         appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
 								 sequence_get_last_value(reloid));
 		appendStringInfo(&json, "}");
@@ -1620,11 +1596,9 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 			if (!list_member_oid(existing_relations, reloid))
 			{
 				if (relkind == RELKIND_RELATION)
-					replication_set_add_table(repset->id, reloid, NIL, NULL,
-											  NULL, NULL);
+					replication_set_add_table(repset->id, reloid, NIL, NULL);
 				else
-					replication_set_add_seq(repset->id, reloid,
-											NULL, NULL);
+					replication_set_add_seq(repset->id, reloid);
 
 				if (synchronize)
 				{
@@ -1933,26 +1907,20 @@ pglogical_node_info(PG_FUNCTION_ARGS)
  * This is called by downstream sync worker on the upstream to obtain
  * info needed to do initial synchronization correctly. Be careful
  * about changing it, as it must be upward- and downward-compatible.
- *
- * it's not used starting with pglogical 2.3 (and can be remove if we drop
- * support to pre-2.3 in the future.
- *
- * It will return only tables with same name and schema on subscriber and
- * provider
  */
 Datum
 pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 {
 	Oid			reloid = PG_GETARG_OID(0);
-	ArrayType  *rep_set_names =	PG_GETARG_ARRAYTYPE_P(1);
+ 	ArrayType  *rep_set_names = PG_GETARG_ARRAYTYPE_P(1);
 	Relation	rel;
 	List	   *replication_sets;
 	TupleDesc	reldesc;
 	TupleDesc	rettupdesc;
 	int			i;
 	List	   *att_list = NIL;
-	Datum		values[7];
-	bool		nulls[7];
+	Datum		values[5];
+	bool		nulls[5];
 	char	   *nspname;
 	char	   *relname;
 	HeapTuple	htup;
@@ -1978,7 +1946,7 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 
 	/* Build the replication info for the table. */
 	tableinfo = get_table_replication_info(node->node->id, rel,
-												  replication_sets);
+										   replication_sets);
 
 	/* Build the column list. */
 	for (i = 0; i < reldesc->natts; i++)
@@ -2005,8 +1973,6 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	values[2] = CStringGetTextDatum(relname);
 	values[3] = PointerGetDatum(strlist_to_textarray(att_list));
 	values[4] = BoolGetDatum(list_length(tableinfo->row_filter) > 0);
-	values[5] = CStringGetTextDatum(tableinfo->nsptarget);
-	values[6] = CStringGetTextDatum(tableinfo->reltarget);
 
 	htup = heap_form_tuple(rettupdesc, values, nulls);
 
@@ -2015,123 +1981,16 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(HeapTupleGetDatum(htup));
 }
 
+
 /*
- * Get replication info about table, by target name
- *
- * This is called by downstream sync worker on the upstream to obtain
- * info needed to do initial synchronization correctly. Be careful
- * about changing it, as it must be upward- and downward-compatible.
+ * Dummy function to allow upgrading through all intermediate versions
  */
 Datum
 pglogical_show_repset_table_info_by_target(PG_FUNCTION_ARGS)
 {
-	ArrayType  *rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
-	RangeVar   *target;
-	char	   *nsptarget;
-	char	   *reltarget;
-	Relation	rel;
-	List	   *replication_sets;
-	TupleDesc	reldesc;
-	int			i;
-	Datum		values[7];
-	bool		nulls[7];
-	char	   *nspname;
-	char	   *relname;
-	PGLogicalLocalNode *node;
-	List *tablesinfo = NIL;
-	ListCell		   *lc;
-	ReturnSetInfo	   *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-	TupleDesc			tupdesc;
-	Tuplestorestate	   *tupstore;
-	MemoryContext		per_query_ctx;
-	MemoryContext		oldcontext;
-
-	if (PG_ARGISNULL(0))
-			elog(ERROR,"Schema target name required");
-	nsptarget = NameStr(*PG_GETARG_NAME(0));
-	if (PG_ARGISNULL(1))
-			elog(ERROR,"Table target name required");
-	reltarget = NameStr(*PG_GETARG_NAME(1));
-
-	node = get_local_node(false, false);
-
-	target = makeRangeVar(nsptarget, reltarget, -1);
-
-	replication_sets = textarray_to_list(rep_set_names);
-	replication_sets = get_replication_sets(node->node->id,
-											replication_sets,
-											false);
-
-	/* Build the replication info for the table. */
-	tablesinfo = get_table_replication_info_by_target(node->node->id,
-													  target->schemaname,
-													  target->relname,
-													  replication_sets);
-
-	/* Switch into long-lived context to construct returned data structures */
-	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
-	oldcontext = MemoryContextSwitchTo(per_query_ctx);
-
-	/* Build a tuple descriptor for our result type */
-	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-		elog(ERROR, "return type must be a row type");
-	tupdesc = BlessTupleDesc(tupdesc);
-
-	tupstore = tuplestore_begin_heap(true, false, work_mem);
-	rsinfo->returnMode = SFRM_Materialize;
-	rsinfo->setResult = tupstore;
-	rsinfo->setDesc = tupdesc;
-
-	MemoryContextSwitchTo(oldcontext);
-
-	foreach (lc, tablesinfo)
-	{
-			List	   *att_list = NIL;
-			PGLogicalTableRepInfo *tableinfo = (PGLogicalTableRepInfo *) lfirst(lc);
-
-			rel = table_open(tableinfo->reloid, AccessShareLock);
-			reldesc = RelationGetDescr(rel);
-
-			nspname = get_namespace_name(RelationGetNamespace(rel));
-			relname = RelationGetRelationName(rel);
-
-			/* Build the column list. */
-			for (i = 0; i < reldesc->natts; i++)
-			{
-					Form_pg_attribute att = TupleDescAttr(reldesc,i);
-
-					/* Skip dropped columns. */
-					if (att->attisdropped)
-							continue;
-
-					/* Skip filtered columns if any. */
-					if (tableinfo->att_list &&
-						!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-									   tableinfo->att_list))
-							continue;
-
-					att_list = lappend(att_list, NameStr(att->attname));
-			}
-
-			/* And now build the result. */
-			memset(nulls, false, sizeof(nulls));
-			values[0] = ObjectIdGetDatum(RelationGetRelid(rel));
-			values[1] = CStringGetTextDatum(nspname);
-			values[2] = CStringGetTextDatum(relname);
-			values[3] = PointerGetDatum(strlist_to_textarray(att_list));
-			values[4] = BoolGetDatum(list_length(tableinfo->row_filter) > 0);
-			values[5] = CStringGetTextDatum(tableinfo->nsptarget);
-			values[6] = CStringGetTextDatum(tableinfo->reltarget);
-
-			tuplestore_putvalues(tupstore, tupdesc, values, nulls);
-			table_close(rel, NoLock);
-	}
-
-	// XXX not required
-	tuplestore_donestoring(tupstore);
-
-	PG_RETURN_VOID();
+	abort();
 }
+
 
 /*
  * Decide if to return tuple or not.

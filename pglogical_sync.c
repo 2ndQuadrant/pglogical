@@ -87,13 +87,12 @@ static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
 static void
 dump_structure(PGLogicalSubscription *sub, const char *destfile,
-	       const char *snapshot, const char kind)
+			   const char *snapshot)
 {
 	char		pg_dump[MAXPGPATH];
 	uint32		version;
 	int			res;
 	StringInfoData	schema_filter;
-	StringInfoData	table_filter;
 	StringInfoData	command;
 
 	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump) != 0)
@@ -113,45 +112,10 @@ dump_structure(PGLogicalSubscription *sub, const char *destfile,
 		appendStringInfoString(&schema_filter, " -N pglogical_origin");
 	CommitTransactionCommand();
 
-	/*
-	 * Filter tables and sequences using "pg_dump -t" switch, based on
-	 * replication set tables and sequences from origin node.
-	 *
-	 * Creates new connection to origin.
-	 *
-	 * XXX CREATE SCHEMA is not done by pg_dump when using -t switch
-	 *
-	 * XXX add -T switch option ?
-	 *
-	 */
-	initStringInfo(&table_filter);
-	if (SyncKindStructureRelations(kind))
-	{
-		List *objects;
-		ListCell   *lc;
-
-		objects = list_replication_sets_objects(sub->origin_if->dsn,
-							sub->name, snapshot,
-							sub->replication_sets);
-
-		/* Get every object and add it to the -t switch */
-		foreach (lc, objects)
-		{
-			char	   *object_name = lfirst(lc);
-			appendStringInfo(&table_filter, " -t %s",
-					 object_name);
-		}
-	}
-
 	initStringInfo(&command);
-#if PG_VERSION_NUM >= 90600
-	appendStringInfo(&command, "\"%s\" --strict-names --snapshot=\"%s\" %s %s -s -F c -f \"%s\" \"%s\"",
-#else
-	appendStringInfo(&command, "\"%s\" --snapshot=\"%s\" %s %s -s -F c -f \"%s\" \"%s\"",
-#endif
-					 pg_dump, snapshot,
-					 schema_filter.data, table_filter.data,
-					 destfile, sub->origin_if->dsn);
+	appendStringInfo(&command, "\"%s\" --snapshot=\"%s\" %s -s -F c -f \"%s\" \"%s\"",
+					 pg_dump, snapshot, schema_filter.data, destfile,
+					 sub->origin_if->dsn);
 
 	res = system(command.data);
 	if (res != 0)
@@ -540,10 +504,10 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	/* Build COPY FROM query. */
 	resetStringInfo(&query);
 	appendStringInfo(&query, "COPY %s.%s ",
-					 PQescapeIdentifier(target_conn, remoterel->nsptarget,
-										strlen(remoterel->nsptarget)),
-					 PQescapeIdentifier(target_conn, remoterel->reltarget,
-										strlen(remoterel->reltarget)));
+					 PQescapeIdentifier(origin_conn, remoterel->nspname,
+										strlen(remoterel->nspname)),
+					 PQescapeIdentifier(origin_conn, remoterel->relname,
+										strlen(remoterel->relname)));
 	if (list_length(attnamelist))
 		appendStringInfo(&query, "(%s) ", attlist.data);
 	appendStringInfoString(&query, "FROM stdin");
@@ -592,75 +556,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	PQclear(res);
 
 	elog(INFO, "finished synchronization of data for table %s.%s",
-		 remoterel->nsptarget, remoterel->reltarget);
-}
-
-/*
- * Returns the list of schema qualified name of replicated tables and sequences
- * from provider.
- *
- *  Creates new connection to origin.
- */
-List *
-list_replication_sets_objects(const char *dsn, const char *name, const char *snapshot, List *replication_sets)
-{
-	PGconn	   *origin_conn;
-	List	   *objects;
-	List	   *res = NIL;
-	ListCell   *lc;
-
-	/* Connect to origin node. */
-	origin_conn = pglogical_connect(dsn, name, "copy");
-	start_copy_origin_tx(origin_conn, snapshot);
-
-	/* Get tables from our replication sets from origin node. */
-	objects = pg_logical_get_remote_repset_tables(origin_conn,
-												 replication_sets);
-
-	/* And append them to the list */
-	foreach (lc, objects)
-	{
-		PGLogicalRemoteRel	*remoterel = lfirst(lc);
-		StringInfoData object;
-
-		initStringInfo(&object);
-		appendStringInfo(&object, "%s.%s",
-						 PQescapeLiteral(origin_conn, remoterel->nsptarget,
-											strlen(remoterel->nsptarget)),
-						 PQescapeLiteral(origin_conn, remoterel->reltarget,
-											strlen(remoterel->reltarget)));
-		res = lappend(res, object.data);
-
-		/* XXX probably not required here */
-		CHECK_FOR_INTERRUPTS();
-	}
-
-	/* Get sequences from our replication sets from origin node. */
-	objects = pg_logical_get_remote_repset_sequences(origin_conn,
-												 replication_sets);
-
-	/* And append them to the list */
-	foreach (lc, objects)
-	{
-		RangeVar	*rv = lfirst(lc);
-		StringInfoData object;
-
-		initStringInfo(&object);
-		appendStringInfo(&object, "%s.%s",
-				 PQescapeLiteral(origin_conn, rv->schemaname,
-											strlen(rv->schemaname)),
-						 PQescapeLiteral(origin_conn, rv->relname,
-											strlen(rv->relname)));
-		res = lappend(res, object.data);
-
-		/* XXX probably not required here */
-		CHECK_FOR_INTERRUPTS();
-	}
-
-	/* Finish the transaction and disconnect. */
-	finish_copy_origin_tx(origin_conn);
-
-	return res;
+		 remoterel->nspname, remoterel->relname);
 }
 
 /*
@@ -676,7 +572,7 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
-	ListCell   *lc, *lcr;
+	ListCell   *lc;
 
 	/* Connect to origin node. */
 	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
@@ -690,14 +586,12 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 	foreach (lc, tables)
 	{
 		RangeVar	*rv = lfirst(lc);
-        List		*remoterels = NIL;
-		remoterels = pg_logical_get_remote_repset_table(origin_conn, rv,
+		PGLogicalRemoteRel	*remoterel;
+
+		remoterel = pg_logical_get_remote_repset_table(origin_conn, rv,
 													   replication_sets);
-        foreach(lcr, remoterels)
-        {
-          PGLogicalRemoteRel	*remoterel = lfirst(lcr);
-          copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
-        }
+
+		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
 
 		CHECK_FOR_INTERRUPTS();
 	}
@@ -923,7 +817,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					CommitTransactionCommand();
 
 					/* Dump structure to temp storage. */
-					dump_structure(sub, tmpfile, snapshot, sync->kind);
+					dump_structure(sub, tmpfile, snapshot);
 
 					/* Restore base pre-data structure (types, tables, etc). */
 					restore_structure(sub, tmpfile, "pre-data");
@@ -957,13 +851,12 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 						PGLogicalSyncStatus	   *oldsync;
 
 						oldsync = get_table_sync_status(sub->id,
-														remoterel->nsptarget,
-														remoterel->reltarget,
-														true);
+														remoterel->nspname,
+														remoterel->relname, true);
 						if (oldsync)
 						{
-							set_table_sync_status(sub->id, remoterel->nsptarget,
-												  remoterel->reltarget,
+							set_table_sync_status(sub->id, remoterel->nspname,
+												  remoterel->relname,
 												  SYNC_STATUS_READY,
 												  lsn);
 						}
@@ -973,8 +866,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 
 							newsync.kind = SYNC_KIND_FULL;
 							newsync.subid = sub->id;
-							namestrcpy(&newsync.nspname, remoterel->nsptarget);
-							namestrcpy(&newsync.relname, remoterel->reltarget);
+							namestrcpy(&newsync.nspname, remoterel->nspname);
+							namestrcpy(&newsync.relname, remoterel->relname);
 							newsync.status = SYNC_STATUS_READY;
 							newsync.statuslsn = lsn;
 							create_local_sync_status(&newsync);

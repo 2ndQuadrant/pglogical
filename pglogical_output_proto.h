@@ -57,8 +57,7 @@ typedef enum PGLogicalProtoType
 } PGLogicalProtoType;
 
 typedef void (*pglogical_write_rel_fn) (StringInfo out, PGLogicalOutputData * data,
-						   Relation rel, Bitmapset *att_list,
-						   const char *nsptarget, const char *reltarget);
+						   Relation rel, Bitmapset *att_list);
 
 typedef void (*pglogical_write_begin_fn) (StringInfo out, PGLogicalOutputData * data,
 													  ReorderBufferTXN *txn);

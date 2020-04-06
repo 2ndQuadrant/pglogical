@@ -40,7 +40,7 @@ BEGIN;
 SELECT * FROM pglogical.create_subscription(
     subscription_name := 'test_orig_subscription',
     provider_dsn := (SELECT orig_provider_dsn FROM pglogical_regress_variables()) || ' user=super',
-	synchronize_structure := 'none',
+	synchronize_structure := false,
 	forward_origins := '{}');
 COMMIT;
 

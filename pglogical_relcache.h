@@ -18,7 +18,6 @@
 typedef struct PGLogicalRemoteRel
 {
 	uint32		relid;
-	/* the nspname and relname are always the origin names */
 	char	   *nspname;
 	char	   *relname;
 	int			natts;
@@ -26,16 +25,12 @@ typedef struct PGLogicalRemoteRel
 
 	/* Only returned by info function, not protocol. */
 	bool		hasRowFilter;
-	char	   *nsptarget;
-	char	   *reltarget;
 } PGLogicalRemoteRel;
 
 typedef struct PGLogicalRelation
 {
 	/* Info coming from the remote side. */
 	uint32		remoteid;
-	/* the nspanme and relname are always the target names, we don't know origin
-	 * (remote) names */
 	char	   *nspname;
 	char	   *relname;
 	int			natts;
