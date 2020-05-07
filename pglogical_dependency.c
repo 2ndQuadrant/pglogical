@@ -232,8 +232,8 @@ static void reportDependentObjects(const ObjectAddresses *targetObjects,
 					   DropBehavior behavior,
 					   int msglevel,
 					   const ObjectAddress *origObject);
-static void AcquireDeletionLock(const ObjectAddress *object, int flags);
-static void ReleaseDeletionLock(const ObjectAddress *object);
+static void PGLAcquireDeletionLock(const ObjectAddress *object, int flags);
+static void PGLReleaseDeletionLock(const ObjectAddress *object);
 static bool find_expr_references_walker(Node *node,
 							find_expr_references_context *context);
 static void eliminate_duplicate_dependencies(ObjectAddresses *addrs);
@@ -497,7 +497,7 @@ findDependentObjects(const ObjectAddress *object,
 					{
 						systable_endscan(scan);
 						/* need to release caller's lock; see notes below */
-						ReleaseDeletionLock(object);
+						PGLReleaseDeletionLock(object);
 						return;
 					}
 
@@ -561,8 +561,8 @@ findDependentObjects(const ObjectAddress *object,
 				 * caller's lock to avoid deadlock against a concurrent
 				 * deletion of the owning object.)
 				 */
-				ReleaseDeletionLock(object);
-				AcquireDeletionLock(&otherObject, 0);
+				PGLReleaseDeletionLock(object);
+				PGLAcquireDeletionLock(&otherObject, 0);
 
 				/*
 				 * The owning object might have been deleted while we waited
@@ -573,7 +573,7 @@ findDependentObjects(const ObjectAddress *object,
 				if (!systable_recheck_tuple(scan, tup))
 				{
 					systable_endscan(scan);
-					ReleaseDeletionLock(&otherObject);
+					PGLReleaseDeletionLock(&otherObject);
 					return;
 				}
 
@@ -658,7 +658,7 @@ findDependentObjects(const ObjectAddress *object,
 		/*
 		 * Must lock the dependent object before recursing to it.
 		 */
-		AcquireDeletionLock(&otherObject, 0);
+		PGLAcquireDeletionLock(&otherObject, 0);
 
 		/*
 		 * The dependent object might have been deleted while we waited to
@@ -670,7 +670,7 @@ findDependentObjects(const ObjectAddress *object,
 		if (!systable_recheck_tuple(scan, tup))
 		{
 			/* release the now-useless lock */
-			ReleaseDeletionLock(&otherObject);
+			PGLReleaseDeletionLock(&otherObject);
 			/* and continue scanning for dependencies */
 			continue;
 		}
@@ -929,14 +929,14 @@ reportDependentObjects(const ObjectAddresses *targetObjects,
 }
 
 /*
- * AcquireDeletionLock - acquire a suitable lock for deleting an object
+ * PGLAcquireDeletionLock - acquire a suitable lock for deleting an object
  *
  * We use LockRelation for relations, LockDatabaseObject for everything
  * else.  Note that dependency.c is not concerned with deleting any kind of
  * shared-across-databases object, so we have no need for LockSharedObject.
  */
 static void
-AcquireDeletionLock(const ObjectAddress *object, int flags)
+PGLAcquireDeletionLock(const ObjectAddress *object, int flags)
 {
 	if (object->classId == RelationRelationId)
 	{
@@ -960,10 +960,10 @@ AcquireDeletionLock(const ObjectAddress *object, int flags)
 }
 
 /*
- * ReleaseDeletionLock - release an object deletion lock
+ * PGLReleaseDeletionLock - release an object deletion lock
  */
 static void
-ReleaseDeletionLock(const ObjectAddress *object)
+PGLReleaseDeletionLock(const ObjectAddress *object)
 {
 	if (object->classId == RelationRelationId)
 		UnlockRelationOid(object->objectId, AccessExclusiveLock);
