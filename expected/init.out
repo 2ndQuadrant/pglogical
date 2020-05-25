@@ -58,7 +58,7 @@ ALTER EXTENSION pglogical UPDATE;
                    List of installed extensions
    Name    | Version |  Schema   |          Description           
 -----------+---------+-----------+--------------------------------
- pglogical | 2.3.1   | pglogical | PostgreSQL Logical Replication
+ pglogical | 2.3.2   | pglogical | PostgreSQL Logical Replication
 (1 row)
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
