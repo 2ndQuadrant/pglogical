@@ -52,6 +52,7 @@
 
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/lmgr.h"
 #include "storage/proc.h"
 
 #include "tcop/tcopprot.h"
@@ -600,6 +601,23 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 				LWLockRelease(PGLogicalCtx->lock);
 				break;
 			}
+
+			if (apply->proc->waitLock)
+			{
+				const LOCKTAG apply_lock_tag = apply->proc->waitLock->tag;
+				if (((LockTagType) apply_lock_tag.locktag_type == LOCKTAG_TRANSACTION) &&
+					(apply_lock_tag.locktag_field1 == (uint32)GetCurrentTransactionId()))
+				{
+                         StringInfoData buf;
+                         initStringInfo(&buf);
+                         DescribeLockTag(&buf, &apply_lock_tag);
+					elog( WARNING, "Apply worker [%d] is locked by %s of [%d], try to kill it", apply->proc->pid, buf.data, MyProc->pid );
+
+					/* cancel transaction */
+					kill(apply->proc->pid, SIGINT);
+				}
+			}
+
 			LWLockRelease(PGLogicalCtx->lock);
 
 			CHECK_FOR_INTERRUPTS();
