@@ -608,9 +608,9 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 				if (((LockTagType) apply_lock_tag.locktag_type == LOCKTAG_TRANSACTION) &&
 					(apply_lock_tag.locktag_field1 == (uint32)GetCurrentTransactionId()))
 				{
-                         StringInfoData buf;
-                         initStringInfo(&buf);
-                         DescribeLockTag(&buf, &apply_lock_tag);
+					StringInfoData buf;
+					initStringInfo(&buf);
+					DescribeLockTag(&buf, &apply_lock_tag);
 					elog( WARNING, "Apply worker [%d] is locked by %s of [%d], try to kill it", apply->proc->pid, buf.data, MyProc->pid );
 
 					/* cancel transaction */
