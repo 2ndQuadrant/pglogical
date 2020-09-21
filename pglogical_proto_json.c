@@ -13,7 +13,6 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
-#include "access/tuptoaster.h"
 #include "catalog/index.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_class.h"
