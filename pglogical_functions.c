@@ -1581,8 +1581,12 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 
 		while (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 		{
-			Oid				reloid = HeapTupleGetOid(tuple);
 			Form_pg_class	reltup = (Form_pg_class) GETSTRUCT(tuple);
+#if PG_VERSION_NUM < 120000
+			Oid				reloid = HeapTupleGetOid(tuple);
+#else
+			Oid				reloid = reltup->oid;
+#endif
 
 			/*
 			 * Only add logged relations which are not system relations

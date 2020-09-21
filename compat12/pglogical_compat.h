@@ -88,8 +88,6 @@
 	heap_attisnull(tup, attnum, tupledesc)
 
 /* 578b229718e8 */
-#define HeapTupleGetOid(tup) ((Form_pg_type) GETSTRUCT(tup))->oid
-
 #define CreateTemplateTupleDesc(natts, hasoid) \
 	(AssertMacro(!hasoid), CreateTemplateTupleDesc(natts))
 
