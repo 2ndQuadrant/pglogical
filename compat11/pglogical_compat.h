@@ -98,4 +98,8 @@
 #define table_beginscan_catalog(relation, nkeys, keys) heap_beginscan_catalog(relation, nkeys, keys)
 #define table_endscan(scan) heap_endscan(scan)
 
+/* 578b229718e8 */
+#define CreateTemplateTupleDesc(natts) \
+	CreateTemplateTupleDesc(natts, false)
+
 #endif

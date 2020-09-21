@@ -87,8 +87,4 @@
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum, tupledesc)
 
-/* 578b229718e8 */
-#define CreateTemplateTupleDesc(natts, hasoid) \
-	(AssertMacro(!hasoid), CreateTemplateTupleDesc(natts))
-
 #endif

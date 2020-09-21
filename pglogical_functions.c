@@ -2294,7 +2294,7 @@ pglogical_xact_commit_timestamp_origin(PG_FUNCTION_ARGS)
 	 * Construct a tuple descriptor for the result row. Must match the
 	 * function declaration.
 	 */
-	tupdesc = CreateTemplateTupleDesc(2, false);
+	tupdesc = CreateTemplateTupleDesc(2);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "timestamp",
 					   TIMESTAMPTZOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "roident",
