@@ -87,12 +87,4 @@
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum, tupledesc)
 
-/* 2f9661311b83 */
-#define CommandTag const char *
-#define QueryCompletion char
-
-/* 6aba63ef3e60 */
-#define pg_plan_queries(querytrees, query_string, cursorOptions, boundParams) \
-	pg_plan_queries(querytrees, cursorOptions, boundParams)
-
 #endif

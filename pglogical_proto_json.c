@@ -194,7 +194,11 @@ json_write_startup_message(StringInfo out, List *msg)
 #include "utils/date.h"
 #include "utils/datetime.h"
 
+#if PG_VERSION_NUM >= 130000
+#include "common/jsonapi.h"
+#else
 #include "utils/jsonapi.h"
+#endif
 
 /*
  * Determine how we want to print values of a given type in datum_to_json.

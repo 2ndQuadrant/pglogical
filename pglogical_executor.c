@@ -254,7 +254,7 @@ pglogical_ProcessUtility(
 #ifdef XCP
 						 bool sentToRemote,
 #endif
-						 char *completionTag)
+						 QueryCompletion *qc)
 {
 #if PG_VERSION_NUM >= 100000
 	Node	   *parsetree = pstmt->utilityStmt;
@@ -282,12 +282,12 @@ pglogical_ProcessUtility(
 		PGLnext_ProcessUtility_hook(pstmt, queryString, context, params,
 									queryEnv, dest,
 									sentToRemote,
-									completionTag);
+									qc);
 	else
 		PGLstandard_ProcessUtility(pstmt, queryString, context, params,
 								   queryEnv, dest,
 								   sentToRemote,
-								   completionTag);
+								   qc);
 
 	if (nodeTag(parsetree) == T_TruncateStmt)
 		pglogical_finish_truncate();

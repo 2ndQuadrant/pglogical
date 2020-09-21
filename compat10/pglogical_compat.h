@@ -26,8 +26,8 @@
 #define CreateCommandTag(raw_parsetree) \
 	CreateCommandTag(raw_parsetree->stmt)
 
-#define PortalRun(portal, count, isTopLevel, dest, altdest, completionTag) \
-	PortalRun(portal, count, isTopLevel, true, dest, altdest, completionTag)
+#define PortalRun(portal, count, isTopLevel, dest, altdest, qc) \
+	PortalRun(portal, count, isTopLevel, true, dest, altdest, qc)
 
 #define ExecAlterExtensionStmt(stmt) \
 	ExecAlterExtensionStmt(NULL, stmt)
@@ -55,11 +55,11 @@
 
 #define makeDefElem(name, arg) makeDefElem(name, arg, -1)
 
-#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
-	standard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, completionTag)
+#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+	standard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, qc)
 
-#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
-	next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, completionTag)
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+	next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, qc)
 
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum)
@@ -88,5 +88,13 @@
 /* 578b229718e8 */
 #define CreateTemplateTupleDesc(natts) \
 	CreateTemplateTupleDesc(natts, false)
+
+/* 2f9661311b83 */
+#define CommandTag const char *
+#define QueryCompletion char
+
+/* 6aba63ef3e60 */
+#define pg_plan_queries(querytrees, query_string, cursorOptions, boundParams) \
+	pg_plan_queries(querytrees, cursorOptions, boundParams)
 
 #endif
