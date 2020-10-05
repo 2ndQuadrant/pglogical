@@ -79,6 +79,7 @@ If you don’t have PostgreSQL already:
     - PostgreSQL 10: `yum install postgresql10-server postgresql10-contrib`
     - PostgreSQL 11: `yum install postgresql11-server postgresql11-contrib`
     - PostgreSQL 12: `yum install postgresql12-server postgresql12-contrib`
+    - PostgreSQL 13: `yum install postgresql13-server postgresql13-contrib`
 
 Then install the “2ndQuadrant’s General Public” repository for your PostgreSQL
 version, by running the following instructions as root on the destination Linux server:
@@ -89,6 +90,7 @@ version, by running the following instructions as root on the destination Linux 
  - PostgreSQL 10: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/10/rpm | bash`
  - PostgreSQL 11: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/11/rpm | bash`
  - PostgreSQL 12: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/12/rpm | bash`
+ - PostgreSQL 13: `curl https://access.2ndquadrant.com/api/repository/dl/default/release/13/rpm | bash`
 
 ##### Installation
 
@@ -100,6 +102,7 @@ Once the repository is installed, you can proceed to pglogical for your PostgreS
  - PostgreSQL 10: `yum install postgresql10-pglogical`
  - PostgreSQL 11: `yum install postgresql11-pglogical`
  - PostgreSQL 12: `yum install postgresql12-pglogical`
+ - PostgreSQL 13: `yum install postgresql13-pglogical`
 
 You may be prompted to accept the repository GPG key for package signing:
 
@@ -130,6 +133,7 @@ Once pre-requisites are complete, installing pglogical is simply a matter of exe
  - PostgreSQL 10: `sudo apt-get install postgresql-10-pglogical`
  - PostgreSQL 11: `sudo apt-get install postgresql-11-pglogical`
  - PostgreSQL 12: `sudo apt-get install postgresql-12-pglogical`
+ - PostgreSQL 13: `sudo apt-get install postgresql-13-pglogical`
 
 ### From source code
 
