@@ -626,8 +626,11 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 			PQfinish(origin_conn);
 		}
 		PG_CATCH();
+		{
+			FlushErrorState();
 			elog(WARNING, "could not drop slot \"%s\" on provider, you will probably have to drop it manually",
 				 sub->slot_name);
+		}
 		PG_END_TRY();
 
 		/* Drop the origin tracking locally. */
