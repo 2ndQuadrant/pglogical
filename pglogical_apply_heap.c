@@ -1011,27 +1011,39 @@ pglogical_apply_heap_mi_add_tuple(PGLogicalRelation *rel,
 		ExecConstraints(aestate->resultRelInfo, slot,
 						aestate->estate);
 
-	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples++] =
 #if PG_VERSION_NUM >= 120000
-		slot
+	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples] = MakeSingleTupleTableSlot(slot->tts_tupleDescriptor, slot->tts_ops);
+	ExecCopySlot(pglmistate->buffered_tuples[pglmistate->nbuffered_tuples], slot);
+	pglmistate->nbuffered_tuples++;
 #else
-		remotetuple
+	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples++] = remotetuple;
 #endif
-		;
 	MemoryContextSwitchTo(oldctx);
 }
 
 void
 pglogical_apply_heap_mi_finish(PGLogicalRelation *rel)
 {
+	int i;
+	int nbuffered_tuples;
+
 	if (!pglmistate)
 		return;
 
 	Assert(pglmistate->rel == rel);
 
+	/*
+	 * get the number of nbuffered_tuples
+	 * before it is too late
+	 */
+	nbuffered_tuples = pglmistate->nbuffered_tuples;
+
 	pglogical_apply_heap_mi_flush();
 
 	FreeBulkInsertState(pglmistate->bistate);
+
+	for (i = 0; i < nbuffered_tuples; i++)
+		ExecDropSingleTupleTableSlot(pglmistate->buffered_tuples[i]);
 
 	finish_apply_exec_state(pglmistate->aestate);
 
