@@ -44,7 +44,7 @@ Tables on the provider and subscriber must have the same names and be in the
 same schema. Future revisions may add mapping features.
 
 Tables on the provider and subscriber must have the same columns, with the same
-data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc must
+data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc., must
 be the same or weaker (more permissive) on the subscriber than the provider.
 
 Tables must have the same `PRIMARY KEY`s. It is not recommended to add additional
@@ -466,7 +466,7 @@ There are three preexisting replication sets named "default",
 "default_insert_only" and "ddl_sql". The "default" replication set is defined
 to replicate all changes to tables in it. The "default_insert_only" only
 replicates INSERTs and is meant for tables that don't have primary key (see
-[Limitations](#primary-key-or-replica-identity-required) section for details).
+[Limitations](#primary-key-required) section for details).
 The "ddl_sql" replication set is defined to replicate schema changes specified by
 `pglogical.replicate_ddl_command`
 
@@ -776,14 +776,11 @@ To replicate multiple databases you must set up individual provider/subscriber
 relationships for each. There is no way to configure replication for all databases
 in a PostgreSQL install at once.
 
-### PRIMARY KEY or REPLICA IDENTITY required
+### PRIMARY KEY required
 
 `UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
-KEY` or other valid replica identity such as a `UNIQUE` constraint. Replication
-has no way to find the tuple that should be updated/deleted since there is no
-unique identifier.
-
-See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
+KEY`. Replication has no way to find the tuple that should be updated/deleted
+since there is no unique identifier.
 
 ### Only one unique index/constraint/PK
 
