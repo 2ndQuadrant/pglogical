@@ -776,11 +776,15 @@ To replicate multiple databases you must set up individual provider/subscriber
 relationships for each. There is no way to configure replication for all databases
 in a PostgreSQL install at once.
 
-### PRIMARY KEY required
+### PRIMARY KEY or REPLICA IDENTITY required
 
 `UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
-KEY`. Replication has no way to find the tuple that should be updated/deleted
-since there is no unique identifier.
+KEY` or other valid replica identity such as using an index, which must be unique,
+not partial, not deferrable, and include only columns marked NOT NULL.
+Replication has no way to find the tuple that should be updated/deleted since
+there is no unique identifier.
+`REPLICA IDENTITY FULL` is not supported yet.
+
 
 ### Only one unique index/constraint/PK
 
