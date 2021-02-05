@@ -178,7 +178,11 @@ you can add this additional option to postgresql.conf:
     track_commit_timestamp = on # needed for last/first update wins conflict resolution
                                 # property available in PostgreSQL 9.5+
 
-`pg_hba.conf` has to allow replication connections from localhost.
+`pg_hba.conf` has to allow logical replication connections from localhost. Up
+until PostgreSQL 9.6 logical replication connections are managed using the
+`replication` keyword in `pg_hba.conf`. In PostgreSQL 10+ logical replication
+connections are treated as regular connections to the provider database by
+`pg_hba.conf`.
 
 Next the `pglogical` extension has to be installed on all nodes:
 
