@@ -149,6 +149,7 @@ PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info_by_target);
 static void gen_slot_name(Name slot_name, char *dbname,
 						  const char *provider_name,
 						  const char *subscriber_name);
+static void check_provider_wal_level_is_logical(PGconn *conn);
 
 bool in_pglogical_replicate_ddl_command = false;
 
@@ -415,6 +416,7 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 
 	/* Now, fetch info about remote node. */
 	conn = pglogical_connect(provider_dsn, sub_name, "create");
+	check_provider_wal_level_is_logical(conn);
 	pglogical_remote_node_info(conn, &origin.id, &origin.name, NULL, NULL, NULL);
 	PQfinish(conn);
 
@@ -532,6 +534,29 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	create_local_sync_status(&sync);
 
 	PG_RETURN_OID(sub.id);
+}
+
+/*
+ * Make sure the provider has set wal_level=logical.
+ */
+static void
+check_provider_wal_level_is_logical(PGconn *conn)
+{
+	PGresult	*res;
+	const char	*wal_level;
+
+	res = PQexec(conn, "SHOW wal_level");
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+		elog(ERROR, "could not fetch provider wal_level flag: %s\n", PQerrorMessage(conn));
+
+	if (PQntuples(res) != 1)
+		elog(ERROR, "unexpected result from 'SHOW wal_level'.\n");
+
+	wal_level = pstrdup(PQgetvalue(res, 0, 0));
+	if (strcmp("logical", wal_level) != 0)
+		elog(ERROR, "provider must have set wal_level=logical (currently %s)\n", wal_level);
+
+	PQclear(res);
 }
 
 /*
