@@ -735,7 +735,6 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 			{
 				PopActiveSnapshot();
 				finish_apply_exec_state(aestate);
-				pglogical_relation_close(rel, NoLock);
 				return;
 			}
 		}

@@ -198,6 +198,9 @@ pglogical_relation_cache_updater(PGLogicalRemoteRel *remoterel)
 void
 pglogical_relation_close(PGLogicalRelation * rel, LOCKMODE lockmode)
 {
+	/* is the relation already closed? this shouldn't happen */
+	Assert(rel->rel != NULL);
+
 	table_close(rel->rel, lockmode);
 	rel->rel = NULL;
 }
