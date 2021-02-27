@@ -649,8 +649,12 @@ pglogical_subscription_changed(Oid subid, bool kill)
 static size_t
 worker_shmem_size(int nworkers)
 {
-	return offsetof(PGLogicalContext, workers) +
-		sizeof(PGLogicalWorker) * nworkers;
+	Size		size;
+
+	size = CACHELINEALIGN(offsetof(PGLogicalContext, workers));
+	size = add_size(size, sizeof(PGLogicalWorker) * nworkers);
+
+	return size;
 }
 
 /*
