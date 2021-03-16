@@ -16,4 +16,6 @@
 extern int find_other_exec_version(const char *argv0, const char *target,
 								   uint32 *version, char *retpath);
 
+extern char *pgl_get_connstr(char *connstr, char *dbname, char *options, char **errmsg);
+
 #endif /* PGLOGICAL_FE_H */

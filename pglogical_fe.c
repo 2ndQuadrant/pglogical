@@ -10,9 +10,29 @@
  *
  *-------------------------------------------------------------------------
  */
+#include "libpq-fe.h"
 #include "postgres_fe.h"
 
+/* Note the order is important for debian here. */
+#if !defined(pg_attribute_printf)
+
+/* GCC and XLC support format attributes */
+#if defined(__GNUC__) || defined(__IBMC__)
+#define pg_attribute_format_arg(a) __attribute__((format_arg(a)))
+#define pg_attribute_printf(f,a) __attribute__((format(PG_PRINTF_ATTRIBUTE, f, a)))
+#else
+#define pg_attribute_format_arg(a)
+#define pg_attribute_printf(f,a)
+#endif
+
+#endif
+
+#include "pqexpbuffer.h"
+
 #include "pglogical_fe.h"
+
+static char *PQconninfoParamsToConnstr(const char *const * keywords, const char *const * values);
+static void appendPQExpBufferConnstrValue(PQExpBuffer buf, const char *str);
 
 /*
  * Find another program in our binary's directory,
@@ -77,4 +97,165 @@ find_other_exec_version(const char *argv0, const char *target,
 	  (pre_dot * 100 + post_dot) * 100 : pre_dot * 100 * 100;
 
 	return 0;
+}
+
+/*
+ * Build connection string from individual parameter.
+ *
+ * dbname can be specified in connstr parameter
+ */
+char *
+pgl_get_connstr(char *connstr, char *dbname, char *options, char **errmsg)
+{
+	char		*ret;
+	int			argcount = 1;	/* dbname */
+	int			i;
+	const char **keywords;
+	const char **values;
+	PQconninfoOption *conn_opts = NULL;
+	PQconninfoOption *conn_opt;
+
+	/*
+	 * Merge the connection info inputs given in form of connection string
+	 * and options
+	 */
+	i = 0;
+	if (connstr &&
+		(strncmp(connstr, "postgresql://", 13) == 0 ||
+		 strncmp(connstr, "postgres://", 11) == 0 ||
+		 strchr(connstr, '=') != NULL))
+	{
+		conn_opts = PQconninfoParse(connstr, errmsg);
+		if (conn_opts == NULL)
+			return NULL;
+
+		for (conn_opt = conn_opts; conn_opt->keyword != NULL; conn_opt++)
+		{
+			if (conn_opt->val != NULL && conn_opt->val[0] != '\0')
+				argcount++;
+		}
+
+		keywords = malloc((argcount + 2) * sizeof(*keywords));
+		memset(keywords, 0, (argcount + 2) * sizeof(*keywords));
+		values = malloc((argcount + 2) * sizeof(*values));
+		memset(values, 0, (argcount + 2) * sizeof(*values));
+
+		for (conn_opt = conn_opts; conn_opt->keyword != NULL; conn_opt++)
+		{
+			/* If db* parameters were provided, we'll fill them later. */
+			if (dbname && strcmp(conn_opt->keyword, "dbname") == 0)
+				continue;
+
+			if (conn_opt->val != NULL && conn_opt->val[0] != '\0')
+			{
+				keywords[i] = conn_opt->keyword;
+				values[i] = conn_opt->val;
+				i++;
+			}
+		}
+	}
+	else
+	{
+		keywords = malloc((argcount + 2) * sizeof(*keywords));
+		memset(keywords, 0, (argcount + 2) * sizeof(*keywords));
+		values = malloc((argcount + 2) * sizeof(*values));
+		memset(values, 0, (argcount + 2) * sizeof(*values));
+
+		/*
+		 * If connstr was provided but it's not in connection string format and
+		 * the dbname wasn't provided then connstr is actually dbname.
+		 */
+		if (connstr && !dbname)
+			dbname = connstr;
+	}
+
+	if (dbname)
+	{
+		keywords[i] = "dbname";
+		values[i] = dbname;
+		i++;
+	}
+
+	if (options)
+	{
+		keywords[i] = "options";
+		values[i] = options;
+	}
+
+	ret = PQconninfoParamsToConnstr(keywords, values);
+
+	/* Connection ok! */
+	if (values)
+		free(values);
+	free(keywords);
+	if (conn_opts)
+		PQconninfoFree(conn_opts);
+
+	return ret;
+}
+
+/*
+ * Convert PQconninfoOption array into conninfo string
+ */
+static char *
+PQconninfoParamsToConnstr(const char *const * keywords, const char *const * values)
+{
+	PQExpBuffer	 retbuf = createPQExpBuffer();
+	char		*ret;
+	int			 i = 0;
+
+	for (i = 0; keywords[i] != NULL; i++)
+	{
+		if (i > 0)
+			appendPQExpBufferChar(retbuf, ' ');
+		appendPQExpBuffer(retbuf, "%s=", keywords[i]);
+		appendPQExpBufferConnstrValue(retbuf, values[i]);
+	}
+
+	ret = strdup(retbuf->data);
+	destroyPQExpBuffer(retbuf);
+
+	return ret;
+}
+
+/*
+ * Escape connection info value
+ */
+static void
+appendPQExpBufferConnstrValue(PQExpBuffer buf, const char *str)
+{
+	const char *s;
+	bool		needquotes;
+
+	/*
+	 * If the string consists entirely of plain ASCII characters, no need to
+	 * quote it. This is quite conservative, but better safe than sorry.
+	 */
+	needquotes = false;
+	for (s = str; *s; s++)
+	{
+		if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+			  (*s >= '0' && *s <= '9') || *s == '_' || *s == '.'))
+		{
+			needquotes = true;
+			break;
+		}
+	}
+
+	if (needquotes)
+	{
+		appendPQExpBufferChar(buf, '\'');
+		while (*str)
+		{
+			/* ' and \ must be escaped by to \' and \\ */
+			if (*str == '\'' || *str == '\\')
+				appendPQExpBufferChar(buf, '\\');
+
+			appendPQExpBufferChar(buf, *str);
+			str++;
+		}
+		appendPQExpBufferChar(buf, '\'');
+	}
+	else
+		appendPQExpBufferStr(buf, str);
 }

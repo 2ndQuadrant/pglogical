@@ -15,6 +15,12 @@
 
 #include <unistd.h>
 
+#ifdef WIN32
+#include <process.h>
+#else
+#include <sys/wait.h>
+#endif
+
 #include "libpq-fe.h"
 
 #include "miscadmin.h"
@@ -85,76 +91,175 @@ void pglogical_sync_main(Datum main_arg);
 static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
 
+static int
+exec_cmd(const char *cmd, char *cmdargv[])
+{
+	pid_t		pid;
+	int			stat;
+
+	/* Fire off execv in child */
+	fflush(stdout);
+	fflush(stderr);
+
+#ifndef WIN32
+	if ((pid = fork()) == 0)
+	{
+		if (execv(cmd, cmdargv) < 0)
+		{
+			ereport(ERROR,
+					(errmsg("could not execute \"%s\": %m", cmd)));
+			/* We're already in the child process here, can't return */
+			exit(1);
+		}
+	}
+
+	if (waitpid(pid, &stat, 0) != pid)
+		stat = -1;
+#else
+	stat = _spawnv(_P_WAIT, cmd, cmdargv);
+#endif
+
+	return stat;
+}
+
+static void
+get_pg_executable(char *cmdname, char *cmdbuf)
+{
+	uint32		version;
+
+	if (find_other_exec_version(my_exec_path, cmdname, &version, cmdbuf))
+		elog(ERROR, "pglogical subscriber init failed to find %s relative to binary %s",
+			 cmdname, my_exec_path);
+
+	if (version / 100 != PG_VERSION_NUM / 100)
+		elog(ERROR, "pglogical subscriber init found %s with wrong major version %d.%d, expected %d.%d",
+			 cmdname, version / 100 / 100, version / 100 % 100,
+			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
+}
+
 static void
 dump_structure(PGLogicalSubscription *sub, const char *destfile,
 			   const char *snapshot)
 {
+	char	   *dsn;
+	char	   *err_msg;
 	char		pg_dump[MAXPGPATH];
-	uint32		version;
-	int			res;
-	StringInfoData	schema_filter;
-	StringInfoData	command;
+	char	   *cmdargv[20];
+	int			cmdargc = 0;
+	bool		has_pgl_origin;
+	StringInfoData	s;
 
-	if (find_other_exec_version(my_exec_path, PGDUMP_BINARY, &version, pg_dump) != 0)
-		elog(ERROR, "pglogical subscriber init failed to find pg_dump relative to binary %s",
-			 my_exec_path);
+	dsn = pgl_get_connstr((char *) sub->origin_if->dsn, NULL, NULL, &err_msg);
+	if (dsn == NULL)
+		elog(ERROR, "invalid connection string \"%s\": %s",
+			 sub->origin_if->dsn, err_msg);
 
-	if (version / 100 != PG_VERSION_NUM / 100)
-		elog(ERROR, "pglogical subscriber init found pg_dump with wrong major version %d.%d, expected %d.%d",
-			 version / 100 / 100, version / 100 % 100,
-			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
+	get_pg_executable(PGDUMP_BINARY, pg_dump);
 
-	initStringInfo(&schema_filter);
-	appendStringInfo(&schema_filter, "-N %s", EXTENSION_NAME);
-	/* Filter out pglogical_origin schema iff it exists (GH #45) */
+	cmdargv[cmdargc++] = pg_dump;
+
+	/* custom format */
+	cmdargv[cmdargc++] = "-Fc";
+
+	/* schema only */
+	cmdargv[cmdargc++] = "-s";
+
+	/* snapshot */
+	initStringInfo(&s);
+	appendStringInfo(&s, "--snapshot=%s", snapshot);
+	cmdargv[cmdargc++] = pstrdup(s.data);
+	resetStringInfo(&s);
+
+	/* Dumping database, filter out our extension. */
+	appendStringInfo(&s, "--exclude-schema=%s", EXTENSION_NAME);
+	cmdargv[cmdargc++] = pstrdup(s.data);
+	resetStringInfo(&s);
+
+	/* Skip the pglogical_origin if it exists locally. */
 	StartTransactionCommand();
-	if (OidIsValid(LookupExplicitNamespace("pglogical_origin", true)))
-		appendStringInfoString(&schema_filter, " -N pglogical_origin");
+	has_pgl_origin = OidIsValid(LookupExplicitNamespace("pglogical_origin",
+														true));
 	CommitTransactionCommand();
+	if (has_pgl_origin)
+	{
+		appendStringInfo(&s, "--exclude-schema=%s", "pglogical_origin");
+		cmdargv[cmdargc++] = pstrdup(s.data);
+		resetStringInfo(&s);
+	}
 
-	initStringInfo(&command);
-	appendStringInfo(&command, "\"%s\" --snapshot=\"%s\" %s -s -F c -f \"%s\" \"%s\"",
-					 pg_dump, snapshot, schema_filter.data, destfile,
-					 sub->origin_if->dsn);
+	/* destination file */
+	appendStringInfo(&s, "--file=%s", destfile);
+	cmdargv[cmdargc++] = pstrdup(s.data);
+	resetStringInfo(&s);
 
-	res = system(command.data);
-	if (res != 0)
+	/* connection string */
+	appendStringInfo(&s, "--dbname=%s", dsn);
+	cmdargv[cmdargc++] = pstrdup(s.data);
+	resetStringInfo(&s);
+	free(dsn);
+
+	cmdargv[cmdargc++] = NULL;
+
+	if (exec_cmd(pg_dump, cmdargv) != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not execute command \"%s\"",
-						command.data)));
+				 errmsg("could not execute pg_dump (\"%s\"): %m",
+						pg_dump)));
 }
 
-/* TODO: switch to SPI? */
 static void
 restore_structure(PGLogicalSubscription *sub, const char *srcfile,
 				  const char *section)
 {
+	char	   *dsn;
+	char	   *err_msg;
 	char		pg_restore[MAXPGPATH];
-	uint32		version;
-	int			res;
-	StringInfoData	command;
+	char	   *cmdargv[20];
+	int			cmdargc = 0;
+	StringInfoData	s;
 
-	if (find_other_exec_version(my_exec_path, PGRESTORE_BINARY, &version, pg_restore) != 0)
-		elog(ERROR, "pglogical subscriber init failed to find pg_restore relative to binary %s",
-			 my_exec_path);
+	dsn = pgl_get_connstr((char *) sub->target_if->dsn, NULL,
+						  "-cpglogical.subscription_schema_restore=true",
+						  &err_msg);
+	if (dsn == NULL)
+		elog(ERROR, "invalid connection string \"%s\": %s",
+			 sub->target_if->dsn, err_msg);
 
-	if (version / 100 != PG_VERSION_NUM / 100)
-		elog(ERROR, "pglogical subscriber init found pg_restore with wrong major version %d.%d, expected %d.%d",
-			 version / 100 / 100, version / 100 % 100,
-			 PG_VERSION_NUM / 100 / 100, PG_VERSION_NUM / 100 % 100);
+	get_pg_executable(PGRESTORE_BINARY, pg_restore);
 
-	initStringInfo(&command);
-	appendStringInfo(&command,
-					 "\"%s\" --section=\"%s\" --exit-on-error -1 -d \"%s\" \"%s\"",
-					 pg_restore, section, sub->target_if->dsn, srcfile);
+	cmdargv[cmdargc++] = pg_restore;
 
-	res = system(command.data);
-	if (res != 0)
+	/* section */
+	if (section)
+	{
+		initStringInfo(&s);
+		appendStringInfo(&s, "--section=%s", section);
+		cmdargv[cmdargc++] = pstrdup(s.data);
+		resetStringInfo(&s);
+	}
+
+	/* stop execution on any error */
+	cmdargv[cmdargc++] = "--exit-on-error";
+
+	/* apply everything in single tx */
+	cmdargv[cmdargc++] = "-1";
+
+	/* connection string */
+	initStringInfo(&s);
+	appendStringInfo(&s, "--dbname=%s", dsn);
+	cmdargv[cmdargc++] = pstrdup(s.data);
+	free(dsn);
+
+	/* source file */
+	cmdargv[cmdargc++] = pstrdup(srcfile);
+
+	cmdargv[cmdargc++] = NULL;
+
+	if (exec_cmd(pg_restore, cmdargv) != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not execute command \"%s\"",
-						command.data)));
+				 errmsg("could not execute pg_restore (\"%s\"): %m",
+						pg_restore)));
 }
 
 /*
