@@ -881,7 +881,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 				{
 					elog(INFO, "synchronizing constraints");
 
-					status = SYNC_STATUS_CONSTAINTS;
+					status = SYNC_STATUS_CONSTRAINTS;
 					StartTransactionCommand();
 					set_subscription_sync_status(sub->id, status);
 					CommitTransactionCommand();

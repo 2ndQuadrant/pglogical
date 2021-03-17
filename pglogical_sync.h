@@ -44,7 +44,7 @@ typedef struct PGLogicalSyncStatus
 #define SYNC_STATUS_INIT		'i'		/* Ask for sync. */
 #define SYNC_STATUS_STRUCTURE	's'     /* Sync structure */
 #define SYNC_STATUS_DATA		'd'		/* Data sync. */
-#define SYNC_STATUS_CONSTAINTS	'c'		/* Constraint sync (post-data structure). */
+#define SYNC_STATUS_CONSTRAINTS	'c'		/* Constraint sync (post-data structure). */
 #define SYNC_STATUS_SYNCWAIT	'w'		/* Table sync is waiting to get OK from main thread. */
 #define SYNC_STATUS_CATCHUP		'u'		/* Catching up. */
 #define SYNC_STATUS_SYNCDONE	'y'		/* Synchronization finished (at lsn). */
