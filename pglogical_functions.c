@@ -992,7 +992,7 @@ sync_status_to_string(char status)
 			return "sync_structure";
 		case SYNC_STATUS_DATA:
 			return "sync_data";
-		case SYNC_STATUS_CONSTAINTS:
+		case SYNC_STATUS_CONSTRAINTS:
 			return "sync_constraints";
 		case SYNC_STATUS_SYNCWAIT:
 			return "sync_waiting";
