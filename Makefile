@@ -50,6 +50,9 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended conflict
 
 EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
 			   compat96/pglogical_compat.o compat10/pglogical_compat.o \
+			   compat11/pglogical_compat.o compat11/pglogical_compat.bc \
+			   compat12/pglogical_compat.o compat12/pglogical_compat.bc \
+			   compat13/pglogical_compat.o compat13/pglogical_compat.bc \
 			   pglogical_create_subscriber.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043
