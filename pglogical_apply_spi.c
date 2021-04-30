@@ -508,8 +508,13 @@ pglogical_proccess_copy(pglogical_copyState *pglcstate)
 	SPI_push();
 
 	/* Initiate the actual COPY */
-	PGLDoCopy((CopyStmt*)((RawStmt *)linitial(pglcstate->copy_parsetree))->stmt,	
+#if PG_VERSION_NUM >= 100000
+	PGLDoCopy((CopyStmt*)((RawStmt *)linitial(pglcstate->copy_parsetree))->stmt,
 		pglcstate->copy_stmt->data, &processed);
+#else
+	PGLDoCopy((CopyStmt *) linitial(pglcstate->copy_parsetree),
+			  pglcstate->copy_stmt->data, &processed);
+#endif
 
 	/* Clean up SPI state */
 	SPI_pop();

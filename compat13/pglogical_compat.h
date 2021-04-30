@@ -64,7 +64,13 @@
 #define PGLCreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, isInternal) \
 	CreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, InvalidOid, InvalidOid, NULL, isInternal, false);
 
-#define	PGLDoCopy(stmt, queryString, processed) DoCopy(NULL, stmt, -1, 0, processed)
+#define	PGLDoCopy(stmt, queryString, processed) \
+	do \
+	{ \
+		ParseState* pstate = make_parsestate(NULL); \
+		DoCopy(pstate, stmt, -1, 0, processed); \
+		free_parsestate(pstate); \
+	} while (false);
 
 #define PGLReplicationSlotCreate(name, db_specific, persistency) ReplicationSlotCreate(name, db_specific, persistency)
 
