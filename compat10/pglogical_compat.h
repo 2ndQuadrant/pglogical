@@ -32,9 +32,6 @@
 #define ExecAlterExtensionStmt(stmt) \
 	ExecAlterExtensionStmt(NULL, stmt)
 
-#define pgl_replorigin_drop(roident) \
-	replorigin_drop(roident, true)
-
 #undef ExecEvalExpr
 #define ExecEvalExpr(expr, econtext, isNull, isDone) \
 	((*(expr)->evalfunc) (expr, econtext, isNull))

@@ -634,7 +634,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		/* Drop the origin tracking locally. */
 		originid = replorigin_by_name(sub->slot_name, true);
 		if (originid != InvalidRepOriginId)
-			pgl_replorigin_drop(originid);
+			replorigin_drop(originid, false);
 	}
 
 	PG_RETURN_BOOL(sub != NULL);

@@ -23,9 +23,6 @@
 #define ExecAlterExtensionStmt(stmt) \
 	ExecAlterExtensionStmt(NULL, stmt)
 
-#define pgl_replorigin_drop(roident) \
-	replorigin_drop(roident, true)
-
 /*
  * Pg 11 adds an argument here.  We don't need to special-case 2ndQPostgres
  * anymore because it adds a separate ExecBRDeleteTriggers2 now, so this only

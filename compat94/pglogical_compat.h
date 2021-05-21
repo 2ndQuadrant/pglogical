@@ -139,6 +139,14 @@ extern Oid CatalogTupleInsert(Relation heapRel, HeapTuple tup);
 extern void CatalogTupleUpdate(Relation heapRel, ItemPointer otid, HeapTuple tup);
 extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 
+/*
+ * nowait=true is the standard behavior.  If nowait=false is called,
+ * we ignore that, meaning we don't wait even if the caller asked to
+ * wait.  This could lead to spurious errors in race conditions, but
+ * it's the best we can do.
+ */
+#define replorigin_drop(roident, nowait) pgl_replorigin_drop(roident)
+
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum)
 
