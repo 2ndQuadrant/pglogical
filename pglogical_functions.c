@@ -1019,60 +1019,37 @@ pglogical_show_subscription_table(PG_FUNCTION_ARGS)
 	char				   *nspname;
 	char				   *relname;
 	PGLogicalSyncStatus	   *sync;
-	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	char	   *sync_status;
 	TupleDesc	tupdesc;
-	Tuplestorestate *tupstore;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
 	Datum		values[3];
 	bool		nulls[3];
+	HeapTuple	result_tuple;
 
-	/* check to see if caller supports us returning a tuplestore */
-	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("set-valued function called in context that cannot accept a set")));
-	if (!(rsinfo->allowedModes & SFRM_Materialize))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("materialize mode required, but it is not " \
-						"allowed in this context")));
-
-	/* Switch into long-lived context to construct returned data structures */
-	per_query_ctx = rsinfo->econtext->ecxt_per_query_memory;
-	oldcontext = MemoryContextSwitchTo(per_query_ctx);
-
-	/* Build a tuple descriptor for our result type */
-	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
-		elog(ERROR, "return type must be a row type");
-
-	tupstore = tuplestore_begin_heap(true, false, work_mem);
-	rsinfo->returnMode = SFRM_Materialize;
-	rsinfo->setResult = tupstore;
-	rsinfo->setDesc = tupdesc;
-
-	MemoryContextSwitchTo(oldcontext);
+	tupdesc = CreateTemplateTupleDesc(3);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "nspname", TEXTOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "relname", TEXTOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "status", TEXTOID, -1, 0);
+	tupdesc = BlessTupleDesc(tupdesc);
 
 	nspname = get_namespace_name(get_rel_namespace(reloid));
 	relname = get_rel_name(reloid);
+
+	/* Reset sync status of the table. */
+	sync = get_table_sync_status(sub->id, nspname, relname, true);
+	if (sync)
+		sync_status = sync_status_to_string(sync->status);
+	else
+		sync_status = "unknown";
 
 	memset(values, 0, sizeof(values));
 	memset(nulls, 0, sizeof(nulls));
 
 	values[0] = CStringGetTextDatum(nspname);
 	values[1] = CStringGetTextDatum(relname);
+	values[2] = CStringGetTextDatum(sync_status);
 
-	/* Reset sync status of the table. */
-	sync = get_table_sync_status(sub->id, nspname, relname, true);
-	if (sync)
-		values[2] = CStringGetTextDatum(sync_status_to_string(sync->status));
-	else
-		values[2] = CStringGetTextDatum("unknown");
-
-	tuplestore_putvalues(tupstore, tupdesc, values, nulls);
-	tuplestore_donestoring(tupstore);
-
-	PG_RETURN_VOID();
+	result_tuple = heap_form_tuple(tupdesc, values, nulls);
+	PG_RETURN_DATUM(HeapTupleGetDatum(result_tuple));
 }
 
 /*
