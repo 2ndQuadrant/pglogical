@@ -11,6 +11,12 @@
  * -------------------------------------------------------------------------
  */
 
+/* dirent.h on port/win32_msvc expects MAX_PATH to be defined */
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <locale.h>
@@ -80,9 +86,9 @@ static PGconn		*provider_conn = NULL;
 static void signal_handler(int sig);
 static void usage(void);
 static void die(const char *fmt,...)
-__attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2)));
+pg_attribute_printf(1, 2);
 static void print_msg(VerbosityLevelEnum level, const char *fmt,...)
-__attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+pg_attribute_printf(2, 3);
 
 static int run_pg_ctl(const char *arg);
 static void run_basebackup(const char *provider_connstr, const char *data_dir,
