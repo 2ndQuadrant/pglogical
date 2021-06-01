@@ -88,5 +88,9 @@ extern bool wait_for_sync_status_change(Oid subid, const char *nspname,
 extern void truncate_table(char *nspname, char *relname);
 extern List *get_subscription_tables(Oid subid);
 
+#ifdef WIN32
+extern void QuoteWindowsArgv(StringInfo cmdline, const char * argv[]);
+#endif
+
 #endif /* PGLOGICAL_SYNC_H */
 

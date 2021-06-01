@@ -90,7 +90,29 @@ void pglogical_sync_main(Datum main_arg);
 
 static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
+#ifdef WIN32
+static int exec_cmd_win32(const char *cmd, char *cmdargv[]);
+#endif
 
+
+/*
+ * Run a command and wait for it to exit, then return its exit code
+ * in the same format as waitpid() including on Windows.
+ *
+ * Does not elog(ERROR).
+ *
+ * 'cmd' must be a full relative or absolute path to the executable to
+ * start. The PATH is not searched.
+ *
+ * Preserves each argument in cmdargv as a discrete argument to the child
+ * process. The first entry in cmdargv is passed as the child process's
+ * argv[0], so the first "real" argument begins at index 1.
+ *
+ * Uses the current environment and working directory.
+ *
+ * Note that if we elog(ERROR) or elog(FATAL) here we won't kill the
+ * child proc.
+ */
 static int
 exec_cmd(const char *cmd, char *cmdargv[])
 {
@@ -116,11 +138,12 @@ exec_cmd(const char *cmd, char *cmdargv[])
 	if (waitpid(pid, &stat, 0) != pid)
 		stat = -1;
 #else
-	stat = _spawnv(_P_WAIT, cmd, cmdargv);
+	stat = exec_cmd_win32(cmd, cmdargv);
 #endif
 
 	return stat;
 }
+
 
 static void
 get_pg_executable(char *cmdname, char *cmdbuf)
@@ -1905,3 +1928,312 @@ truncate_table(char *nspname, char *relname)
 
 	CommandCounterIncrement();
 }
+
+
+/*
+ * exec_cmd support for win32
+ */
+#ifdef WIN32
+/*
+ * Return formatted message from GetLastError() in a palloc'd string in the
+ * current memory context, or a copy of a constant generic error string if
+ * there's no recorded error state.
+ */
+static char *
+PglGetLastWin32Error(void)
+{
+	LPVOID lpMsgBuf;
+	DWORD dw = GetLastError();
+	char * pgstr = NULL;
+
+	if (dw != ERROR_SUCCESS)
+	{
+		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+				NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR) &lpMsgBuf, 0, NULL);
+		pgstr = pstrdup((LPTSTR) lpMsgBuf);
+		LocalFree(lpMsgBuf);
+	} else {
+		pgstr = pstrdup("Unknown error or no recent error");
+	}
+
+	return pgstr;
+}
+
+
+/*
+ * See https://docs.microsoft.com/en-us/archive/blogs/twistylittlepassagesallalike/everyone-quotes-command-line-arguments-the-wrong-way
+ * for the utterly putrid way Windows handles command line arguments, and the insane lack of any inverse
+ * form of the CommandLineToArgvW function in the win32 API.
+ */
+static void
+QuoteWindowsArgvElement(StringInfo cmdline, const char *arg, bool force)
+{
+	if (!force && *arg != '\0'
+			&& strchr(arg, ' ') == NULL
+			&& strchr(arg, '\t') == NULL
+			&& strchr(arg, '\n') == NULL
+			&& strchr(arg, '\v') == NULL
+			&& strchr(arg, '"') == NULL)
+    {
+		appendStringInfoString(cmdline, arg);
+    }
+    else {
+		const char *it;
+
+		/* Begin quoted argument */
+		appendStringInfoChar(cmdline, '"');
+
+		/*
+		 * In terms of the algorithm described in CommandLineToArgvW's
+		 * documentation we are now "in quotes".
+		 */
+
+        for (it = arg; *it != '\0'; it++)
+		{
+            unsigned int NumberBackslashes = 0;
+
+			/*
+			 * Accumulate runs of backslashes. They may or may not have special
+			 * meaning depending on what follows them.
+			 */
+            while (*it != '\0' && *it == '\\')
+			{
+                ++it;
+                ++NumberBackslashes;
+            }
+
+            if (*it == '\0')
+			{
+				/*
+				 * Handle command line arguments ending with or consisting only
+				 * of backslashes.  Particularly important for Windows, given
+				 * its backslash paths.
+				 *
+				 * We want NumberBackSlashes * 2 backslashes here to prevent the
+				 * final backslash from escaping the quote we'll append at the
+				 * end of the argument.
+				 */
+				for (; NumberBackslashes > 0; NumberBackslashes--)
+					appendStringInfoString(cmdline, "\\\\");
+				break;
+            }
+            else if (*it == '"') {
+				/*
+				 * Escape all accumulated backslashes, then append escaped
+				 * quotation mark.
+				 *
+				 * We want NumberBackSlashes * 2 + 1 backslashes to prevent
+				 * the backslashes from escaping the backslash we have to append
+				 * to escape the quote char that's part of the argument itself.
+				 */
+				for (; NumberBackslashes > 0; NumberBackslashes--)
+					appendStringInfoString(cmdline, "\\\\");
+                appendStringInfoString(cmdline, "\\\"");
+			}
+            else {
+				/*
+				 * A series of backslashes followed by something other than a
+				 * double quote is not special to the CommandLineToArgvW parser
+				 * in MSVCRT and must be appended literally.
+				 */
+				for (; NumberBackslashes > 0; NumberBackslashes--)
+					appendStringInfoChar(cmdline, '\\');
+				/* Finally any normal char */
+                appendStringInfoChar(cmdline, *it);
+            }
+        }
+
+		/* End quoted argument */
+		appendStringInfoChar(cmdline, '"');
+
+		/*
+		 * In terms of the algorithm described in CommandLineToArgvW's
+		 * documentation we are now "not in quotes".
+		 */
+    }
+}
+
+/*
+ * Turn an execv-style argument vector into something that Win32's
+ * CommandLineToArgvW will parse back into the original argument
+ * vector.
+ *
+ * You'd think this would be part of the win32 API. But no...
+ *
+ * (This should arguably be part of libpq_fe.c, but I didn't want to expand our
+ * abuse of PqExpBuffer.)
+ */
+static void
+QuoteWindowsArgv(StringInfo cmdline, const char * argv[])
+{
+	/* argv0 is required */
+	Assert(*argv != NULL && **argv != '\0');
+	QuoteWindowsArgvElement(cmdline, *argv, false);
+	++argv;
+
+	for (; *argv != NULL; ++argv)
+	{
+		appendStringInfoChar(cmdline, ' ');
+		QuoteWindowsArgvElement(cmdline, *argv, false);
+	}
+}
+
+/*
+ * Run a process on Windows and wait for it to exit, then return its exit code.
+ * Preserve argument quoting. See exec_cmd() for the function contract details.
+ * This is only split out to keep all the win32 horror separate for reability.
+ *
+ * Don't be tempted to use Win32's _spawnv. It is not like execv. It does *not*
+ * preserve the individual arguments in the vector, it concatenates them
+ * without any escaping or quoting. Thus any arguments with spaces, double
+ * quotes, etc will be mangled by the child process's MSVC runtime when it
+ * tries to turn the argument string back into an argument vector for the main
+ * function by calling CommandLineToArgv() from the C library entrypoint.
+ * _spawnv is also limited to 1024 characters not the 32767 characters permited
+ * by the underlying Win32 APIs, and that could matter for pg_dump.
+ *
+ * This provides something more like we'e expect from execv and waitpid()
+ * including a waitpid()-style return code with the exit code in the high
+ * 8 bits of a 16 bit value. Use WEXITSTATUS() for the exit status. The
+ * special value -1 is returned for a failure to launch the process,
+ * wait for it, or get its exit code.
+ */
+static int
+exec_cmd_win32(const char *cmd, char *cmdargv[])
+{
+	BOOL					ret;
+	int						exitcode = -1;
+	PROCESS_INFORMATION 	pi;
+
+	elog(DEBUG1, "trying to launch \"%s\"", cmd);
+
+	/* Launch the process */
+	{
+		STARTUPINFO 			si;
+		StringInfoData 			cmdline;
+		char 				   *cmd_tmp;
+
+		/* Deal with insane windows command line quoting */
+		initStringInfo(&cmdline);
+		QuoteWindowsArgv(&cmdline, cmdargv);
+
+		/* CreateProcess may scribble on the cmd string */
+		cmd_tmp = pstrdup(cmd);
+
+		/*
+		 * STARTUPINFO contains various extra options for the process that are
+		 * not passed as CreateProcess flags, and is required.
+		 */
+		ZeroMemory( &si, sizeof(si) );
+		si.cb = sizeof(si);
+
+		/*
+		 * PROCESS_INFORMATION accepts the returned process handle.
+		 */
+		ZeroMemory( &pi, sizeof(pi) );
+		ret = CreateProcess(cmd_tmp, cmdline.data,
+				NULL /* default process attributes */,
+				NULL /* default thread attributes */,
+				TRUE /* handles (fds) are inherited, to match execv */,
+				CREATE_NO_WINDOW    /* process creation flags */,
+				NULL /* inherit environment variables */,
+				NULL /* inherit working directory */,
+				&si,
+				&pi);
+
+		pfree(cmd_tmp);
+		pfree(cmdline.data);
+	}
+
+	if (!ret)
+	{
+		char *winerr = PglGetLastWin32Error();
+		ereport(LOG,
+				(errcode_for_file_access(),
+				 errmsg("failed to launch \"%s\": %s",
+					 	cmd, winerr)));
+		pfree(winerr);
+	}
+	else
+	{
+		/*
+		 * Process created. It can still fail due to DLL linkage errors,
+		 * startup problems etc, but the handle exists.
+		 *
+		 * Wait for it to exit, while responding to interrupts. Ideally we
+		 * should be able to use WaitEventSetWait here since Windows sees a
+		 * process handle much like a socket, but the Pg API for it won't
+		 * let us, so we have to DIY.
+		 */
+
+		elog(DEBUG1, "process launched, waiting");
+
+		do {
+			ret = WaitForSingleObject( pi.hProcess, 500 /* timeout in ms */ );
+
+			/*
+			 * Note that if we elog(ERROR) or elog(FATAL) as a result of a
+			 * signal here we won't kill the child proc.
+			 */
+			CHECK_FOR_INTERRUPTS();
+
+			if (ret == WAIT_TIMEOUT)
+				continue;
+
+			if (ret != WAIT_OBJECT_0)
+			{
+				char *winerr = PglGetLastWin32Error();
+				ereport(DEBUG1,
+						(errcode_for_file_access(),
+						 errmsg("unexpected WaitForSingleObject() return code %d while waiting for child process \"%s\": %s",
+							 ret, cmd, winerr)));
+				pfree(winerr);
+				/* Try to get the exit code anyway */
+			}
+
+			if (!GetExitCodeProcess( pi.hProcess, &exitcode))
+			{
+				char *winerr = PglGetLastWin32Error();
+				ereport(DEBUG1,
+						(errcode_for_file_access(),
+						 errmsg("failed to get exit code from process \"%s\": %s",
+								cmd, winerr)));
+				pfree(winerr);
+				/* Give up on learning about the process's outcome */
+				exitcode = -1;
+				break;
+			}
+			else
+			{
+				/* Woken up for a reason other than child process termination */
+				if (exitcode == STILL_ACTIVE)
+					continue;
+
+				/*
+				 * Process must've exited, so code is a value from ExitProcess,
+				 * TerminateProcess, main or WinMain.
+				 */
+				ereport(DEBUG1,
+						(errmsg("process \"%s\" exited with code %d",
+								cmd, exitcode)));
+
+				/*
+				 * Adapt exit code to WEXITSTATUS form to behave like waitpid().
+				 *
+				 * The lower 8 bits are the terminating signal, with 0 for no
+				 * signal.
+				 */
+				exitcode = exitcode << 8;
+
+				break;
+			}
+		} while (true);
+
+		CloseHandle( pi.hProcess );
+		CloseHandle( pi.hThread );
+	}
+
+	elog(DEBUG1, "exec_cmd_win32 for \"%s\" exiting with %d", cmd, exitcode);
+	return exitcode;
+}
+#endif
