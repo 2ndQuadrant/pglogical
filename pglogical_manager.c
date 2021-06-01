@@ -72,8 +72,10 @@ manage_apply_workers(void)
 	{
 		PGLogicalSubscription  *sub = (PGLogicalSubscription *) lfirst(slc);
 		PGLogicalWorker		   *apply = NULL;
-		ListCell			   *next,
-							   *prev;
+#if PG_VERSION_NUM < 130000
+		ListCell			   *next;
+		ListCell			   *prev = NULL;
+#endif
 
 		/*
 		 * Skip if subscriber not enabled.
@@ -84,21 +86,34 @@ manage_apply_workers(void)
 			continue;
 
 		/* Check if the subscriber already has registered worker. */
-		prev = NULL;
+#if PG_VERSION_NUM >= 130000
+		foreach(wlc, workers)
+#else
 		for (wlc = list_head(workers); wlc; wlc = next)
+#endif
 		{
 			apply = (PGLogicalWorker *) lfirst(wlc);
 
+#if PG_VERSION_NUM < 130000
 			/* We might delete the cell so advance it now. */
 			next = lnext(wlc);
+#endif
 
 			if (apply->worker.apply.subid == sub->id)
 			{
+#if PG_VERSION_NUM >= 130000
+				workers = foreach_delete_current(workers, wlc);
+#else
 				workers = list_delete_cell(workers, wlc, prev);
+#endif
 				break;
 			}
 			else
+			{
+#if PG_VERSION_NUM < 130000
 				prev = wlc;
+#endif
+			}
 		}
 		/* If the subscriber does not have a registered worker. */
 		if (!wlc)

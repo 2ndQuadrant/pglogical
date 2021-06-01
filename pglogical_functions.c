@@ -785,28 +785,42 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 	char				   *sub_name = NameStr(*PG_GETARG_NAME(0));
 	char				   *repset_name = NameStr(*PG_GETARG_NAME(1));
 	PGLogicalSubscription  *sub = get_subscription_by_name(sub_name, false);
-	ListCell			   *lc,
-						   *next,
-						   *prev;
+	ListCell			   *lc;
+#if PG_VERSION_NUM < 130000
+	ListCell			   *next;
+	ListCell			   *prev = NULL;
+#endif
 
-	prev = NULL;
+#if PG_VERSION_NUM >= 130000
+	foreach(lc, sub->replication_sets)
+#else
 	for (lc = list_head(sub->replication_sets); lc; lc = next)
+#endif
 	{
 		char	   *rs = (char *) lfirst(lc);
 
+#if PG_VERSION_NUM < 130000
 		/* We might delete the cell so advance it now. */
 		next = lnext(lc);
+#endif
 
 		if (strcmp(rs, repset_name) == 0)
 		{
+#if PG_VERSION_NUM >= 130000
+			sub->replication_sets = foreach_delete_current(sub->replication_sets,
+														   lc);
+#else
 			sub->replication_sets = list_delete_cell(sub->replication_sets,
 													 lc, prev);
+#endif
 			alter_subscription(sub);
 
 			PG_RETURN_BOOL(true);
 		}
 
+#if PG_VERSION_NUM < 130000
 		prev = lc;
+#endif
 	}
 
 	PG_RETURN_BOOL(false);
@@ -838,27 +852,42 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 	{
 		PGLogicalRemoteRel	   *remoterel = lfirst(lc);
 		PGLogicalSyncStatus	   *oldsync = NULL;
-		ListCell			   *prev;
+#if PG_VERSION_NUM < 130000
+		ListCell			   *prev = NULL;
 		ListCell			   *next;
+#endif
 		ListCell			   *llc;
 
-		prev = NULL;
+#if PG_VERSION_NUM >= 130000
+		foreach(llc, local_tables)
+#else
 		for (llc = list_head(local_tables); llc; llc = next)
+#endif
 		{
 			PGLogicalSyncStatus *tablesync = (PGLogicalSyncStatus *) lfirst(llc);
 
+#if PG_VERSION_NUM < 130000
 			/* We might delete the cell so advance it now. */
 			next = lnext(llc);
+#endif
 
 			if (namestrcmp(&tablesync->nspname, remoterel->nspname) == 0 &&
 				namestrcmp(&tablesync->relname, remoterel->relname) == 0)
 			{
 				oldsync = tablesync;
+#if PG_VERSION_NUM >= 130000
+				local_tables = foreach_delete_current(local_tables, llc);
+#else
 				local_tables = list_delete_cell(local_tables, llc, prev);
+#endif
 				break;
 			}
 			else
+			{
+#if PG_VERSION_NUM < 130000
 				prev = llc;
+#endif
+			}
 		}
 
 		if (!oldsync)
@@ -1281,7 +1310,11 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	ParseState *pstate;
 	char	   *nspname;
 	char	   *relname;
+#if PG_VERSION_NUM >= 130000
+	ParseNamespaceItem *nsitem;
+#else
 	RangeTblEntry *rte;
+#endif
 	StringInfoData buf;
 	ErrorContextCallback myerrcontext;
 
@@ -1347,6 +1380,15 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	 * rangetable entry.  We need a ParseState for transformExpr.
 	 */
 	pstate = make_parsestate(NULL);
+#if PG_VERSION_NUM >= 130000
+	nsitem = addRangeTableEntryForRelation(pstate,
+										   rel,
+										   AccessShareLock,
+										   NULL,
+										   false,
+										   true);
+	addNSItemToQuery(pstate, nsitem, true, true, true);
+#else
 	rte = addRangeTableEntryForRelation(pstate,
 										rel,
 #if PG_VERSION_NUM >= 120000
@@ -1356,6 +1398,7 @@ parse_row_filter(Relation rel, char *row_filter_str)
 										false,
 										true);
 	addRTEtoQuery(pstate, rte, true, true, true);
+#endif
 	/*
 	 * Transform the expression and check it follows limits of row_filter
 	 * which are same as those of CHECK constraint so we can use the builtin
@@ -1599,8 +1642,12 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 
 		while (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 		{
-			Oid				reloid = HeapTupleGetOid(tuple);
 			Form_pg_class	reltup = (Form_pg_class) GETSTRUCT(tuple);
+#if PG_VERSION_NUM < 120000
+			Oid				reloid = HeapTupleGetOid(tuple);
+#else
+			Oid				reloid = reltup->oid;
+#endif
 
 			/*
 			 * Only add logged relations which are not system relations
@@ -2308,7 +2355,7 @@ pglogical_xact_commit_timestamp_origin(PG_FUNCTION_ARGS)
 	 * Construct a tuple descriptor for the result row. Must match the
 	 * function declaration.
 	 */
-	tupdesc = CreateTemplateTupleDesc(2, false);
+	tupdesc = CreateTemplateTupleDesc(2);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "timestamp",
 					   TIMESTAMPTZOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "roident",

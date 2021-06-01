@@ -1535,7 +1535,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 		List	   *plantree_list;
 		List	   *querytree_list;
 		RawStmt	   *command = (RawStmt *) lfirst(command_i);
-		const char *commandTag;
+		CommandTag	commandTag;
 		Portal		portal;
 		int			save_nestlevel;
 		DestReceiver *receiver;
@@ -1565,7 +1565,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 			NULL, 0);
 
 		plantree_list = pg_plan_queries(
-			querytree_list, 0, NULL);
+			querytree_list, cmdstr, 0, NULL);
 
 		PopActiveSnapshot();
 
@@ -1616,23 +1616,8 @@ reread_unsynced_tables(Oid subid)
 	ListCell	   *lc;
 
 	/* Cleanup first. */
-	if (list_length(SyncingTables) > 0)
-	{
-		ListCell	   *next;
-
-		for (lc = list_head(SyncingTables); lc; lc = next)
-		{
-			PGLogicalSyncStatus	   *sync = (PGLogicalSyncStatus *) lfirst(lc);
-
-			next = lnext(lc);
-
-			pfree(sync);
-			pfree(lc);
-		}
-
-		pfree(SyncingTables);
-		SyncingTables = NIL;
-	}
+	list_free_deep(SyncingTables);
+	SyncingTables = NIL;
 
 	/* Read new state. */
 	unsynced_tables = get_unsynced_tables(subid);
@@ -1668,17 +1653,24 @@ process_syncing_tables(XLogRecPtr end_lsn)
 	/* Process currently pending sync tables. */
 	if (list_length(SyncingTables) > 0)
 	{
-		ListCell	   *prev,
-					   *next;
+#if PG_VERSION_NUM < 130000
+		ListCell	   *prev = NULL;
+		ListCell	   *next;
+#endif
 
-		prev = NULL;
+#if PG_VERSION_NUM >= 130000
+		foreach(lc, SyncingTables)
+#else
 		for (lc = list_head(SyncingTables); lc; lc = next)
+#endif
 		{
 			PGLogicalSyncStatus	   *sync = (PGLogicalSyncStatus *) lfirst(lc);
 			PGLogicalSyncStatus	   *newsync;
 
+#if PG_VERSION_NUM < 130000
 			/* We might delete the cell so advance it now. */
 			next = lnext(lc);
+#endif
 
 			StartTransactionCommand();
 			newsync = get_table_sync_status(MyApplyWorker->subid,
@@ -1763,11 +1755,19 @@ process_syncing_tables(XLogRecPtr end_lsn)
 			/* Ready? Remove it from local cache. */
 			if (sync->status == SYNC_STATUS_READY)
 			{
+#if PG_VERSION_NUM >= 130000
+				SyncingTables = foreach_delete_current(SyncingTables, lc);
+#else
 				SyncingTables = list_delete_cell(SyncingTables, lc, prev);
+#endif
 				pfree(sync);
 			}
 			else
+			{
+#if PG_VERSION_NUM < 130000
 				prev = lc;
+#endif
+			}
 		}
 	}
 

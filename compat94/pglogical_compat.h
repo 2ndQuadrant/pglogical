@@ -129,11 +129,11 @@ PGLCreateTrigger(CreateTrigStmt *stmt, const char *queryString,
 
 #define	PGLDoCopy(stmt, queryString, processed) DoCopy(stmt, queryString, processed)
 
-#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
-	standard_ProcessUtility(pstmt, queryString, context, params, dest, completionTag)
+#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+	standard_ProcessUtility(pstmt, queryString, context, params, dest, qc)
 
-#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, completionTag) \
-	next_ProcessUtility_hook(pstmt, queryString, context, params, dest, completionTag)
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+	next_ProcessUtility_hook(pstmt, queryString, context, params, dest, qc)
 
 extern Oid CatalogTupleInsert(Relation heapRel, HeapTuple tup);
 extern void CatalogTupleUpdate(Relation heapRel, ItemPointer otid, HeapTuple tup);
@@ -167,5 +167,17 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 #define table_beginscan(relation, snapshot, nkeys, keys) heap_beginscan(relation, snapshot, nkeys, keys)
 #define table_beginscan_catalog(relation, nkeys, keys) heap_beginscan_catalog(relation, nkeys, keys)
 #define table_endscan(scan) heap_endscan(scan)
+
+/* 578b229718e8 */
+#define CreateTemplateTupleDesc(natts) \
+	CreateTemplateTupleDesc(natts, false)
+
+/* 2f9661311b83 */
+#define CommandTag const char *
+#define QueryCompletion char
+
+/* 6aba63ef3e60 */
+#define pg_plan_queries(querytrees, query_string, cursorOptions, boundParams) \
+	pg_plan_queries(querytrees, cursorOptions, boundParams)
 
 #endif
