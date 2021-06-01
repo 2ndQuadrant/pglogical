@@ -67,7 +67,7 @@ PG_CONFIG ?= pg_config
 PGVER := $(shell $(PG_CONFIG) --version | sed 's/[^0-9]//g' | cut -c 1-2)
 
 PG_CPPFLAGS += -I$(libpq_srcdir) -I$(realpath $(srcdir)/compat$(PGVER)) -Werror=implicit-function-declaration
-SHLIB_LINK += $(libpq)
+SHLIB_LINK += $(libpq) $(filter -lintl, $(LIBS))
 
 OBJS += $(srcdir)/compat$(PGVER)/pglogical_compat.o
 
