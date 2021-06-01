@@ -117,6 +117,8 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, PGLogicalTuple
 					regop,
 					tup->values[mainattno - 1]);
 
+		skey[attoff].sk_collation = idxrel->rd_indcollation[attoff];
+
 		if (tup->nulls[mainattno - 1])
 		{
 			hasnulls = true;

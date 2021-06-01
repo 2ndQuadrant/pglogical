@@ -26,7 +26,9 @@ DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--2.3.1--2.3.2.sql \
 	   pglogical--2.3.2.sql \
 	   pglogical--2.3.2--2.3.3.sql \
-	   pglogical--2.3.3.sql
+	   pglogical--2.3.3.sql \
+	   pglogical--2.3.3--2.3.4.sql \
+	   pglogical--2.3.4.sql
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical.o pglogical_node.o pglogical_relcache.o \
@@ -134,7 +136,7 @@ check: install regresscheck
 endif
 
 pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
-	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(LIBS) -o $@$(X)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(filter-out -lreadline, $(LIBS)) -o $@$(X)
 
 
 pglogical.control: pglogical.control.in pglogical.h

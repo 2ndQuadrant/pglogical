@@ -44,7 +44,7 @@ Tables on the provider and subscriber must have the same names and be in the
 same schema. Future revisions may add mapping features.
 
 Tables on the provider and subscriber must have the same columns, with the same
-data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc must
+data types in each column. `CHECK` constraints, `NOT NULL` constraints, etc., must
 be the same or weaker (more permissive) on the subscriber than the provider.
 
 Tables must have the same `PRIMARY KEY`s. It is not recommended to add additional
@@ -466,7 +466,7 @@ There are three preexisting replication sets named "default",
 "default_insert_only" and "ddl_sql". The "default" replication set is defined
 to replicate all changes to tables in it. The "default_insert_only" only
 replicates INSERTs and is meant for tables that don't have primary key (see
-[Limitations](#primary-key-or-replica-identity-required) section for details).
+[Limitations](#primary-key-required) section for details).
 The "ddl_sql" replication set is defined to replicate schema changes specified by
 `pglogical.replicate_ddl_command`
 
@@ -779,11 +779,12 @@ in a PostgreSQL install at once.
 ### PRIMARY KEY or REPLICA IDENTITY required
 
 `UPDATE`s and `DELETE`s cannot be replicated for tables that lack a `PRIMARY
-KEY` or other valid replica identity such as a `UNIQUE` constraint. Replication
-has no way to find the tuple that should be updated/deleted since there is no
-unique identifier.
+KEY` or other valid replica identity such as using an index, which must be unique,
+not partial, not deferrable, and include only columns marked NOT NULL.
+Replication has no way to find the tuple that should be updated/deleted since
+there is no unique identifier.
+`REPLICA IDENTITY FULL` is not supported yet.
 
-See http://www.postgresql.org/docs/current/static/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY for details on replica identity.
 
 ### Only one unique index/constraint/PK
 
@@ -928,15 +929,7 @@ Also any DDL limitations apply so extra care need to be taken when using
 Postgres-XL changes defaults and available settings for
 `pglogical.conflict_resolution` and `pglogical.use_spi` configuration options.
 
-### BDR
-
-`pglogical` does not currently interoperate well with BDR. BDR nodes will not
-forward writes made by pglogical subscribers. And pglogical providers will not
-decode and send writes made on other BDR nodes to the pglogical subscriber.
-
-This restriction may be lifted at a later time.
-
-## Credits and License
+## Appendix A: Credits and License
 
 pglogical has been designed, developed and tested by the 2ndQuadrant team
 * Petr Jelinek
@@ -948,3 +941,29 @@ pglogical has been designed, developed and tested by the 2ndQuadrant team
 pglogical license is The PostgreSQL License
 
 pglogical copyright is donated to PostgreSQL Global Development Group
+
+## Appendix B: Release Notes
+
+Version 2.3.4 is security release fixing CVE-2021-3515.
+
+### Changes
+
+ * Fix pg_dump/pg_restore execution (CVE-2021-3515)  
+   Correctly escape the connection string for both pg_dump and
+   pg_restore so that exotic database and user names are handled
+   correctly.
+
+   Reported by Pedro Gallegos
+
+ * Assign collation to the index scan key  
+   When doing lookups for INSERT/UPDATE/DELETE, either to find conflicts
+   or key for the operation to be applied, we should use correct collation.
+
+   This fixes issues with PostgreSQL 12+ primary key lookups when primary key
+   is on column using one of the textual types.
+
+ * Execute `pg_ctl` with appropriate verbosity in `pglogical_create_subscriber`  
+   When `-v` is passed to `pglogical_create_subscriber`, it will now call
+   `pg_ctl` without silent mode. This is useful for troubleshooting.
+
+ * Clarify documentation regarding `REPLICA IDENTITY` requirements and support

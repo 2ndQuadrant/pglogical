@@ -668,7 +668,7 @@ run_pg_ctl(const char *arg)
 	PQExpBuffer  cmd = createPQExpBuffer();
 	char		*exec_path = find_other_exec_or_die(argv0, "pg_ctl");
 
-	appendPQExpBuffer(cmd, "%s %s -D \"%s\" -s", exec_path, arg, data_dir);
+	appendPQExpBuffer(cmd, "%s %s -D \"%s\"", exec_path, arg, data_dir);
 
 	/* Run pg_ctl in silent mode unless we run in debug mode. */
 	if (verbosity < VERBOSITY_DEBUG)
