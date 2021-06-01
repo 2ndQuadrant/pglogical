@@ -595,7 +595,7 @@ usage(void)
 	printf(_("                              or directory populated using\n"));
 	printf(_("                              pg_basebackup -X stream command\n"));
 	printf(_("  --databases                 optional list of databases to replicate\n"));
-	printf(_("  -n, --subscriber-name=NAME  name of the newly created subscrber\n"));
+	printf(_("  -n, --subscriber-name=NAME  name of the newly created subscriber\n"));
 	printf(_("  --subscriber-dsn=CONNSTR    connection string to the newly created subscriber\n"));
 	printf(_("  --provider-dsn=CONNSTR      connection string to the provider\n"));
 	printf(_("  --replication-sets=SETS     comma separated list of replication set names\n"));
