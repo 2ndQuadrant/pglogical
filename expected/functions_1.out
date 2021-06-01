@@ -1,0 +1,392 @@
+--Immutable, volatile functions and nextval in DEFAULT clause
+SELECT * FROM pglogical_regress_variables()
+\gset
+\c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+CREATE FUNCTION public.add(integer, integer) RETURNS integer
+    AS 'select $1 + $2;'
+    LANGUAGE SQL
+    IMMUTABLE
+    RETURNS NULL ON NULL INPUT;
+
+CREATE TABLE public.funct2(
+	a integer,
+	b integer,
+	c integer DEFAULT public.add(10,12 )
+) ;
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default_insert_only', 'public.funct2');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+INSERT INTO public.funct2(a,b) VALUES (1,2);--c should be 22
+INSERT INTO public.funct2(a,b,c) VALUES (3,4,5);-- c should be 5
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * from public.funct2;
+ a | b | c  
+---+---+----
+ 1 | 2 | 22
+ 3 | 4 |  5
+(2 rows)
+
+\c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+create or replace function public.get_curr_century() returns double precision as
+ 'SELECT EXTRACT(CENTURY FROM NOW());'
+language sql volatile;
+
+CREATE TABLE public.funct5(
+	a integer,
+	b integer,
+	c double precision DEFAULT public.get_curr_century()
+);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
+ replication_set_add_all_tables 
+--------------------------------
+ t
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+INSERT INTO public.funct5(a,b) VALUES (1,2);--c should be e.g. 21 for 2015
+INSERT INTO public.funct5(a,b,c) VALUES (3,4,20);-- c should be 20
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * from public.funct5;
+ a | b | c  
+---+---+----
+ 1 | 2 | 21
+ 3 | 4 | 20
+(2 rows)
+
+--nextval check
+\c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+CREATE SEQUENCE public.INSERT_SEQ;
+
+CREATE TABLE public.funct (
+	a integer,
+	b INT DEFAULT nextval('public.insert_seq')
+);
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_all_tables('default_insert_only', '{public}');
+ replication_set_add_all_tables 
+--------------------------------
+ t
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+INSERT INTO public.funct (a) VALUES (1);
+INSERT INTO public.funct (a) VALUES (2);
+INSERT INTO public.funct (a) VALUES (3);
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM public.funct;
+ a | b 
+---+---
+ 1 | 1
+ 2 | 2
+ 3 | 3
+(3 rows)
+
+\c :provider_dsn
+BEGIN;
+COMMIT;--empty transaction
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM public.funct;
+ a | b 
+---+---
+ 1 | 1
+ 2 | 2
+ 3 | 3
+(3 rows)
+
+-- test replication where the destination table has extra (nullable) columns that are not in the origin table
+\c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+CREATE TABLE public.nullcheck_tbl(
+	id integer PRIMARY KEY,
+	id1 integer,
+	name text
+) ;
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'nullcheck_tbl');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
+INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM public.nullcheck_tbl;
+ id | id1 | name  
+----+-----+-------
+  1 |   1 | name1
+  2 |   2 | name2
+(2 rows)
+
+ALTER TABLE public.nullcheck_tbl ADD COLUMN name1 text;
+SELECT * FROM public.nullcheck_tbl;
+ id | id1 | name  | name1 
+----+-----+-------+-------
+  1 |   1 | name1 | 
+  2 |   2 | name2 | 
+(2 rows)
+
+\c :provider_dsn
+INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (3,3,'name3');
+INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (4,4,'name4');
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM public.nullcheck_tbl;
+ id | id1 | name  | name1 
+----+-----+-------+-------
+  1 |   1 | name1 | 
+  2 |   2 | name2 | 
+  3 |   3 | name3 | 
+  4 |   4 | name4 | 
+(4 rows)
+
+\c :provider_dsn
+UPDATE public.nullcheck_tbl SET name='name31' where id = 3;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+INSERT INTO public.nullcheck_tbl(id,id1,name) VALUES (6,6,'name6');
+SELECT * FROM public.nullcheck_tbl;
+ id | id1 |  name  | name1 
+----+-----+--------+-------
+  1 |   1 | name1  | 
+  2 |   2 | name2  | 
+  4 |   4 | name4  | 
+  3 |   3 | name31 | 
+  6 |   6 | name6  | 
+(5 rows)
+
+\c :provider_dsn
+SELECT pglogical.replicate_ddl_command($$
+CREATE TABLE public.not_nullcheck_tbl(
+	id integer PRIMARY KEY,
+	id1 integer,
+	name text
+) ;
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'not_nullcheck_tbl');
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null;
+\c :provider_dsn
+SELECT quote_literal(pg_current_xlog_location()) as curr_lsn
+\gset
+INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (1,1,'name1');
+INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (2,2,'name2');
+SELECT pglogical.wait_slot_confirm_lsn(NULL, :curr_lsn);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM public.not_nullcheck_tbl;
+ id | id1 | name | id2 
+----+-----+------+-----
+(0 rows)
+
+INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (3,3,'name3');
+ERROR:  null value in column "id2" of relation "not_nullcheck_tbl" violates not-null constraint
+DETAIL:  Failing row contains (3, 3, name3, null).
+SELECT * FROM public.not_nullcheck_tbl;
+ id | id1 | name | id2 
+----+-----+------+-----
+(0 rows)
+
+SELECT pglogical.alter_subscription_disable('test_subscription', true);
+ alter_subscription_disable 
+----------------------------
+ t
+(1 row)
+
+\c :provider_dsn
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_replication_slots WHERE active = false) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 'D', 'U') THEN data END as data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json', 'pglogical.replication_set_names', 'default');
+ action |                                                data                                                 
+--------+-----------------------------------------------------------------------------------------------------
+ "S"    | 
+ "B"    | 
+ "I"    | {"action":"I","relation":["public","not_nullcheck_tbl"],"newtuple":{"id":1,"id1":1,"name":"name1"}}
+ "C"    | 
+(4 rows)
+
+SELECT data::json->'action' as action, CASE WHEN data::json->>'action' IN ('I', 'D', 'U') THEN data END as data FROM pg_logical_slot_get_changes((SELECT slot_name FROM pg_replication_slots), NULL, 1, 'min_proto_version', '1', 'max_proto_version', '1', 'startup_params_format', '1', 'proto_format', 'json', 'pglogical.replication_set_names', 'default');
+ action |                                                data                                                 
+--------+-----------------------------------------------------------------------------------------------------
+ "S"    | 
+ "B"    | 
+ "I"    | {"action":"I","relation":["public","not_nullcheck_tbl"],"newtuple":{"id":2,"id1":2,"name":"name2"}}
+ "C"    | 
+(4 rows)
+
+\c :subscriber_dsn
+SELECT pglogical.alter_subscription_enable('test_subscription', true);
+ alter_subscription_enable 
+---------------------------
+ t
+(1 row)
+
+ALTER TABLE public.not_nullcheck_tbl ALTER COLUMN id2 SET default 99;
+\c :provider_dsn
+DO $$
+BEGIN
+	FOR i IN 1..100 LOOP
+		IF (SELECT count(1) FROM pg_replication_slots WHERE active = true) THEN
+			RETURN;
+		END IF;
+		PERFORM pg_sleep(0.1);
+	END LOOP;
+END;
+$$;
+INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (4,4,'name4'); -- id2 will be 99 on subscriber
+ALTER TABLE public.not_nullcheck_tbl ADD COLUMN id2 integer not null default 0;
+INSERT INTO public.not_nullcheck_tbl(id,id1,name) VALUES (5,5,'name5'); -- id2 will be 0 on both
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+ wait_slot_confirm_lsn 
+-----------------------
+ 
+(1 row)
+
+\c :subscriber_dsn
+SELECT * FROM public.not_nullcheck_tbl;
+ id | id1 | name  | id2 
+----+-----+-------+-----
+  4 |   4 | name4 |  99
+  5 |   5 | name5 |   0
+(2 rows)
+
+\c :provider_dsn
+\set VERBOSITY terse
+SELECT pglogical.replicate_ddl_command($$
+	DROP TABLE public.funct CASCADE;
+	DROP SEQUENCE public.INSERT_SEQ;
+	DROP TABLE public.funct2 CASCADE;
+	DROP TABLE public.funct5 CASCADE;
+	DROP FUNCTION public.get_curr_century();
+	DROP FUNCTION public.add(integer, integer);
+	DROP TABLE public.nullcheck_tbl CASCADE;
+	DROP TABLE public.not_nullcheck_tbl CASCADE;
+$$);
+NOTICE:  drop cascades to table public.funct membership in replication set default_insert_only
+NOTICE:  drop cascades to table public.funct2 membership in replication set default_insert_only
+NOTICE:  drop cascades to table public.funct5 membership in replication set default_insert_only
+NOTICE:  drop cascades to table public.nullcheck_tbl membership in replication set default
+NOTICE:  drop cascades to table public.not_nullcheck_tbl membership in replication set default
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+

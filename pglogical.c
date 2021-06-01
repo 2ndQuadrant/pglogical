@@ -610,7 +610,11 @@ start_manager_workers(void)
 	while (HeapTupleIsValid(tup = heap_getnext(scan, ForwardScanDirection)))
 	{
 		Form_pg_database	pgdatabase = (Form_pg_database) GETSTRUCT(tup);
+#if PG_VERSION_NUM < 120000
 		Oid					dboid = HeapTupleGetOid(tup);
+#else
+		Oid					dboid = pgdatabase->oid;
+#endif
 		PGLogicalWorker		worker;
 
 		CHECK_FOR_INTERRUPTS();

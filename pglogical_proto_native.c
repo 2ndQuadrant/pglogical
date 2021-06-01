@@ -13,7 +13,11 @@
 #include "postgres.h"
 
 #include "access/sysattr.h"
+#if PG_VERSION_NUM >= 130000
+#include "access/detoast.h"
+#else
 #include "access/tuptoaster.h"
+#endif
 #include "catalog/pg_type.h"
 #include "libpq/pqformat.h"
 #include "nodes/parsenodes.h"
