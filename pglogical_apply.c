@@ -158,7 +158,7 @@ static TransactionId remote_xid;
 
 static void multi_insert_finish(void);
 
-static void handle_queued_message(HeapTuple msgtup, bool tx_just_started);
+static void handle_queued_message(QueuedMessage  *queued_message, bool tx_just_started);
 static void handle_startup_param(const char *key, const char *value);
 static bool parse_bool_param(const char *key, const char *value);
 static void process_syncing_tables(XLogRecPtr end_lsn);
@@ -576,9 +576,6 @@ handle_insert(StringInfo s)
 		}
 	}
 
-	/* Normal insert. */
-	apply_api.do_insert(rel, &newtup);
-
 	/* if INSERT was into our queue, process the message. */
 	if (RelationGetRelid(rel->rel) == QueueRelid)
 	{
@@ -593,12 +590,29 @@ handle_insert(StringInfo s)
 		ht = heap_form_tuple(RelationGetDescr(rel->rel),
 							 newtup.values, newtup.nulls);
 
+		QueuedMessage  *queued_message = queued_message_from_tuple(ht);
+		PGLogicalLocalNode *local_node = get_local_node(false, false);
+
+		// ignore queue messages forwarded from local node and not original messages
+		if ( queued_message->node_id == local_node->node->id ||
+			queued_message->node_id != queued_message->orig_node_id )
+		{
+			pglogical_relation_close(rel, NoLock);
+			return;
+		}
+
+          // change node_id to current
+          queued_message_tuple_set_local_node_id( &newtup.values, local_node->node->id );
+
+		/* Normal insert. */
+		apply_api.do_insert(rel, &newtup);
+
 		LockRelationIdForSession(&lockid, RowExclusiveLock);
 		pglogical_relation_close(rel, NoLock);
 
 		apply_api.on_commit();
 
-		handle_queued_message(ht, started_tx);
+		handle_queued_message(queued_message, started_tx);
 
 		heap_freetuple(ht);
 
@@ -615,7 +629,11 @@ handle_insert(StringInfo s)
 //			CommitTransactionCommand();
 	}
 	else
-		pglogical_relation_close(rel, NoLock);
+     {
+		 /* Normal insert. */
+		apply_api.do_insert(rel, &newtup);
+		pglogical_relation_close( rel, NoLock );
+     }
 }
 
 static void
@@ -1057,15 +1075,12 @@ handle_sql(QueuedMessage *queued_message, bool tx_just_started)
  * Handles messages comming from the queue.
  */
 static void
-handle_queued_message(HeapTuple msgtup, bool tx_just_started)
+handle_queued_message(QueuedMessage  *queued_message, bool tx_just_started)
 {
-	QueuedMessage  *queued_message;
 	const char	   *old_action_name;
 
 	old_action_name = errcallback_arg.action_name;
 	errcallback_arg.is_ddl_or_drop = true;
-
-	queued_message = queued_message_from_tuple(msgtup);
 
 	switch (queued_message->message_type)
 	{

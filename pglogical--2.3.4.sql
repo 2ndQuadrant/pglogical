@@ -203,6 +203,7 @@ CREATE FUNCTION pglogical.show_subscription_table(subscription_name name, relati
 RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_subscription_table';
 
 CREATE TABLE pglogical.queue (
+    node_id oid REFERENCES node(node_id),
     queued_at timestamp with time zone NOT NULL,
     role name NOT NULL,
     replication_sets text[],
