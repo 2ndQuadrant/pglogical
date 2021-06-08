@@ -94,11 +94,12 @@ typedef struct RepSetTableTuple
 #endif
 } RepSetTableTuple;
 
-#define Natts_repset_table				4
+#define Natts_repset_table				5
 #define Anum_repset_table_setid			1
 #define Anum_repset_table_reloid		2
 #define Anum_repset_table_att_list	3
 #define Anum_repset_table_row_filter	4
+#define Anum_repset_table_sync_clear_filter	5
 
 
 #define REPSETTABLEHASH_INITIAL_SIZE 128
@@ -412,6 +413,7 @@ get_table_replication_info(Oid nodeid, Relation table,
 	entry->replicate_delete = false;
 	entry->att_list = NULL;
 	entry->row_filter = NIL;
+	entry->sync_clear_filter = NULL;
 
 	/*
 	 * Check for match between table's replication sets and the subscription
@@ -501,6 +503,16 @@ get_table_replication_info(Oid nodeid, Relation table,
 					MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
 					Node   *row_filter = stringToNode(TextDatumGetCString(d));
 					entry->row_filter = lappend(entry->row_filter, row_filter);
+					MemoryContextSwitchTo(olctx);
+				}
+
+				d = heap_getattr(tuple, Anum_repset_table_sync_clear_filter,
+							repset_rel_desc, &isnull);
+
+				if (!isnull)
+				{
+					MemoryContext olctx = MemoryContextSwitchTo(CacheMemoryContext);
+					entry->sync_clear_filter = TextDatumGetCString(d);
 					MemoryContextSwitchTo(olctx);
 				}
 			}
@@ -1014,7 +1026,7 @@ drop_node_replication_sets(Oid nodeid)
  */
 void
 replication_set_add_table(Oid setid, Oid reloid, List *att_list,
-						  Node *row_filter)
+						  Node *row_filter, char *sync_clear_filter)
 {
 	RangeVar   *rv;
 	Relation	rel;
@@ -1075,6 +1087,12 @@ replication_set_add_table(Oid setid, Oid reloid, List *att_list,
 			CStringGetTextDatum(nodeToString(row_filter));
 	else
 		nulls[Anum_repset_table_row_filter - 1] = true;
+
+	if (sync_clear_filter)
+		values[Anum_repset_table_sync_clear_filter - 1] =
+				CStringGetTextDatum( sync_clear_filter );
+	else
+		nulls[Anum_repset_table_sync_clear_filter - 1] = true;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 

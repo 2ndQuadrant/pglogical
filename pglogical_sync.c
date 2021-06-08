@@ -495,6 +495,66 @@ make_copy_attnamelist(PGLogicalRelation *rel)
 }
 
 /*
+ * delete data from table
+ */
+static void exec_after_sync_queries(PGconn *target_conn, char *single_query)
+{
+	StringInfoData     query;
+	initStringInfo(&query);
+
+	// prepare query
+	appendStringInfo(&query, single_query );
+
+	elog(LOG, "AFTER SYNC QUERY: %s", query.data);
+
+	// Execute query
+	PGresult *res = PQexec(target_conn, query.data);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK && PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		ereport(ERROR,
+				(errmsg("Failed to execute after sync query: %s, %s", PQerrorMessage(target_conn), PQresultErrorMessage(res) ),
+					errdetail("Query '%s': %s", query.data,
+						PQresultErrorMessage(res) ) ));
+	}
+
+	PQclear(res);
+}
+
+/*
+ * delete data from table
+ */
+static void clear_table_data(PGconn *origin_conn, PGconn *target_conn, PGLogicalRemoteRel *remoterel)
+{
+	StringInfoData     query;
+	initStringInfo(&query);
+
+	// prepare fill main table query
+	appendStringInfo(&query, "delete from %s.%s",
+				PQescapeIdentifier(origin_conn, remoterel->nspname, strlen(remoterel->nspname)),
+				PQescapeIdentifier(origin_conn, remoterel->relname, strlen(remoterel->relname)));
+
+	if ( remoterel->sync_clear_filter != NULL )
+	{
+		appendStringInfo(&query, " where %s", remoterel->sync_clear_filter);
+	}
+
+	elog(LOG, "CLEAR TABLE QUERY: %s", query.data);
+
+	// Execute delete
+	PGresult   *res = PQexec(target_conn, query.data);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		ereport(ERROR,
+				(errmsg("Failed clear table"),
+					errdetail("Query '%s': %s", query.data,
+						PQerrorMessage( target_conn ))));
+	}
+
+	PQclear(res);
+}
+
+
+/*
  * COPY single table over wire.
  */
 static void
@@ -595,6 +655,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	}
 	appendStringInfoString(&query, "TO stdout");
 
+	elog(LOG, "COPY TABLE QUERY: %s", query.data);
 
 	/* Execute COPY TO. */
 	res = PQexec(origin_conn, query.data);
@@ -670,22 +731,38 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
  * Creates new connection to origin and target.
  */
 static void
-copy_tables_data(char *sub_name, const char *origin_dsn,
-				 const char *target_dsn, const char *origin_snapshot,
-				 List *tables, List *replication_sets,
-				 const char *origin_name)
+copy_tables_data(char *sub_name, bool data_replace, const char *origin_dsn,
+				const char *target_dsn, const char *origin_snapshot,
+				List *tables, List *replication_sets,
+				const char *origin_name, List *after_sync_queries)
 {
-	PGconn	   *origin_conn;
-	PGconn	   *target_conn;
-	ListCell   *lc;
+	PGconn *origin_conn;
+	PGconn *target_conn;
+	ListCell *lc;
 
 	/* Connect to origin node. */
-	origin_conn = pglogical_connect(origin_dsn, sub_name, "copy");
-	start_copy_origin_tx(origin_conn, origin_snapshot);
+	origin_conn = pglogical_connect( origin_dsn, sub_name, "copy" );
+	start_copy_origin_tx( origin_conn, origin_snapshot );
 
 	/* Connect to target node. */
-	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
-	start_copy_target_tx(target_conn, origin_name);
+	target_conn = pglogical_connect( target_dsn, sub_name, "copy" );
+	start_copy_target_tx( target_conn, origin_name );
+
+	if( data_replace )
+	{
+		foreach( lc, tables )
+		{
+			RangeVar *rv = lfirst( lc );
+			PGLogicalRemoteRel *remoterel;
+
+			remoterel = pg_logical_get_remote_repset_table( origin_conn, rv,
+												replication_sets );
+
+			clear_table_data( origin_conn, target_conn, remoterel );
+
+			CHECK_FOR_INTERRUPTS();
+		}
+	}
 
 	/* Copy every table. */
 	foreach (lc, tables)
@@ -694,11 +771,20 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
 		PGLogicalRemoteRel	*remoterel;
 
 		remoterel = pg_logical_get_remote_repset_table(origin_conn, rv,
-													   replication_sets);
+												replication_sets);
 
 		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
 
 		CHECK_FOR_INTERRUPTS();
+	}
+
+	if ( after_sync_queries )
+	{
+		foreach (lc, after_sync_queries)
+		{
+			char *query_str = (char *) lfirst(lc);
+			exec_after_sync_queries( target_conn, query_str );
+		}
 	}
 
 	/* Finish the transactions and disconnect. */
@@ -716,10 +802,11 @@ copy_tables_data(char *sub_name, const char *origin_dsn,
  * the transaction is bound to a snapshot.
  */
 static List *
-copy_replication_sets_data(char *sub_name, const char *origin_dsn,
-						   const char *target_dsn,
-						   const char *origin_snapshot,
-						   List *replication_sets, const char *origin_name)
+copy_replication_sets_data(char *sub_name, bool data_replace, const char *origin_dsn,
+						const char *target_dsn,
+						const char *origin_snapshot,
+						List *replication_sets, const char *origin_name,
+						List *after_sync_queries)
 {
 	PGconn	   *origin_conn;
 	PGconn	   *target_conn;
@@ -731,12 +818,23 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 	start_copy_origin_tx(origin_conn, origin_snapshot);
 
 	/* Get tables to copy from origin node. */
-	tables = pg_logical_get_remote_repset_tables(origin_conn,
-												 replication_sets);
+	tables = pg_logical_get_remote_repset_tables(origin_conn, replication_sets);
 
 	/* Connect to target node. */
 	target_conn = pglogical_connect(target_dsn, sub_name, "copy");
 	start_copy_target_tx(target_conn, origin_name);
+
+	if( data_replace )
+	{
+		foreach( lc, tables )
+		{
+			PGLogicalRemoteRel *remoterel = lfirst( lc );
+
+			clear_table_data( origin_conn, target_conn, remoterel );
+
+			CHECK_FOR_INTERRUPTS();
+		}
+	}
 
 	/* Copy every table. */
 	foreach (lc, tables)
@@ -746,6 +844,15 @@ copy_replication_sets_data(char *sub_name, const char *origin_dsn,
 		copy_table_data(origin_conn, target_conn, remoterel, replication_sets);
 
 		CHECK_FOR_INTERRUPTS();
+	}
+
+	if ( after_sync_queries )
+	{
+		foreach (lc, after_sync_queries)
+		{
+			char *query_str = (char *) lfirst(lc);
+			exec_after_sync_queries( target_conn, query_str );
+		}
 	}
 
 	/* Finish the transactions and disconnect. */
@@ -775,7 +882,7 @@ pglogical_sync_worker_cleanup(PGLogicalSubscription *sub)
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   1000L);
 
-        ResetLatch(&MyProc->procLatch);
+		ResetLatch(&MyProc->procLatch);
 
 		/* emergency bailout if postmaster has died */
 		if (rc & WL_POSTMASTER_DEATH)
@@ -941,12 +1048,13 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					set_subscription_sync_status(sub->id, status);
 					CommitTransactionCommand();
 
-					tables = copy_replication_sets_data(sub->name,
-														sub->origin_if->dsn,
-														sub->target_if->dsn,
-														snapshot,
-														sub->replication_sets,
-														sub->slot_name);
+					tables = copy_replication_sets_data(sub->name, sub->data_replace,
+												sub->origin_if->dsn,
+												sub->target_if->dsn,
+												snapshot,
+												sub->replication_sets,
+												sub->slot_name,
+												sub->after_sync_queries);
 
 					/* Store info about all the synchronized tables. */
 					StartTransactionCommand();
@@ -1096,9 +1204,9 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table,
 		CommitTransactionCommand();
 
 		/* Copy data. */
-		copy_tables_data(sub->name, sub->origin_if->dsn,sub->target_if->dsn,
+		copy_tables_data(sub->name, sub->data_replace, sub->origin_if->dsn,sub->target_if->dsn,
 						 snapshot, list_make1(table), sub->replication_sets,
-						 sub->slot_name);
+						 sub->slot_name, sub->after_sync_queries);
 	}
 	PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 								PointerGetDatum(sub));

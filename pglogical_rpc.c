@@ -64,7 +64,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
 						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-						 "       i.has_row_filter"
+						 "       i.has_row_filter, i.sync_clear_filter"
 						 "  FROM (SELECT DISTINCT relid FROM pglogical.tables WHERE set_name = ANY(ARRAY[%s])) t,"
 						 "       LATERAL pglogical.show_repset_table_info(t.relid, ARRAY[%s]) i",
 						 repsetarr.data, repsetarr.data);
@@ -96,6 +96,11 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 						  &remoterel->natts))
 			elog(ERROR, "could not parse column list for table");
 		remoterel->hasRowFilter = (strcmp(PQgetvalue(res, i, 4), "t") == 0);
+
+		if( !PQgetisnull(res, i, 5))
+		{
+			remoterel->sync_clear_filter = pstrdup(PQgetvalue(res, i, 5));
+		}
 
 		tables = lappend(tables, remoterel);
 	}
@@ -145,7 +150,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 		/* PGLogical 2.0+ */
 		appendStringInfo(&query,
 						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
-						 "       i.has_row_filter"
+						 "       i.has_row_filter, i.sync_clear_filter"
 						 "  FROM pglogical.show_repset_table_info(%s::regclass, ARRAY[%s]) i",
 						 PQescapeLiteral(conn, relname.data, relname.len),
 						 repsetarr.data);
@@ -175,6 +180,10 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 		elog(ERROR, "could not parse column list for table");
 	remoterel->hasRowFilter = (strcmp(PQgetvalue(res, 0, 4), "t") == 0);
 
+	if( !PQgetisnull(res, 0, 5))
+	{
+		remoterel->sync_clear_filter = pstrdup(PQgetvalue(res, 0, 5));
+	}
 
 	PQclear(res);
 
