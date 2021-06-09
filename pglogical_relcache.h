@@ -25,6 +25,7 @@ typedef struct PGLogicalRemoteRel
 
 	/* Only returned by info function, not protocol. */
 	bool		hasRowFilter;
+	char	   *sync_clear_filter;
 } PGLogicalRemoteRel;
 
 typedef struct PGLogicalRelation

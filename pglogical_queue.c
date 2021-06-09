@@ -50,15 +50,19 @@
 
 #define CATALOG_QUEUE	"queue"
 
-#define Natts_queue					5
-#define Anum_queue_queued_at		1
-#define Anum_queue_role				2
-#define Anum_queue_replication_sets	3
-#define Anum_queue_message_type		4
-#define Anum_queue_message			5
+#define Natts_queue					7
+#define Anum_queue_node_id			1
+#define Anum_queue_orig_node_id		2
+#define Anum_queue_queued_at			3
+#define Anum_queue_role				4
+#define Anum_queue_replication_sets	5
+#define Anum_queue_message_type		6
+#define Anum_queue_message			7
 
 typedef struct QueueTuple
 {
+	Oid			node_id;
+	Oid			orig_node_id;
 	TimestampTz	queued_at;
 	NameData	replication_set;
 	NameData	role;
@@ -82,6 +86,7 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 	const char *role;
 	TimestampTz ts = GetCurrentTimestamp();
 
+	PGLogicalLocalNode *local_node = get_local_node(false, false);
 	role =  GetUserNameFromId(roleoid
 #if PG_VERSION_NUM >= 90500
 							  , false
@@ -95,6 +100,8 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 	/* Form a tuple. */
 	memset(nulls, false, sizeof(nulls));
 
+	values[Anum_queue_node_id - 1] = ObjectIdGetDatum(local_node->node->id);
+	values[Anum_queue_orig_node_id - 1] = ObjectIdGetDatum(local_node->node->id);
 	values[Anum_queue_queued_at - 1] = TimestampTzGetDatum(ts);
 	values[Anum_queue_role - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(role));
@@ -140,6 +147,14 @@ queued_message_from_tuple(HeapTuple queue_tup)
 
 	res = (QueuedMessage *) palloc(sizeof(QueuedMessage));
 
+	d = fastgetattr(queue_tup, Anum_queue_node_id, tupDesc, &isnull);
+	Assert(!isnull);
+	res->node_id = DatumGetObjectId(d);
+
+	d = fastgetattr(queue_tup, Anum_queue_orig_node_id, tupDesc, &isnull);
+	Assert(!isnull);
+	res->orig_node_id = DatumGetObjectId(d);
+
 	d = fastgetattr(queue_tup, Anum_queue_queued_at, tupDesc, &isnull);
 	Assert(!isnull);
 	res->queued_at = DatumGetTimestampTz(d);
@@ -168,6 +183,14 @@ queued_message_from_tuple(HeapTuple queue_tup)
 	table_close(rel, NoLock);
 
 	return res;
+}
+
+/*
+ * Set local node for tuple coming from other node
+ */
+void queued_message_tuple_set_local_node_id(Datum *values, Oid node_id)
+{
+     values[Anum_queue_node_id - 1] = ObjectIdGetDatum(node_id);
 }
 
 /*

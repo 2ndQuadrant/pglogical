@@ -1023,3 +1023,4 @@ pglReorderBufferCleanSerializedTXNs(const char *slotname)
 	}
 	FreeDir(spill_dir);
 }
+

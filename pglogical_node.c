@@ -78,28 +78,31 @@ typedef struct NodeInterfaceTuple
 typedef struct SubscriptionTuple
 {
 	Oid			sub_id;
-	NameData	sub_name;
+	NameData		sub_name;
 	Oid			sub_origin;
 	Oid			sub_target;
-    Oid			sub_origin_if;
+	Oid			sub_origin_if;
 	Oid			sub_target_if;
-	bool		sub_enabled;
-	NameData	sub_slot_name;
+	bool			sub_enabled;
+	bool			sub_data_replace;
+	NameData		sub_slot_name;
 } SubscriptionTuple;
 
-#define Natts_subscription			12
+#define Natts_subscription			14
 #define Anum_sub_id					1
 #define Anum_sub_name				2
 #define Anum_sub_origin				3
 #define Anum_sub_target				4
 #define Anum_sub_origin_if			5
 #define Anum_sub_target_if			6
-#define Anum_sub_enabled			7
-#define Anum_sub_slot_name			8
-#define Anum_sub_replication_sets	9
-#define Anum_sub_forward_origins	10
-#define Anum_sub_apply_delay		11
-#define Anum_sub_force_text_transfer 12
+#define Anum_sub_enabled				7
+#define Anum_sub_data_replace			8
+#define Anum_sub_slot_name			9
+#define Anum_sub_replication_sets		10
+#define Anum_sub_forward_origins		11
+#define Anum_sub_apply_delay			12
+#define Anum_sub_force_text_transfer	13
+#define Anum_sub_after_sync_queries	14
 
 /*
  * We impose same validation rules as replication slot name validation does.
@@ -721,6 +724,7 @@ create_subscription(PGLogicalSubscription *sub)
 	values[Anum_sub_origin_if - 1] = ObjectIdGetDatum(sub->origin_if->id);
 	values[Anum_sub_target_if - 1] = ObjectIdGetDatum(sub->target_if->id);
 	values[Anum_sub_enabled - 1] = BoolGetDatum(sub->enabled);
+	values[Anum_sub_data_replace - 1] = BoolGetDatum(sub->data_replace);
 	namestrcpy(&sub_slot_name, sub->slot_name);
 	values[Anum_sub_slot_name - 1] = NameGetDatum(&sub_slot_name);
 
@@ -742,6 +746,12 @@ create_subscription(PGLogicalSubscription *sub)
 		nulls[Anum_sub_apply_delay - 1] = true;
 
 	values[Anum_sub_force_text_transfer - 1] = BoolGetDatum(sub->force_text_transfer);
+
+	if (list_length(sub->after_sync_queries) > 0)
+		values[Anum_sub_after_sync_queries - 1] =
+				PointerGetDatum(strlist_to_textarray(sub->after_sync_queries));
+	else
+		nulls[Anum_sub_after_sync_queries - 1] = true;
 
 	tup = heap_form_tuple(tupDesc, values, nulls);
 
@@ -810,6 +820,7 @@ alter_subscription(PGLogicalSubscription *sub)
 	values[Anum_sub_origin_if - 1] = ObjectIdGetDatum(sub->origin_if->id);
 	values[Anum_sub_target_if - 1] = ObjectIdGetDatum(sub->target_if->id);
 	values[Anum_sub_enabled - 1] = BoolGetDatum(sub->enabled);
+	values[Anum_sub_data_replace - 1] = BoolGetDatum(sub->data_replace);
 	namestrcpy(&sub_slot_name, sub->slot_name);
 	values[Anum_sub_slot_name - 1] = NameGetDatum(&sub_slot_name);
 
@@ -828,7 +839,14 @@ alter_subscription(PGLogicalSubscription *sub)
 	values[Anum_sub_apply_delay - 1] = IntervalPGetDatum(sub->apply_delay);
 	values[Anum_sub_force_text_transfer - 1] = BoolGetDatum(sub->force_text_transfer);
 
-	newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
+	if (list_length(sub->after_sync_queries) > 0)
+ 		values[Anum_sub_after_sync_queries - 1] =
+				PointerGetDatum(strlist_to_textarray(sub->after_sync_queries));
+	else
+		nulls[Anum_sub_after_sync_queries - 1] = true;
+
+
+     newtup = heap_modify_tuple(oldtup, tupDesc, values, nulls, replaces);
 
 	/* Update the tuple in catalog. */
 	CatalogTupleUpdate(rel, &oldtup->t_self, newtup);
@@ -894,6 +912,7 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 	sub->id = subtup->sub_id;
 	sub->name = pstrdup(NameStr(subtup->sub_name));
 	sub->enabled = subtup->sub_enabled;
+	sub->data_replace = subtup->sub_data_replace;
 	sub->slot_name = pstrdup(NameStr(subtup->sub_slot_name));
 
 	sub->origin = get_node(subtup->sub_origin);
@@ -936,6 +955,17 @@ subscription_fromtuple(HeapTuple tuple, TupleDesc desc)
 		sub->force_text_transfer = false;
 	else
 		sub->force_text_transfer = DatumGetBool(d);
+
+	/* Get replication sets. */
+	d = heap_getattr(tuple, Anum_sub_after_sync_queries, desc, &isnull);
+	if (isnull)
+		sub->after_sync_queries = NIL;
+	else
+	{
+		List			*after_sync_queries;
+		after_sync_queries = textarray_to_list(DatumGetArrayTypeP(d));
+		sub->after_sync_queries = after_sync_queries;
+	}
 
 	return sub;
 }

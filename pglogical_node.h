@@ -44,11 +44,13 @@ typedef struct PGLogicalSubscription
 	PGlogicalInterface *origin_if;
 	PGlogicalInterface *target_if;
 	bool		enabled;
+	bool		data_replace;
 	Interval   *apply_delay;
 	char	   *slot_name;
 	List	   *replication_sets;
 	List	   *forward_origins;
 	bool		force_text_transfer;
+	List		*after_sync_queries;
 } PGLogicalSubscription;
 
 extern void create_node(PGLogicalNode *node);

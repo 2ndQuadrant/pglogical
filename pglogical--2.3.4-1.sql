@@ -26,11 +26,13 @@ CREATE TABLE pglogical.subscription (
     sub_origin_if oid NOT NULL REFERENCES node_interface(if_id),
     sub_target_if oid NOT NULL REFERENCES node_interface(if_id),
     sub_enabled boolean NOT NULL DEFAULT true,
+    sub_data_replace boolean NOT NULL DEFAULT true,
     sub_slot_name name NOT NULL,
     sub_replication_sets text[],
     sub_forward_origins text[],
     sub_apply_delay interval NOT NULL DEFAULT '0',
-    sub_force_text_transfer boolean NOT NULL DEFAULT 'f'
+    sub_force_text_transfer boolean NOT NULL DEFAULT 'f',
+    sub_after_sync_queries text[]
 );
 
 CREATE TABLE pglogical.local_sync_status (
@@ -39,7 +41,7 @@ CREATE TABLE pglogical.local_sync_status (
     sync_nspname name,
     sync_relname name,
     sync_status "char" NOT NULL,
-	sync_statuslsn pg_lsn NOT NULL,
+    sync_statuslsn pg_lsn NOT NULL,
     UNIQUE (sync_subid, sync_nspname, sync_relname)
 );
 
@@ -56,7 +58,8 @@ RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alte
 
 CREATE FUNCTION pglogical.create_subscription(subscription_name name, provider_dsn text,
     replication_sets text[] = '{default,default_insert_only,ddl_sql}', synchronize_structure boolean = false,
-    synchronize_data boolean = true, forward_origins text[] = '{all}', apply_delay interval DEFAULT '0',
+    synchronize_data boolean = true, data_replace boolean = true, after_sync_queries text[] = '{}',
+    forward_origins text[] = '{all}', apply_delay interval DEFAULT '0',
     force_text_transfer boolean = false)
 RETURNS oid STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_create_subscription';
 CREATE FUNCTION pglogical.drop_subscription(subscription_name name, ifexists boolean DEFAULT false)
@@ -97,6 +100,7 @@ CREATE TABLE pglogical.replication_set_table (
     set_reloid regclass NOT NULL,
     set_att_list text[],
     set_row_filter pg_node_tree,
+    set_sync_clear_filter text,
     PRIMARY KEY(set_id, set_reloid)
 ) WITH (user_catalog_table=true);
 
@@ -107,9 +111,9 @@ CREATE TABLE pglogical.replication_set_seq (
 ) WITH (user_catalog_table=true);
 
 CREATE TABLE pglogical.sequence_state (
-	seqoid oid NOT NULL PRIMARY KEY,
-	cache_size integer NOT NULL,
-	last_value bigint NOT NULL
+    seqoid oid NOT NULL PRIMARY KEY,
+    cache_size integer NOT NULL,
+    last_value bigint NOT NULL
 ) WITH (user_catalog_table=true);
 
 CREATE TABLE pglogical.depend (
@@ -121,40 +125,40 @@ CREATE TABLE pglogical.depend (
     refobjid oid NOT NULL,
     refobjsubid integer NOT NULL,
 
-	deptype "char" NOT NULL
+    deptype "char" NOT NULL
 ) WITH (user_catalog_table=true);
 
 CREATE VIEW pglogical.TABLES AS
-    WITH set_relations AS (
-        SELECT s.set_name, r.set_reloid
-          FROM pglogical.replication_set_table r,
-               pglogical.replication_set s,
-               pglogical.local_node n
-         WHERE s.set_nodeid = n.node_id
-           AND s.set_id = r.set_id
-    ),
-    user_tables AS (
-        SELECT r.oid, n.nspname, r.relname, r.relreplident
-          FROM pg_catalog.pg_class r,
-               pg_catalog.pg_namespace n
+WITH set_relations AS (
+    SELECT s.set_name, r.set_reloid
+    FROM pglogical.replication_set_table r,
+         pglogical.replication_set s,
+         pglogical.local_node n
+    WHERE s.set_nodeid = n.node_id
+      AND s.set_id = r.set_id
+),
+     user_tables AS (
+         SELECT r.oid, n.nspname, r.relname, r.relreplident
+         FROM pg_catalog.pg_class r,
+              pg_catalog.pg_namespace n
          WHERE r.relkind = 'r'
            AND r.relpersistence = 'p'
            AND n.oid = r.relnamespace
            AND n.nspname !~ '^pg_'
            AND n.nspname != 'information_schema'
            AND n.nspname != 'pglogical'
-    )
-    SELECT r.oid AS relid, n.nspname, r.relname, s.set_name
-      FROM pg_catalog.pg_namespace n,
-           pg_catalog.pg_class r,
-           set_relations s
-     WHERE r.relkind = 'r'
-       AND n.oid = r.relnamespace
-       AND r.oid = s.set_reloid
-     UNION
-    SELECT t.oid AS relid, t.nspname, t.relname, NULL
-      FROM user_tables t
-     WHERE t.oid NOT IN (SELECT set_reloid FROM set_relations);
+     )
+SELECT r.oid AS relid, n.nspname, r.relname, s.set_name
+FROM pg_catalog.pg_namespace n,
+     pg_catalog.pg_class r,
+     set_relations s
+WHERE r.relkind = 'r'
+  AND n.oid = r.relnamespace
+  AND r.oid = s.set_reloid
+UNION
+SELECT t.oid AS relid, t.nspname, t.relname, NULL
+FROM user_tables t
+WHERE t.oid NOT IN (SELECT set_reloid FROM set_relations);
 
 CREATE FUNCTION pglogical.create_replication_set(set_name name,
     replicate_insert boolean = true, replicate_update boolean = true,
@@ -168,7 +172,7 @@ CREATE FUNCTION pglogical.drop_replication_set(set_name name, ifexists boolean D
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_drop_replication_set';
 
 CREATE FUNCTION pglogical.replication_set_add_table(set_name name, relation regclass, synchronize_data boolean DEFAULT false,
-	columns text[] DEFAULT NULL, row_filter text DEFAULT NULL)
+    columns text[] DEFAULT NULL, row_filter text DEFAULT NULL, sync_clear_filter text DEFAULT NULL)
 RETURNS boolean CALLED ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_table';
 CREATE FUNCTION pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize_data boolean DEFAULT false)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replication_set_add_all_tables';
@@ -186,7 +190,7 @@ CREATE FUNCTION pglogical.alter_subscription_synchronize(subscription_name name,
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_synchronize';
 
 CREATE FUNCTION pglogical.alter_subscription_resynchronize_table(subscription_name name, relation regclass,
-	truncate boolean DEFAULT true)
+    truncate boolean DEFAULT true)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_alter_subscription_resynchronize_table';
 
 CREATE FUNCTION pglogical.synchronize_sequence(relation regclass)
@@ -196,13 +200,15 @@ CREATE FUNCTION pglogical.table_data_filtered(reltyp anyelement, relation regcla
 RETURNS SETOF anyelement CALLED ON NULL INPUT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_table_data_filtered';
 
 CREATE FUNCTION pglogical.show_repset_table_info(relation regclass, repsets text[], OUT relid oid, OUT nspname text,
-	OUT relname text, OUT att_list text[], OUT has_row_filter boolean)
+    OUT relname text, OUT att_list text[], OUT has_row_filter boolean, OUT sync_clear_filter text)
 RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_repset_table_info';
 
 CREATE FUNCTION pglogical.show_subscription_table(subscription_name name, relation regclass, OUT nspname text, OUT relname text, OUT status text)
 RETURNS record STRICT STABLE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_show_subscription_table';
 
 CREATE TABLE pglogical.queue (
+    node_id oid REFERENCES node(node_id),
+    original_node_id oid REFERENCES node(node_id),
     queued_at timestamp with time zone NOT NULL,
     role name NOT NULL,
     replication_sets text[],
@@ -240,11 +246,10 @@ CREATE FUNCTION
 pglogical.wait_slot_confirm_lsn(slotname name, target pg_lsn)
 RETURNS void LANGUAGE c AS 'pglogical','pglogical_wait_slot_confirm_lsn';
 CREATE FUNCTION pglogical.wait_for_subscription_sync_complete(subscription_name name)
-RETURNS void RETURNS NULL ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_subscription_sync_complete';
+RETURNS boolean RETURNS NULL ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_subscription_sync_complete';
 
 CREATE FUNCTION pglogical.wait_for_table_sync_complete(subscription_name name, relation regclass)
-RETURNS void RETURNS NULL ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_table_sync_complete';
+RETURNS boolean RETURNS NULL ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_wait_for_table_sync_complete';
 
 CREATE FUNCTION pglogical.xact_commit_timestamp_origin("xid" xid, OUT "timestamp" timestamptz, OUT "roident" oid)
 RETURNS record RETURNS NULL ON NULL INPUT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_xact_commit_timestamp_origin';
-

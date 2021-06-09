@@ -52,6 +52,7 @@
 
 #include "storage/ipc.h"
 #include "storage/latch.h"
+#include "storage/lmgr.h"
 #include "storage/proc.h"
 
 #include "tcop/tcopprot.h"
@@ -147,8 +148,8 @@ PG_FUNCTION_INFO_V1(pglogical_xact_commit_timestamp_origin);
 PG_FUNCTION_INFO_V1(pglogical_show_repset_table_info_by_target);
 
 static void gen_slot_name(Name slot_name, char *dbname,
-						  const char *provider_name,
-						  const char *subscriber_name);
+					 const char *provider_name,
+					 const char *subscriber_name);
 
 bool in_pglogical_replicate_ddl_command = false;
 
@@ -160,9 +161,9 @@ check_local_node(bool for_update)
 	node = get_local_node(for_update, true);
 	if (!node)
 		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("current database is not configured as pglogical node"),
-				 errhint("create pglogical node first")));
+			   (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					   errmsg("current database is not configured as pglogical node"),
+					   errhint("create pglogical node first")));
 
 	return node;
 }
@@ -246,9 +247,9 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 		tsubs = get_node_subscriptions(node->id, false);
 		if (list_length(osubs) != 0 || list_length(tsubs) != 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("cannot drop node \"%s\" because it still has subscriptions associated with it", node_name),
-					 errhint("drop the subscriptions first")));
+				   (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						   errmsg("cannot drop node \"%s\" because it still has subscriptions associated with it", node_name),
+						   errhint("drop the subscriptions first")));
 
 		/* If the node is local node, drop the record as well. */
 		local_node = get_local_node(true, true);
@@ -266,19 +267,19 @@ pglogical_drop_node(PG_FUNCTION_ARGS)
 			PG_TRY();
 			{
 				res = SPI_execute("SELECT pg_catalog.pg_drop_replication_slot(slot_name)"
-								  "  FROM pg_catalog.pg_replication_slots"
-								  " WHERE (plugin = 'pglogical_output' OR plugin = 'pglogical')"
-								  "   AND database = current_database()"
-								  "   AND slot_name ~ 'pgl_.*'",
-								  false, 0);
+							   "  FROM pg_catalog.pg_replication_slots"
+							   " WHERE (plugin = 'pglogical_output' OR plugin = 'pglogical')"
+							   "   AND database = current_database()"
+							   "   AND slot_name ~ 'pgl_.*'",
+							   false, 0);
 			}
 			PG_CATCH();
 			{
 				ereport(ERROR,
-						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						 errmsg("cannot drop node \"%s\" because one or more replication slots for the node are still active",
-								node_name),
-						 errhint("drop the subscriptions connected to the node first")));
+					   (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+							   errmsg("cannot drop node \"%s\" because one or more replication slots for the node are still active",
+									node_name),
+							   errhint("drop the subscriptions connected to the node first")));
 			}
 			PG_END_TRY();
 
@@ -315,20 +316,20 @@ pglogical_alter_node_add_interface(PG_FUNCTION_ARGS)
 	char	   *if_dsn = text_to_cstring(PG_GETARG_TEXT_PP(2));
 	PGLogicalNode	   *node;
 	PGlogicalInterface *oldif,
-						newif;
+			newif;
 
 	node = get_node_by_name(node_name, false);
 	if (node == NULL)
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("node \"%s\" not found", node_name)));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("node \"%s\" not found", node_name)));
 
 	oldif = get_node_interface_by_name(node->id, if_name, true);
 	if (oldif != NULL)
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("node \"%s\" already has interface named \"%s\"",
-				 node_name, if_name)));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("node \"%s\" already has interface named \"%s\"",
+							node_name, if_name)));
 
 	newif.id = InvalidOid;
 	newif.name = if_name;
@@ -355,15 +356,15 @@ pglogical_alter_node_drop_interface(PG_FUNCTION_ARGS)
 	node = get_node_by_name(node_name, false);
 	if (node == NULL)
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("node \"%s\" not found", node_name)));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("node \"%s\" not found", node_name)));
 
 	oldif = get_node_interface_by_name(node->id, if_name, true);
 	if (oldif == NULL)
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("interface \"%s\" for node node \"%s\" not found",
-				 if_name, node_name)));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("interface \"%s\" for node node \"%s\" not found",
+							if_name, node_name)));
 
 	other_subs = get_node_subscriptions(node->id, true);
 	foreach (lc, other_subs)
@@ -371,11 +372,11 @@ pglogical_alter_node_drop_interface(PG_FUNCTION_ARGS)
 		PGLogicalSubscription  *sub = (PGLogicalSubscription *) lfirst(lc);
 		if (oldif->id == sub->origin_if->id)
 			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("cannot drop interface \"%s\" for node \"%s\" because subscription \"%s\" is using it",
-							oldif->name, node->name, sub->name),
-					 errhint("change the subscription interface first")));
-        }
+				   (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						   errmsg("cannot drop interface \"%s\" for node \"%s\" because subscription \"%s\" is using it",
+								oldif->name, node->name, sub->name),
+						   errhint("change the subscription interface first")));
+	}
 
 	drop_node_interface(oldif->id);
 
@@ -394,9 +395,11 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	ArrayType			   *rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
 	bool					sync_structure = PG_GETARG_BOOL(3);
 	bool					sync_data = PG_GETARG_BOOL(4);
-	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(5);
-	Interval			   *apply_delay = PG_GETARG_INTERVAL_P(6);
-	bool					force_text_transfer = PG_GETARG_BOOL(7);
+	bool					replace_data = PG_GETARG_BOOL(5);
+	ArrayType			   *after_sync_queries = PG_GETARG_ARRAYTYPE_P(6);
+	ArrayType			   *forward_origin_names = PG_GETARG_ARRAYTYPE_P(7);
+	Interval			   *apply_delay = PG_GETARG_INTERVAL_P(8);
+	bool					force_text_transfer = PG_GETARG_BOOL(9);
 	PGconn				   *conn;
 	PGLogicalSubscription	sub;
 	PGLogicalSyncStatus		sync;
@@ -452,9 +455,9 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 		existingif = get_node_interface_by_name(origin.id, origin.name, false);
 		if (strcmp(existingif->dsn, provider_dsn) != 0)
 			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("dsn \"%s\" points to existing node \"%s\" with different dsn \"%s\"",
-					 provider_dsn, origin.name, existingif->dsn)));
+				   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						   errmsg("dsn \"%s\" points to existing node \"%s\" with different dsn \"%s\"",
+								provider_dsn, origin.name, existingif->dsn)));
 
 		memcpy(&originif, existingif, sizeof(PGlogicalInterface));
 	}
@@ -483,11 +486,11 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 
 				if (strcmp(newset, existingset) == 0)
 					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("existing subscription \"%s\" to node "
-									"\"%s\" already subscribes to replication "
-									"set \"%s\"", esub->name, origin.name,
-									newset)));
+						   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								   errmsg("existing subscription \"%s\" to node "
+										"\"%s\" already subscribes to replication "
+										"set \"%s\"", esub->name, origin.name,
+										newset)));
 			}
 		}
 	}
@@ -507,8 +510,10 @@ pglogical_create_subscription(PG_FUNCTION_ARGS)
 	sub.replication_sets = replication_sets;
 	sub.forward_origins = textarray_to_list(forward_origin_names);
 	sub.enabled = true;
+	sub.data_replace = replace_data;
+	sub.after_sync_queries = textarray_to_list(after_sync_queries);
 	gen_slot_name(&slot_name, get_database_name(MyDatabaseId),
-				  origin.name, sub_name);
+			    origin.name, sub_name);
 	sub.slot_name = pstrdup(NameStr(slot_name));
 	sub.apply_delay = apply_delay;
 	sub.force_text_transfer = force_text_transfer;
@@ -589,6 +594,7 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		LWLockRelease(PGLogicalCtx->lock);
 
 		/* Wait for the apply to die. */
+		int total_wait = 0;
 		for (;;)
 		{
 			int rc;
@@ -600,17 +606,41 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 				LWLockRelease(PGLogicalCtx->lock);
 				break;
 			}
+
+			if (apply->proc->waitLock)
+			{
+				const LOCKTAG apply_lock_tag = apply->proc->waitLock->tag;
+				if (((LockTagType) apply_lock_tag.locktag_type == LOCKTAG_TRANSACTION) &&
+				    (apply_lock_tag.locktag_field1 == (uint32)GetCurrentTransactionId()))
+				{
+					StringInfoData buf;
+					initStringInfo(&buf);
+					DescribeLockTag(&buf, &apply_lock_tag);
+					elog( WARNING, "Apply worker [%d] is locked by %s of this proc [%d], stop waiting", apply->proc->pid, buf.data, MyProc->pid );
+
+					LWLockRelease(PGLogicalCtx->lock);
+					break;
+				}
+			}
+
 			LWLockRelease(PGLogicalCtx->lock);
 
 			CHECK_FOR_INTERRUPTS();
 
 			rc = WaitLatch(&MyProc->procLatch,
-						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
+						WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1000L);
 
 			if (rc & WL_POSTMASTER_DEATH)
 				proc_exit(1);
 
 			ResetLatch(&MyProc->procLatch);
+
+			total_wait+=1000;
+			if (total_wait >= 60000)
+			{
+				elog( WARNING, "Apply worker [%d] probably is locked by this proc [%d], stop waiting", apply->proc->pid, MyProc->pid );
+				break;
+			}
 		}
 
 		/*
@@ -622,13 +652,14 @@ pglogical_drop_subscription(PG_FUNCTION_ARGS)
 		PG_TRY();
 		{
 			PGconn *origin_conn = pglogical_connect(sub->origin_if->dsn,
-													sub->name, "cleanup");
+											sub->name, "cleanup");
 			pglogical_drop_remote_slot(origin_conn, sub->slot_name);
 			PQfinish(origin_conn);
 		}
 		PG_CATCH();
-			elog(WARNING, "could not drop slot \"%s\" on provider, you will probably have to drop it manually",
-				 sub->slot_name);
+		FlushErrorState();
+		elog(WARNING, "could not drop slot \"%s\" on provider, you will probably have to drop it manually",
+			sub->slot_name);
 		PG_END_TRY();
 
 		/* Drop the origin tracking locally. */
@@ -663,9 +694,9 @@ pglogical_alter_subscription_disable(PG_FUNCTION_ARGS)
 
 		if ((IsTransactionBlock() || IsSubTransaction()))
 			ereport(ERROR,
-					(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
-					 errmsg("alter_subscription_disable with immediate = true "
-							"cannot be run inside a transaction block")));
+				   (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+						   errmsg("alter_subscription_disable with immediate = true "
+								"cannot be run inside a transaction block")));
 
 		LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 		apply = pglogical_apply_find(MyDatabaseId, sub->id);
@@ -700,9 +731,9 @@ pglogical_alter_subscription_enable(PG_FUNCTION_ARGS)
 	if (immediate && (IsTransactionBlock() || IsSubTransaction()))
 	{
 		ereport(ERROR,
-				(errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
-				 errmsg("alter_subscription_enable with immediate = true "
-						"cannot be run inside a transaction block")));
+			   (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+					   errmsg("alter_subscription_enable with immediate = true "
+							"cannot be run inside a transaction block")));
 	}
 
 	PG_RETURN_BOOL(true);
@@ -793,7 +824,7 @@ pglogical_alter_subscription_remove_replication_set(PG_FUNCTION_ARGS)
 														   lc);
 #else
 			sub->replication_sets = list_delete_cell(sub->replication_sets,
-													 lc, prev);
+											 lc, prev);
 #endif
 			alter_subscription(sub);
 
@@ -854,7 +885,7 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 #endif
 
 			if (namestrcmp(&tablesync->nspname, remoterel->nspname) == 0 &&
-				namestrcmp(&tablesync->relname, remoterel->relname) == 0)
+			    namestrcmp(&tablesync->relname, remoterel->relname) == 0)
 			{
 				oldsync = tablesync;
 #if PG_VERSION_NUM >= 130000
@@ -898,8 +929,8 @@ pglogical_alter_subscription_synchronize(PG_FUNCTION_ARGS)
 		PGLogicalSyncStatus *tablesync = (PGLogicalSyncStatus *) lfirst(lc);
 
 		drop_table_sync_status_for_sub(tablesync->subid,
-									   NameStr(tablesync->nspname),
-									   NameStr(tablesync->relname));
+								 NameStr(tablesync->nspname),
+								 NameStr(tablesync->relname));
 	}
 
 	/* Tell apply to re-read sync statuses. */
@@ -921,7 +952,7 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	PGLogicalSyncStatus	   *oldsync;
 	Relation				rel;
 	char				   *nspname,
-						   *relname;
+			*relname;
 
 	rel = table_open(reloid, AccessShareLock);
 
@@ -933,13 +964,13 @@ pglogical_alter_subscription_resynchronize_table(PG_FUNCTION_ARGS)
 	if (oldsync)
 	{
 		if (oldsync->status != SYNC_STATUS_READY &&
-			oldsync->status != SYNC_STATUS_SYNCDONE &&
-			oldsync->status != SYNC_STATUS_NONE)
+		    oldsync->status != SYNC_STATUS_SYNCDONE &&
+		    oldsync->status != SYNC_STATUS_NONE)
 			elog(ERROR, "table %s.%s is already being synchronized",
-				 nspname, relname);
+				nspname, relname);
 
 		set_table_sync_status(sub->id, nspname, relname, SYNC_STATUS_INIT,
-							  InvalidXLogRecPtr);
+						  InvalidXLogRecPtr);
 	}
 	else
 	{
@@ -1030,12 +1061,12 @@ pglogical_show_subscription_table(PG_FUNCTION_ARGS)
 	/* check to see if caller supports us returning a tuplestore */
 	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("set-valued function called in context that cannot accept a set")));
+			   (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("set-valued function called in context that cannot accept a set")));
 	if (!(rsinfo->allowedModes & SFRM_Materialize))
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("materialize mode required, but it is not " \
+			   (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("materialize mode required, but it is not " \
 						"allowed in this context")));
 
 	/* Switch into long-lived context to construct returned data structures */
@@ -1093,12 +1124,12 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 	/* check to see if caller supports us returning a tuplestore */
 	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("set-valued function called in context that cannot accept a set")));
+			   (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("set-valued function called in context that cannot accept a set")));
 	if (!(rsinfo->allowedModes & SFRM_Materialize))
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("materialize mode required, but it is not " \
+			   (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("materialize mode required, but it is not " \
 						"allowed in this context")));
 
 	node = check_local_node(false);
@@ -1167,12 +1198,12 @@ pglogical_show_subscription_status(PG_FUNCTION_ARGS)
 		values[4] = CStringGetTextDatum(sub->slot_name);
 		if (sub->replication_sets)
 			values[5] =
-				PointerGetDatum(strlist_to_textarray(sub->replication_sets));
+					PointerGetDatum(strlist_to_textarray(sub->replication_sets));
 		else
 			nulls[5] = true;
 		if (sub->forward_origins)
 			values[6] =
-				PointerGetDatum(strlist_to_textarray(sub->forward_origins));
+					PointerGetDatum(strlist_to_textarray(sub->forward_origins));
 		else
 			nulls[6] = true;
 
@@ -1221,13 +1252,13 @@ pglogical_alter_replication_set(PG_FUNCTION_ARGS)
 
 	if (PG_ARGISNULL(0))
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("set_name cannot be NULL")));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("set_name cannot be NULL")));
 
 	node = check_local_node(true);
 
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*PG_GETARG_NAME(0)), false);
+								  NameStr(*PG_GETARG_NAME(0)), false);
 
 	if (!PG_ARGISNULL(1))
 		repset->replicate_insert = PG_GETARG_BOOL(1);
@@ -1309,7 +1340,7 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	 */
 	initStringInfo(&buf);
 	appendStringInfo(&buf, "SELECT %s FROM %s", row_filter_str,
-					 quote_qualified_identifier(nspname, relname));
+				  quote_qualified_identifier(nspname, relname));
 
 	/* Parse it, providing proper error context. */
 	myerrcontext.callback = add_table_parser_error_callback;
@@ -1330,29 +1361,29 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	stmt = (SelectStmt *) linitial(raw_parsetree_list);
 #endif
 	if (stmt == NULL ||
-		!IsA(stmt, SelectStmt) ||
-		stmt->distinctClause != NIL ||
-		stmt->intoClause != NULL ||
-		stmt->whereClause != NULL ||
-		stmt->groupClause != NIL ||
-		stmt->havingClause != NULL ||
-		stmt->windowClause != NIL ||
-		stmt->valuesLists != NIL ||
-		stmt->sortClause != NIL ||
-		stmt->limitOffset != NULL ||
-		stmt->limitCount != NULL ||
-		stmt->lockingClause != NIL ||
-		stmt->withClause != NULL ||
-		stmt->op != SETOP_NONE)
+	    !IsA(stmt, SelectStmt) ||
+	    stmt->distinctClause != NIL ||
+	    stmt->intoClause != NULL ||
+	    stmt->whereClause != NULL ||
+	    stmt->groupClause != NIL ||
+	    stmt->havingClause != NULL ||
+	    stmt->windowClause != NIL ||
+	    stmt->valuesLists != NIL ||
+	    stmt->sortClause != NIL ||
+	    stmt->limitOffset != NULL ||
+	    stmt->limitCount != NULL ||
+	    stmt->lockingClause != NIL ||
+	    stmt->withClause != NULL ||
+	    stmt->op != SETOP_NONE)
 		goto fail;
 	if (list_length(stmt->targetList) != 1)
 		goto fail;
 	restarget = (ResTarget *) linitial(stmt->targetList);
 	if (restarget == NULL ||
-		!IsA(restarget, ResTarget) ||
-		restarget->name != NULL ||
-		restarget->indirection != NIL ||
-		restarget->val == NULL)
+	    !IsA(restarget, ResTarget) ||
+	    restarget->name != NULL ||
+	    restarget->indirection != NIL ||
+	    restarget->val == NULL)
 		goto fail;
 
 	row_filter = restarget->val;
@@ -1372,13 +1403,13 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	addNSItemToQuery(pstate, nsitem, true, true, true);
 #else
 	rte = addRangeTableEntryForRelation(pstate,
-										rel,
+								 rel,
 #if PG_VERSION_NUM >= 120000
-										AccessShareLock,
+			AccessShareLock,
 #endif
-										NULL,
-										false,
-										true);
+								 NULL,
+								 false,
+								 true);
 	addRTEtoQuery(pstate, rte, true, true, true);
 #endif
 	/*
@@ -1394,17 +1425,17 @@ parse_row_filter(Relation rel, char *row_filter_str)
 	assign_expr_collations(pstate, row_filter);
 	if (list_length(pstate->p_rtable) != 1)
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-				 errmsg("only table \"%s\" can be referenced in row_filter",
-						relname)));
+			   (errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+					   errmsg("only table \"%s\" can be referenced in row_filter",
+							relname)));
 	pfree(buf.data);
 
 	return row_filter;
 
-fail:
+	fail:
 	ereport(ERROR,
-			(errcode(ERRCODE_SYNTAX_ERROR),
-			 errmsg("invalid row_filter expression \"%s\"", row_filter_str)));
+		   (errcode(ERRCODE_SYNTAX_ERROR),
+				   errmsg("invalid row_filter expression \"%s\"", row_filter_str)));
 	return NULL;	/* keep compiler quiet */
 }
 
@@ -1419,6 +1450,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	bool				synchronize;
 	Node			   *row_filter = NULL;
 	List			   *att_list = NIL;
+	char			   *initial_sync_clear_filter = NULL;
 	PGLogicalRepSet    *repset;
 	Relation			rel;
 	TupleDesc			tupDesc;
@@ -1430,16 +1462,16 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 	/* Proccess for required parameters. */
 	if (PG_ARGISNULL(0))
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("set_name cannot be NULL")));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("set_name cannot be NULL")));
 	if (PG_ARGISNULL(1))
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("relation cannot be NULL")));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("relation cannot be NULL")));
 	if (PG_ARGISNULL(2))
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("synchronize_data cannot be NULL")));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("synchronize_data cannot be NULL")));
 
 	repset_name = PG_GETARG_NAME(0);
 	reloid = PG_GETARG_OID(1);
@@ -1450,7 +1482,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*repset_name), false);
+								  NameStr(*repset_name), false);
 
 	/*
 	 * Make sure the relation exists (lock mode has to be the same one as
@@ -1480,10 +1512,10 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 
 			if (attnum < 0)
 				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("table %s does not have column %s",
-								quote_qualified_identifier(nspname, relname),
-								attname)));
+					   (errcode(ERRCODE_SYNTAX_ERROR),
+							   errmsg("table %s does not have column %s",
+									quote_qualified_identifier(nspname, relname),
+									attname)));
 
 			idattrs = bms_del_member(idattrs,
 								attnum - FirstLowInvalidHeapAttributeNumber);
@@ -1491,18 +1523,24 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 
 		if (!bms_is_empty(idattrs))
 			ereport(ERROR,
-					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("REPLICA IDENTITY columns must be replicated")));
+				   (errcode(ERRCODE_SYNTAX_ERROR),
+						   errmsg("REPLICA IDENTITY columns must be replicated")));
 	}
 
 	/* Proccess row_filter if any. */
 	if (!PG_ARGISNULL(4))
 	{
 		row_filter = parse_row_filter(rel,
-									  text_to_cstring(PG_GETARG_TEXT_PP(4)));
+								text_to_cstring(PG_GETARG_TEXT_PP(4)));
 	}
 
-	replication_set_add_table(repset->id, reloid, att_list, row_filter);
+	/* Proccess initial sync clear filter. */
+	if (!PG_ARGISNULL(5))
+	{
+		initial_sync_clear_filter = text_to_cstring(PG_GETARG_TEXT_PP(5));
+	}
+
+	replication_set_add_table(repset->id, reloid, att_list, row_filter, initial_sync_clear_filter);
 
 	if (synchronize)
 	{
@@ -1515,7 +1553,7 @@ pglogical_replication_set_add_table(PG_FUNCTION_ARGS)
 		appendStringInfo(&json, "}");
 		/* Queue the synchronize request for replication. */
 		queue_message(list_make1(repset->name), GetUserId(),
-					  QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
+				    QUEUE_COMMAND_TYPE_TABLESYNC, json.data);
 	}
 
 	/* Cleanup. */
@@ -1544,7 +1582,7 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*repset_name), false);
+								  NameStr(*repset_name), false);
 
 	/*
 	 * Make sure the relation exists (lock mode has to be the same one as
@@ -1565,13 +1603,13 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
 		escape_json(&json, nspname);
 		appendStringInfo(&json, ",\"sequence_name\": ");
 		escape_json(&json, relname);
-        appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
-								 sequence_get_last_value(reloid));
+		appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
+				sequence_get_last_value(reloid));
 		appendStringInfo(&json, "}");
 
 		/* Add sequence to the queue. */
 		queue_message(list_make1(repset->name), GetUserId(),
-					  QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
+				    QUEUE_COMMAND_TYPE_SEQUENCE, json.data);
 	}
 
 	/* Cleanup. */
@@ -1585,8 +1623,8 @@ pglogical_replication_set_add_sequence(PG_FUNCTION_ARGS)
  */
 static Datum
 pglogical_replication_set_add_all_relations(Name repset_name,
-											ArrayType *nsp_names,
-											bool synchronize, char relkind)
+								    ArrayType *nsp_names,
+								    bool synchronize, char relkind)
 {
 	PGLogicalRepSet    *repset;
 	Relation			rel;
@@ -1598,11 +1636,11 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*repset_name), false);
+								  NameStr(*repset_name), false);
 
 	existing_relations = replication_set_get_tables(repset->id);
 	existing_relations = list_concat_unique_oid(existing_relations,
-												replication_set_get_seqs(repset->id));
+									    replication_set_get_seqs(repset->id));
 
 	rel = table_open(RelationRelationId, RowExclusiveLock);
 
@@ -1615,12 +1653,12 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 		HeapTuple	tuple;
 
 		ScanKeyInit(&skey[0],
-					Anum_pg_class_relnamespace,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(nspoid));
+				  Anum_pg_class_relnamespace,
+				  BTEqualStrategyNumber, F_OIDEQ,
+				  ObjectIdGetDatum(nspoid));
 
 		sysscan = systable_beginscan(rel, ClassNameNspIndexId, true,
-									 NULL, 1, skey);
+							    NULL, 1, skey);
 
 		while (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 		{
@@ -1636,14 +1674,14 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 			 * (catalog, toast).
 			 */
 			if (reltup->relkind != relkind ||
-				reltup->relpersistence != RELPERSISTENCE_PERMANENT ||
-				IsSystemClass(reloid, reltup))
+			    reltup->relpersistence != RELPERSISTENCE_PERMANENT ||
+			    IsSystemClass(reloid, reltup))
 				continue;
 
 			if (!list_member_oid(existing_relations, reloid))
 			{
 				if (relkind == RELKIND_RELATION)
-					replication_set_add_table(repset->id, reloid, NIL, NULL);
+					replication_set_add_table(repset->id, reloid, NIL, NULL, NULL);
 				else
 					replication_set_add_seq(repset->id, reloid);
 
@@ -1670,7 +1708,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 							appendStringInfo(&json, ",\"sequence_name\": ");
 							escape_json(&json, relname);
 							appendStringInfo(&json, ",\"last_value\": \""INT64_FORMAT"\"",
-											 sequence_get_last_value(reloid));
+							sequence_get_last_value(reloid));
 							cmdtype = QUEUE_COMMAND_TYPE_SEQUENCE;
 							break;
 						default:
@@ -1680,7 +1718,7 @@ pglogical_replication_set_add_all_relations(Name repset_name,
 
 					/* Queue the truncate for replication. */
 					queue_message(list_make1(repset->name), GetUserId(), cmdtype,
-								  json.data);
+							    json.data);
 				}
 			}
 		}
@@ -1704,8 +1742,8 @@ pglogical_replication_set_add_all_tables(PG_FUNCTION_ARGS)
 	bool		synchronize = PG_GETARG_BOOL(2);
 
 	return pglogical_replication_set_add_all_relations(repset_name, nsp_names,
-													   synchronize,
-													   RELKIND_RELATION);
+											 synchronize,
+											 RELKIND_RELATION);
 }
 
 /*
@@ -1719,8 +1757,8 @@ pglogical_replication_set_add_all_sequences(PG_FUNCTION_ARGS)
 	bool		synchronize = PG_GETARG_BOOL(2);
 
 	return pglogical_replication_set_add_all_relations(repset_name, nsp_names,
-													   synchronize,
-													   RELKIND_SEQUENCE);
+											 synchronize,
+											 RELKIND_SEQUENCE);
 }
 
 /*
@@ -1740,7 +1778,7 @@ pglogical_replication_set_remove_table(PG_FUNCTION_ARGS)
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*PG_GETARG_NAME(0)), false);
+								  NameStr(*PG_GETARG_NAME(0)), false);
 
 	replication_set_remove_table(repset->id, reloid, false);
 
@@ -1761,7 +1799,7 @@ pglogical_replication_set_remove_sequence(PG_FUNCTION_ARGS)
 
 	/* Find the replication set. */
 	repset = get_replication_set_by_name(node->node->id,
-										 NameStr(*PG_GETARG_NAME(0)), false);
+								  NameStr(*PG_GETARG_NAME(0)), false);
 
 	replication_set_remove_seq(repset->id, seqoid, false);
 
@@ -1809,12 +1847,12 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 
 	/* Force everything in the query to be fully qualified. */
 	(void) set_config_option("search_path", "",
-							 PGC_USERSET, PGC_S_SESSION,
-							 GUC_ACTION_SAVE, true, 0
+						PGC_USERSET, PGC_S_SESSION,
+						GUC_ACTION_SAVE, true, 0
 #if PG_VERSION_NUM >= 90500
-							 , false
+			, false
 #endif
-							 );
+	);
 
 	/* Convert the query to json string. */
 	initStringInfo(&cmd);
@@ -1822,7 +1860,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 
 	/* Queue the query for replication. */
 	queue_message(replication_sets, GetUserId(),
-				  QUEUE_COMMAND_TYPE_SQL, cmd.data);
+			    QUEUE_COMMAND_TYPE_SQL, cmd.data);
 
 	/*
 	 * Execute the query locally.
@@ -1832,11 +1870,11 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	PG_TRY();
 	{
 		pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
-	#if PG_VERSION_NUM >= 90500
-															   , false
-	#endif
-															   ),
-									  false);
+#if PG_VERSION_NUM >= 90500
+										, false
+#endif
+								),
+								false);
 	}
 	PG_CATCH();
 	{
@@ -1878,16 +1916,16 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	/* Make sure this is being called as an AFTER TRUNCTATE trigger. */
 	if (!CALLED_AS_TRIGGER(fcinfo))
 		ereport(ERROR,
-				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("function \"%s\" was not called by trigger manager",
-						funcname)));
+			   (errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+					   errmsg("function \"%s\" was not called by trigger manager",
+							funcname)));
 
 	if (!TRIGGER_FIRED_AFTER(trigdata->tg_event) ||
-		!TRIGGER_FIRED_BY_TRUNCATE(trigdata->tg_event))
+	    !TRIGGER_FIRED_BY_TRUNCATE(trigdata->tg_event))
 		ereport(ERROR,
-				(errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-				 errmsg("function \"%s\" must be fired AFTER TRUNCATE",
-						funcname)));
+			   (errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
+					   errmsg("function \"%s\" must be fired AFTER TRUNCATE",
+							funcname)));
 
 	/* If this is not pglogical node, don't do anything. */
 	local_node = get_local_node(false, true);
@@ -1897,7 +1935,7 @@ pglogical_queue_truncate(PG_FUNCTION_ARGS)
 	/* Make sure the list change survives the trigger call. */
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
 	pglogical_truncated_tables = lappend_oid(pglogical_truncated_tables,
-									RelationGetRelid(trigdata->tg_relation));
+									 RelationGetRelid(trigdata->tg_relation));
 	MemoryContextSwitchTo(oldcontext);
 
 	PG_RETURN_VOID();
@@ -1933,7 +1971,7 @@ pglogical_node_info(PG_FUNCTION_ARGS)
 	node = get_local_node(false, false);
 
 	snprintf(sysid, sizeof(sysid), UINT64_FORMAT,
-			 GetSystemIdentifier());
+		    GetSystemIdentifier());
 	repsets = get_node_replication_sets(node->node->id);
 
 	memset(nulls, 0, sizeof(nulls));
@@ -1959,15 +1997,15 @@ Datum
 pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 {
 	Oid			reloid = PG_GETARG_OID(0);
- 	ArrayType  *rep_set_names = PG_GETARG_ARRAYTYPE_P(1);
+	ArrayType  *rep_set_names = PG_GETARG_ARRAYTYPE_P(1);
 	Relation	rel;
 	List	   *replication_sets;
 	TupleDesc	reldesc;
 	TupleDesc	rettupdesc;
 	int			i;
 	List	   *att_list = NIL;
-	Datum		values[5];
-	bool		nulls[5];
+	Datum		values[6];
+	bool		nulls[6];
 	char	   *nspname;
 	char	   *relname;
 	HeapTuple	htup;
@@ -1985,15 +2023,15 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	reldesc = RelationGetDescr(rel);
 	replication_sets = textarray_to_list(rep_set_names);
 	replication_sets = get_replication_sets(node->node->id,
-											replication_sets,
-											false);
+									replication_sets,
+									false);
 
 	nspname = get_namespace_name(RelationGetNamespace(rel));
 	relname = RelationGetRelationName(rel);
 
 	/* Build the replication info for the table. */
 	tableinfo = get_table_replication_info(node->node->id, rel,
-										   replication_sets);
+								    replication_sets);
 
 	/* Build the column list. */
 	for (i = 0; i < reldesc->natts; i++)
@@ -2006,8 +2044,8 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 
 		/* Skip filtered columns if any. */
 		if (tableinfo->att_list &&
-			!bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
-						   tableinfo->att_list))
+		    !bms_is_member(att->attnum - FirstLowInvalidHeapAttributeNumber,
+					    tableinfo->att_list))
 			continue;
 
 		att_list = lappend(att_list, NameStr(att->attname));
@@ -2020,6 +2058,14 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 	values[2] = CStringGetTextDatum(relname);
 	values[3] = PointerGetDatum(strlist_to_textarray(att_list));
 	values[4] = BoolGetDatum(list_length(tableinfo->row_filter) > 0);
+	if ( tableinfo->sync_clear_filter != NULL )
+	{
+		values[5] = CStringGetTextDatum( tableinfo->sync_clear_filter );
+	}
+	else
+	{
+		nulls[5] = true;
+	}
 
 	htup = heap_form_tuple(rettupdesc, values, nulls);
 
@@ -2080,7 +2126,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 {
 	Oid			argtype = get_fn_expr_argtype(fcinfo->flinfo, 0);
 	Oid			reloid;
- 	ArrayType  *rep_set_names;
+	ArrayType  *rep_set_names;
 	ReturnSetInfo *rsi;
 	Relation	rel;
 	List	   *replication_sets;
@@ -2103,31 +2149,31 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	/* Validate parameter. */
 	if (PG_ARGISNULL(1))
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("relation cannot be NULL")));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("relation cannot be NULL")));
 	if (PG_ARGISNULL(2))
 		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("repsets cannot be NULL")));
+			   (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					   errmsg("repsets cannot be NULL")));
 
 	reloid = PG_GETARG_OID(1);
 	rep_set_names = PG_GETARG_ARRAYTYPE_P(2);
 
 	if (!type_is_rowtype(argtype))
 		ereport(ERROR,
-				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg("first argument of %s must be a row type",
-						"pglogical_table_data_filtered")));
+			   (errcode(ERRCODE_DATATYPE_MISMATCH),
+					   errmsg("first argument of %s must be a row type",
+							"pglogical_table_data_filtered")));
 
 	rsi = (ReturnSetInfo *) fcinfo->resultinfo;
 
 	if (!rsi || !IsA(rsi, ReturnSetInfo) ||
-		(rsi->allowedModes & SFRM_Materialize) == 0 ||
-		rsi->expectedDesc == NULL)
+	    (rsi->allowedModes & SFRM_Materialize) == 0 ||
+	    rsi->expectedDesc == NULL)
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("set-valued function called in context that "
-						"cannot accept a set")));
+			   (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("set-valued function called in context that "
+							"cannot accept a set")));
 
 	/* Switch into long-lived context to construct returned data structures */
 	per_query_ctx = rsi->econtext->ecxt_per_query_memory;
@@ -2140,9 +2186,9 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	 */
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("function returning record called in context "
-						"that cannot accept type record")));
+			   (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					   errmsg("function returning record called in context "
+							"that cannot accept type record")));
 	tupdesc = BlessTupleDesc(tupdesc);
 
 	/* Prepare output tuple store. */
@@ -2158,17 +2204,17 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	reltupdesc = RelationGetDescr(rel);
 	if (!equalTupleDescs(tupdesc, reltupdesc))
 		ereport(ERROR,
-				(errcode(ERRCODE_DATATYPE_MISMATCH),
-				 errmsg("return type of %s must be same as row type of the relation",
-						"pglogical_table_data_filtered")));
+			   (errcode(ERRCODE_DATATYPE_MISMATCH),
+					   errmsg("return type of %s must be same as row type of the relation",
+							"pglogical_table_data_filtered")));
 
 	/* Build the replication info for the table. */
 	replication_sets = textarray_to_list(rep_set_names);
 	replication_sets = get_replication_sets(node->node->id,
-											replication_sets,
-											false);
+									replication_sets,
+									false);
 	tableinfo = get_table_replication_info(node->node->id, rel,
-										   replication_sets);
+								    replication_sets);
 
 	/* Prepare executor. */
 	estate = create_estate_for_relation(rel, false);
@@ -2214,7 +2260,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
  * We have to play games with snapshots to achieve this, since we're looking at
  * pglogical tables in the future as far as our snapshot is concerned.
  */
-static void
+static bool
 pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, char *relname)
 {
 	PGLogicalSubscription *sub;
@@ -2228,36 +2274,60 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 
 	sub = get_subscription_by_name(subscription_name, false);
 
+	bool isdone = false;
 	do
 	{
-		PGLogicalSyncStatus	   *subsync;
-		List				   *tables;
-		bool					isdone = false;
-		int						rc;
+		List *tables;
+
+		bool failed = false;
 
 		/* We need to see the latest rows */
-		PushActiveSnapshot(GetLatestSnapshot());
+		PushActiveSnapshot( GetLatestSnapshot());
 
-		subsync = get_subscription_sync_status(sub->id, true);
-		isdone = subsync && subsync->status == SYNC_STATUS_READY;
-		free_sync_status(subsync);
+		LWLockAcquire( PGLogicalCtx->lock, LW_EXCLUSIVE );
+
+		PGLogicalWorker *apply = pglogical_apply_find( MyDatabaseId, sub->id );
+		if ( pglogical_worker_running( apply ))
+		{
+			PGLogicalSyncStatus *sync = get_subscription_sync_status( sub->id, true );
+
+			if ( !sync )
+			{
+				// unknown
+				failed = true;
+			}
+			else if ( sync->status == SYNC_STATUS_READY )
+			{
+				// replicating
+				isdone = true;
+			}
+
+			free_sync_status( sync );
+		}
+		else if ( sub->enabled )
+		{
+			// sync down
+			failed = true;
+		}
+		LWLockRelease(PGLogicalCtx->lock);
+
 
 		if (isdone)
 		{
 			/*
-			 * Subscription itself is synced, but what about separately
+			 * Subscription its self is synced, but what about separately
 			 * synced tables?
 			 */
 			if (relname != NULL)
 			{
-				PGLogicalSyncStatus *table = get_table_sync_status(sub->id, relnamespace, relname, false);
+				PGLogicalSyncStatus *table = get_table_sync_status(sub->id, relnamespace, relname, true);
 				isdone = table && table->status == SYNC_STATUS_READY;
 				free_sync_status(table);
 			}
 			else
 			{
 				/*
-				 * XXX This is plenty inefficient and we should probably just do a direct catalog
+				 * This is plenty inefficient and we should probably just do a direct catalog
 				 * scan, but meh, it hardly has to be fast.
 				 */
 				ListCell *lc;
@@ -2274,20 +2344,19 @@ pglogical_wait_for_sync_complete(char *subscription_name, char *relnamespace, ch
 
 		PopActiveSnapshot();
 
-		if (isdone)
+		if (isdone || failed)
 			break;
 
 		CHECK_FOR_INTERRUPTS();
 
 		/* some kind of backoff could be useful here */
-		rc = WaitLatch(&MyProc->procLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 200L);
-
-		if (rc & WL_POSTMASTER_DEATH)
-			proc_exit(1);
+		(void) WaitLatch(&MyProc->procLatch,
+					  WL_LATCH_SET | WL_TIMEOUT, 200L);
 
 		ResetLatch(&MyProc->procLatch);
 	} while (1);
+
+	return isdone;
 }
 
 Datum
@@ -2295,9 +2364,7 @@ pglogical_wait_for_subscription_sync_complete(PG_FUNCTION_ARGS)
 {
 	char *subscription_name = NameStr(*PG_GETARG_NAME(0));
 
-	pglogical_wait_for_sync_complete(subscription_name, NULL, NULL);
-
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL( pglogical_wait_for_sync_complete(subscription_name, NULL, NULL) );
 }
 
 Datum
@@ -2310,9 +2377,7 @@ pglogical_wait_for_table_sync_complete(PG_FUNCTION_ARGS)
 	relname = get_rel_name(relid);
 	relnamespace = get_namespace_name(get_rel_namespace(relid));
 
-	pglogical_wait_for_sync_complete(subscription_name, relnamespace, relname);
-
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL( pglogical_wait_for_sync_complete(subscription_name, relnamespace, relname) );
 }
 
 /*
@@ -2339,9 +2404,9 @@ pglogical_xact_commit_timestamp_origin(PG_FUNCTION_ARGS)
 	 */
 	tupdesc = CreateTemplateTupleDesc(2);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "timestamp",
-					   TIMESTAMPTZOID, -1, 0);
+				    TIMESTAMPTZOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "roident",
-					   OIDOID, -1, 0);
+				    OIDOID, -1, 0);
 	tupdesc = BlessTupleDesc(tupdesc);
 
 #ifdef HAVE_REPLICATION_ORIGINS
@@ -2376,7 +2441,7 @@ pglogical_gen_slot_name(PG_FUNCTION_ARGS)
 	slot_name = (Name) palloc0(NAMEDATALEN);
 
 	gen_slot_name(slot_name, dbname, provider_node_name,
-				  subscription_name);
+			    subscription_name);
 
 	PG_RETURN_NAME(slot_name);
 }
@@ -2393,24 +2458,24 @@ pglogical_gen_slot_name(PG_FUNCTION_ARGS)
  */
 static void
 gen_slot_name(Name slot_name, char *dbname, const char *provider_node,
-			  const char *subscription_name)
+		    const char *subscription_name)
 {
 	char *cp;
 
 	memset(NameStr(*slot_name), 0, NAMEDATALEN);
 	snprintf(NameStr(*slot_name), NAMEDATALEN,
-			 "pgl_%s_%s_%s",
-			 shorten_hash(dbname, 16),
-			 shorten_hash(provider_node, 16),
-			 shorten_hash(subscription_name, 16));
+		    "pgl_%s_%s_%s",
+		    shorten_hash(dbname, 16),
+		    shorten_hash(provider_node, 16),
+		    shorten_hash(subscription_name, 16));
 	NameStr(*slot_name)[NAMEDATALEN-1] = '\0';
 
 	/* Replace all the invalid characters in slot name with underscore. */
 	for (cp = NameStr(*slot_name); *cp; cp++)
 	{
 		if (!((*cp >= 'a' && *cp <= 'z')
-			  || (*cp >= '0' && *cp <= '9')
-			  || (*cp == '_')))
+			 || (*cp >= '0' && *cp <= '9')
+			 || (*cp == '_')))
 		{
 			*cp = '_';
 		}
