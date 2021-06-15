@@ -28,6 +28,7 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "replication/origin.h"
 
 #include "pglogical_output_plugin.h"
@@ -618,6 +619,8 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 			return false;
 		}
 
+		PushActiveSnapshot(GetTransactionSnapshot());
+
 		estate = create_estate_for_relation(relation, false);
 		econtext = prepare_per_tuple_econtext(estate, tupdesc);
 
@@ -643,6 +646,8 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 
 		ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
 		FreeExecutorState(estate);
+
+		PopActiveSnapshot();
 	}
 
 	/* Make sure caller is aware of any attribute filter. */

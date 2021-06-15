@@ -250,6 +250,8 @@ init_apply_exec_state(PGLogicalRelation *rel)
 {
 	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
 
+	PushActiveSnapshot(GetTransactionSnapshot());
+
 	/* Initialize the executor state. */
 	aestate->estate = create_estate_for_relation(rel->rel, true);
 	aestate->resultRelInfo = aestate->estate->es_result_relation_info;
@@ -286,6 +288,8 @@ finish_apply_exec_state(ApplyExecState *aestate)
 	/* Free the memory. */
 	FreeExecutorState(aestate->estate);
 	pfree(aestate);
+
+	PopActiveSnapshot();
 }
 
 /*
@@ -312,9 +316,6 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 #endif
-
-	/* Get snapshot */
-	PushActiveSnapshot(GetTransactionSnapshot());
 
 	ExecOpenIndices(aestate->resultRelInfo
 #if PG_VERSION_NUM >= 90500
@@ -356,7 +357,6 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 		if (aestate->slot == NULL)		/* "do nothing" */
 #endif
 		{
-			PopActiveSnapshot();
 			finish_apply_exec_state(aestate);
 			return;
 		}
@@ -424,7 +424,6 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 				if (aestate->slot == NULL)		/* "do nothing" */
 #endif
 				{
-					PopActiveSnapshot();
 					finish_apply_exec_state(aestate);
 					return;
 				}
@@ -494,7 +493,6 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 #endif
 	}
 
-	PopActiveSnapshot();
 	finish_apply_exec_state(aestate);
 
 	CommandCounterIncrement();
@@ -579,7 +577,6 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 			if (aestate->slot == NULL)		/* "do nothing" */
 #endif
 			{
-				PopActiveSnapshot();
 				finish_apply_exec_state(aestate);
 				return;
 			}
@@ -689,7 +686,6 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	}
 
 	/* Cleanup. */
-	PopActiveSnapshot();
 	finish_apply_exec_state(aestate);
 
 	CommandCounterIncrement();
@@ -733,7 +729,6 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 			if (!dodelete)		/* "do nothing" */
 			{
-				PopActiveSnapshot();
 				finish_apply_exec_state(aestate);
 				pglogical_relation_close(rel, NoLock);
 				return;
@@ -760,7 +755,6 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	}
 
 	/* Cleanup. */
-	PopActiveSnapshot();
 	finish_apply_exec_state(aestate);
 
 	CommandCounterIncrement();
