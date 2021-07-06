@@ -270,10 +270,9 @@ retry:
  * The index oid is also output.
  */
 bool
-pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
+pglogical_tuple_find_replidx(ResultRelInfo *relinfo, PGLogicalTupleData *tuple,
 							 TupleTableSlot *oldslot, Oid *idxrelid)
 {
-	ResultRelInfo  *relinfo = estate->es_result_relation_info;
 	Oid				idxoid;
 	Relation		idxrel;
 	ScanKeyData		index_key[INDEX_MAX_KEYS];
@@ -322,7 +321,7 @@ pglogical_tuple_find_replidx(EState *estate, PGLogicalTupleData *tuple,
  * inconsistency may arise.
  */
 Oid
-pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
+pglogical_tuple_find_conflict(ResultRelInfo *relinfo, PGLogicalTupleData *tuple,
 							  TupleTableSlot *outslot)
 {
 	Oid				conflict_idx = InvalidOid;
@@ -331,11 +330,8 @@ pglogical_tuple_find_conflict(EState *estate, PGLogicalTupleData *tuple,
 	ItemPointerData	conflicting_tid;
 	Oid				replidxoid;
 	bool			found = false;
-	ResultRelInfo  *relinfo = estate->es_result_relation_info;
 
 	ItemPointerSetInvalid(&conflicting_tid);
-
-	relinfo = estate->es_result_relation_info;
 
 	/*
 	 * Check the replica identity index with a SnapshotDirty scan first, like

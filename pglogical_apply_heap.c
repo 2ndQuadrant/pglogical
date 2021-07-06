@@ -120,17 +120,24 @@ pglogical_apply_heap_commit(void)
 
 
 static List *
-UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
+UserTableUpdateOpenIndexes(ResultRelInfo *relinfo, EState *estate, TupleTableSlot *slot, bool update)
 {
 	List	   *recheckIndexes = NIL;
 
-	if (estate->es_result_relation_info->ri_NumIndices > 0)
+	if (relinfo->ri_NumIndices > 0)
 	{
-		recheckIndexes = ExecInsertIndexTuples(slot,
+		recheckIndexes = ExecInsertIndexTuples(
+#if PG_VERSION_NUM >= 140000
+											   relinfo,
+#endif
+											   slot,
 #if PG_VERSION_NUM < 120000
 											   &slot->tts_tuple->t_self,
 #endif
 											   estate
+#if PG_VERSION_NUM >= 140000
+											   , update
+#endif
 #if PG_VERSION_NUM >= 90500
 											   , false, NULL, NIL
 #endif
@@ -142,7 +149,7 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 			StringInfoData si;
 			ListCell *lc;
 			const char *idxname, *relname, *nspname;
-			Relation target_rel = estate->es_result_relation_info->ri_RelationDesc;
+			Relation target_rel = relinfo->ri_RelationDesc;
 
 			relname = RelationGetRelationName(target_rel);
 			nspname = get_namespace_name(RelationGetNamespace(target_rel));
@@ -254,7 +261,15 @@ init_apply_exec_state(PGLogicalRelation *rel)
 
 	/* Initialize the executor state. */
 	aestate->estate = create_estate_for_relation(rel->rel, true);
-	aestate->resultRelInfo = aestate->estate->es_result_relation_info;
+
+	aestate->resultRelInfo = makeNode(ResultRelInfo);
+	InitResultRelInfo(aestate->resultRelInfo, rel->rel, 1, 0);
+
+#if PG_VERSION_NUM < 140000
+	aestate->estate->es_result_relations = aestate->resultRelInfo;
+	aestate->estate->es_num_result_relations = 1;
+	aestate->estate->es_result_relation_info = aestate->resultRelInfo;
+#endif
 
 	aestate->slot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(aestate->slot, RelationGetDescr(rel->rel));
@@ -328,7 +343,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	 * only normal columns. This doesn't just check the replica identity index,
 	 * but it'll prefer it and use it first.
 	 */
-	conflicts_idx_id = pglogical_tuple_find_conflict(aestate->estate,
+	conflicts_idx_id = pglogical_tuple_find_conflict(aestate->resultRelInfo,
 													 newtup,
 													 localslot);
 
@@ -454,8 +469,10 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 							   TTS_TUP(aestate->slot));
 			if (!HeapTupleIsHeapOnly(TTS_TUP(aestate->slot)))
 #endif
-				recheckIndexes = UserTableUpdateOpenIndexes(aestate->estate,
-															aestate->slot);
+				recheckIndexes = UserTableUpdateOpenIndexes(aestate->resultRelInfo,
+															aestate->estate,
+															aestate->slot,
+															true);
 
 			/* AFTER ROW UPDATE Triggers */
 #if PG_VERSION_NUM >= 120000
@@ -481,7 +498,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 #else
 		simple_heap_insert(rel->rel, TTS_TUP(aestate->slot));
 #endif
-		UserTableUpdateOpenIndexes(aestate->estate, aestate->slot);
+		UserTableUpdateOpenIndexes(aestate->resultRelInfo, aestate->estate, aestate->slot, false);
 
 		/* AFTER ROW INSERT Triggers */
 #if PG_VERSION_NUM >= 120000
@@ -527,7 +544,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	PushActiveSnapshot(GetTransactionSnapshot());
 
 	/* Search for existing tuple with same key */
-	found = pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot,
+	found = pglogical_tuple_find_replidx(aestate->resultRelInfo, oldtup, localslot,
 										 &replident_idx_id);
 
 	/*
@@ -652,8 +669,10 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 								, false
 #endif
 							   );
-				recheckIndexes = UserTableUpdateOpenIndexes(aestate->estate,
-															aestate->slot);
+				recheckIndexes = UserTableUpdateOpenIndexes(aestate->resultRelInfo,
+															aestate->estate,
+															aestate->slot,
+															true);
 			}
 
 			/* AFTER ROW UPDATE Triggers */
@@ -713,7 +732,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (pglogical_tuple_find_replidx(aestate->estate, oldtup, localslot,
+	if (pglogical_tuple_find_replidx(aestate->resultRelInfo, oldtup, localslot,
 									 &replident_idx_id))
 	{
 		if (aestate->resultRelInfo->ri_TrigDesc &&
@@ -899,6 +918,9 @@ pglogical_apply_heap_mi_flush(void)
 #endif
 			recheckIndexes =
 				ExecInsertIndexTuples(
+#if PG_VERSION_NUM >= 140000
+									  resultRelInfo,
+#endif
 #if PG_VERSION_NUM >= 120000
 									  pglmistate->buffered_tuples[i],
 #else
@@ -907,6 +929,9 @@ pglogical_apply_heap_mi_flush(void)
 #endif
 									  pglmistate->aestate->estate
 #if PG_VERSION_NUM >= 90500
+#if PG_VERSION_NUM >= 140000
+									  , false
+#endif
 									  , false, NULL, NIL
 #endif
 									 );

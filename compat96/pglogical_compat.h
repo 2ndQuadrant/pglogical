@@ -14,18 +14,18 @@
 #define	PGLDoCopy(stmt, queryString, processed) DoCopy(stmt, queryString, processed)
 
 #ifdef PGXC
-#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+#define PGLstandard_ProcessUtility(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, sentToRemote, qc) \
 	standard_ProcessUtility(pstmt, queryString, context, params, dest, sentToRemote, qc)
 
-#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, sentToRemote, qc) \
 	next_ProcessUtility_hook(pstmt, queryString, context, params, dest, sentToRemote, qc)
 
 #else
 
-#define PGLstandard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+#define PGLstandard_ProcessUtility(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, sentToRemote, qc) \
 	standard_ProcessUtility(pstmt, queryString, context, params, dest, qc)
 
-#define PGLnext_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, sentToRemote, qc) \
+#define PGLnext_ProcessUtility_hook(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, sentToRemote, qc) \
 	next_ProcessUtility_hook(pstmt, queryString, context, params, dest, qc)
 #endif
 

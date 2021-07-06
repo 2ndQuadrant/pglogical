@@ -48,12 +48,12 @@ typedef enum PGLogicalConflictType
 	CONFLICT_DELETE_DELETE
 } PGLogicalConflictType;
 
-extern bool pglogical_tuple_find_replidx(EState *estate,
+extern bool pglogical_tuple_find_replidx(ResultRelInfo *relinfo,
 										 PGLogicalTupleData *tuple,
 										 TupleTableSlot *oldslot,
 										 Oid *idxrelid);
 
-extern Oid pglogical_tuple_find_conflict(EState *estate,
+extern Oid pglogical_tuple_find_conflict(ResultRelInfo *relinfo,
 										 PGLogicalTupleData *tuple,
 										 TupleTableSlot *oldslot);
 

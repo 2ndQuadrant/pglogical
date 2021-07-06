@@ -1,7 +1,10 @@
 #ifndef PG_LOGICAL_COMPAT_H
 #define PG_LOGICAL_COMPAT_H
 
-#include "replication/origin.h"
+#include "access/amapi.h"
+#include "access/heapam.h"
+#include "access/table.h"
+#include "access/tableam.h"
 #include "utils/varlena.h"
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
@@ -41,11 +44,11 @@
 #define InitResultRelInfo(resultRelInfo, resultRelationDesc, resultRelationIndex, instrument_options) \
 	InitResultRelInfo(resultRelInfo, resultRelationDesc, resultRelationIndex, NULL, instrument_options)
 
-#define ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newtuple, recheckIndexes) \
-	ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newtuple, recheckIndexes, NULL)
+#define ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newslot, recheckIndexes) \
+	ExecARUpdateTriggers(estate, relinfo, tupleid, fdw_trigtuple, newslot, recheckIndexes, NULL)
 
-#define ExecARInsertTriggers(estate, relinfo, trigtuple, recheckIndexes) \
-	ExecARInsertTriggers(estate, relinfo, trigtuple, recheckIndexes, NULL)
+#define ExecARInsertTriggers(estate, relinfo, slot, recheckIndexes) \
+	ExecARInsertTriggers(estate, relinfo, slot, recheckIndexes, NULL)
 
 #define ExecARDeleteTriggers(estate, relinfo, tupleid, fdw_trigtuple) \
 	ExecARDeleteTriggers(estate, relinfo, tupleid, fdw_trigtuple, NULL)
@@ -53,10 +56,10 @@
 #define makeDefElem(name, arg) makeDefElem(name, arg, -1)
 
 #define PGLstandard_ProcessUtility(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, sentToRemote, qc) \
-	standard_ProcessUtility(pstmt, queryString, context, params, queryEnv, dest, qc)
+	standard_ProcessUtility(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, qc)
 
 #define PGLnext_ProcessUtility_hook(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, sentToRemote, qc) \
-	next_ProcessUtility_hook(pstmt, queryString, context, params, queryEnv, dest, qc)
+	next_ProcessUtility_hook(pstmt, queryString, readOnlyTree, context, params, queryEnv, dest, qc)
 
 #define PGLCreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, isInternal) \
 	CreateTrigger(stmt, queryString, relOid, refRelOid, constraintOid, indexOid, InvalidOid, InvalidOid, NULL, isInternal, false);
@@ -77,7 +80,7 @@
 
 /* ad7dbee368a */
 #define ExecInitExtraTupleSlot(estate) \
-	ExecInitExtraTupleSlot(estate, NULL)
+	ExecInitExtraTupleSlot(estate, NULL, &TTSOpsHeapTuple)
 
 #define ACL_OBJECT_RELATION OBJECT_TABLE
 #define ACL_OBJECT_SEQUENCE OBJECT_SEQUENCE
@@ -87,42 +90,7 @@
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum, tupledesc)
 
-/* deprecated in PG12, removed in PG13 */
-#define table_open(r, l)		heap_open(r, l)
-#define table_openrv(r, l)		heap_openrv(r, l)
-#define table_openrv_extended(r, l, m)	heap_openrv_extended(r, l, m)
-#define table_close(r, l)		heap_close(r, l)
-
-/* 29c94e03c7 */
-#define ExecStoreHeapTuple(tuple, slot, shouldFree) ExecStoreTuple(tuple, slot, InvalidBuffer, shouldFree)
-
-/* c2fe139c20 */
-#define TableScanDesc HeapScanDesc
-#define table_beginscan(relation, snapshot, nkeys, keys) heap_beginscan(relation, snapshot, nkeys, keys)
-#define table_beginscan_catalog(relation, nkeys, keys) heap_beginscan_catalog(relation, nkeys, keys)
-#define table_endscan(scan) heap_endscan(scan)
-
-/* 578b229718e8 */
-#define CreateTemplateTupleDesc(natts) \
-	CreateTemplateTupleDesc(natts, false)
-
-/* 2f9661311b83 */
-#define CommandTag const char *
-#define QueryCompletion char
-
-/* 6aba63ef3e60 */
-#define pg_plan_queries(querytrees, query_string, cursorOptions, boundParams) \
-	pg_plan_queries(querytrees, cursorOptions, boundParams)
-
-/* cd142e032ebd50ec7974b3633269477c2c72f1cc removed replorigin_drop */
-inline static void
-replorigin_drop_by_name(char *name, bool missing_ok, bool nowait)
-{
-	RepOriginId	originid;
-
-	originid = replorigin_by_name(name, missing_ok);
-	if (originid != InvalidRepOriginId)
-		replorigin_drop(originid, nowait);
-}
+/* 2a10fdc4307a667883f7a3369cb93a721ade9680 */
+#define getObjectDescription(object) getObjectDescription(object, false)
 
 #endif

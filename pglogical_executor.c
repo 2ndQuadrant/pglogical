@@ -69,7 +69,6 @@ EState *
 create_estate_for_relation(Relation rel, bool forwrite)
 {
 	EState	   *estate;
-	ResultRelInfo *resultRelInfo;
 	RangeTblEntry *rte;
 
 
@@ -79,17 +78,8 @@ create_estate_for_relation(Relation rel, bool forwrite)
 	rte->relid = RelationGetRelid(rel);
 	rte->relkind = rel->rd_rel->relkind;
 
-	resultRelInfo = makeNode(ResultRelInfo);
-	InitResultRelInfo(resultRelInfo,
-					  rel,
-					  1,
-					  0);
-
 	/* Initialize executor state. */
 	estate = CreateExecutorState();
-	estate->es_result_relations = resultRelInfo;
-	estate->es_num_result_relations = 1;
-	estate->es_result_relation_info = resultRelInfo;
 #if PG_VERSION_NUM >= 120000
 	ExecInitRangeTable(estate, list_make1(rte));
 #elif PG_VERSION_NUM >= 110000 && SECONDQ_VERSION_NUM >= 103
@@ -99,33 +89,10 @@ create_estate_for_relation(Relation rel, bool forwrite)
 	estate->es_range_table = list_make1(rte);
 #endif
 
-	if (forwrite)
-		resultRelInfo->ri_TrigDesc = CopyTriggerDesc(rel->trigdesc);
-
-	if (resultRelInfo->ri_TrigDesc)
-	{
-		int			n = resultRelInfo->ri_TrigDesc->numtriggers;
-
-		resultRelInfo->ri_TrigFunctions = (FmgrInfo *)
-			palloc0(n * sizeof(FmgrInfo));
-#if PG_VERSION_NUM >= 100000
-		resultRelInfo->ri_TrigWhenExprs = (ExprState **)
-			palloc0(n * sizeof(ExprState *));
-#else
-		resultRelInfo->ri_TrigWhenExprs = (List **)
-			palloc0(n * sizeof(List *));
-#endif
-
 #if PG_VERSION_NUM < 120000
-		/* Triggers might need a slot */
+	if (rel->trigdesc)
 		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
 #endif
-	}
-	else
-	{
-		resultRelInfo->ri_TrigFunctions = NULL;
-		resultRelInfo->ri_TrigWhenExprs = NULL;
-	}
 
 	estate->es_output_cid = GetCurrentCommandId(forwrite);
 
@@ -245,6 +212,9 @@ pglogical_ProcessUtility(
 						 Node *pstmt,
 #endif
 						 const char *queryString,
+#if PG_VERSION_NUM >= 140000
+						 bool readOnlyTree,
+#endif
 						 ProcessUtilityContext context,
 						 ParamListInfo params,
 #if PG_VERSION_NUM >= 100000
@@ -279,12 +249,12 @@ pglogical_ProcessUtility(
 		   && CurrentMemoryContext != CacheMemoryContext);
 
 	if (next_ProcessUtility_hook)
-		PGLnext_ProcessUtility_hook(pstmt, queryString, context, params,
+		PGLnext_ProcessUtility_hook(pstmt, queryString, readOnlyTree, context, params,
 									queryEnv, dest,
 									sentToRemote,
 									qc);
 	else
-		PGLstandard_ProcessUtility(pstmt, queryString, context, params,
+		PGLstandard_ProcessUtility(pstmt, queryString, readOnlyTree, context, params,
 								   queryEnv, dest,
 								   sentToRemote,
 								   qc);

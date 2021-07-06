@@ -48,10 +48,17 @@ SELECT * FROM pglogical.create_subscription(
 SELECT * FROM pglogical.create_node(node_name := 'test_subscriber', dsn := (SELECT subscriber_dsn FROM pglogical_regress_variables()) || ' user=nonreplica');
 
 -- fail (can't connect to remote)
-SELECT * FROM pglogical.create_subscription(
-    subscription_name := 'test_subscription',
-    provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonexisting',
-	forward_origins := '{}');
+DO $$
+BEGIN
+    SELECT * FROM pglogical.create_subscription(
+        subscription_name := 'test_subscription',
+        provider_dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=nonexisting',
+        forward_origins := '{}');
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE EXCEPTION '%:%', split_part(SQLERRM, ':', 1), (regexp_matches(SQLERRM, '^.*( FATAL:.*role.*)$'))[1];
+END;
+$$;
 
 -- fail (remote node not existing)
 SELECT * FROM pglogical.create_subscription(
