@@ -1004,13 +1004,16 @@ pglogical_apply_heap_mi_add_tuple(PGLogicalRelation *rel,
 		ExecConstraints(aestate->resultRelInfo, slot,
 						aestate->estate);
 
-	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples++] =
 #if PG_VERSION_NUM >= 120000
-		slot
+	if (pglmistate->buffered_tuples[pglmistate->nbuffered_tuples] == NULL)
+		pglmistate->buffered_tuples[pglmistate->nbuffered_tuples] = table_slot_create(rel->rel, NULL);
+	else
+		ExecClearTuple(pglmistate->buffered_tuples[pglmistate->nbuffered_tuples]);
+	ExecCopySlot(pglmistate->buffered_tuples[pglmistate->nbuffered_tuples], slot);
 #else
-		remotetuple
+	pglmistate->buffered_tuples[pglmistate->nbuffered_tuples] = remotetuple;
 #endif
-		;
+	pglmistate->nbuffered_tuples++;
 	MemoryContextSwitchTo(oldctx);
 }
 
@@ -1027,6 +1030,12 @@ pglogical_apply_heap_mi_finish(PGLogicalRelation *rel)
 	FreeBulkInsertState(pglmistate->bistate);
 
 	finish_apply_exec_state(pglmistate->aestate);
+
+#if PG_VERSION_NUM >= 120000
+	for (int i = 0; i < pglmistate->maxbuffered_tuples; i++)
+		if (pglmistate->buffered_tuples[i])
+			ExecDropSingleTupleTableSlot(pglmistate->buffered_tuples[i]);
+#endif
 
 	pfree(pglmistate->buffered_tuples);
 	pfree(pglmistate);
