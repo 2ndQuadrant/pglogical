@@ -1488,6 +1488,7 @@ execute_sql_command_error_cb(void *arg)
 void
 pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 {
+	const char *save_debug_query_string = debug_query_string;
 	List	   *commands;
 	ListCell   *command_i;
 #ifdef PGXC
@@ -1600,7 +1601,7 @@ pglogical_execute_sql_command(char *cmdstr, char *role, bool isTopLevel)
 	if (error_context_stack == &errcallback)
 		error_context_stack = errcallback.previous;
 
-	debug_query_string = NULL;
+	debug_query_string = save_debug_query_string;
 }
 
 /*
