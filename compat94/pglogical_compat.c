@@ -242,6 +242,16 @@ pgl_replorigin_drop(RepOriginId roident)
 	heap_close(rel, ExclusiveLock);
 }
 
+void
+replorigin_drop_by_name(char *name, bool missing_ok, bool nowait)
+{
+	RepOriginId	originid;
+
+	originid = replorigin_by_name(name, missing_ok);
+	if (originid != InvalidRepOriginId)
+		replorigin_drop(originid, nowait);
+}
+
 RepOriginId
 replorigin_by_name(char *name, bool missing_ok)
 {

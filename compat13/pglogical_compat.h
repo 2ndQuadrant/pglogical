@@ -5,6 +5,7 @@
 #include "access/heapam.h"
 #include "access/table.h"
 #include "access/tableam.h"
+#include "replication/origin.h"
 #include "utils/varlena.h"
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
@@ -89,5 +90,16 @@
 
 #define pgl_heap_attisnull(tup, attnum, tupledesc) \
 	heap_attisnull(tup, attnum, tupledesc)
+
+/* cd142e032ebd50ec7974b3633269477c2c72f1cc removed replorigin_drop */
+inline static void
+replorigin_drop_by_name(char *name, bool missing_ok, bool nowait)
+{
+	RepOriginId	originid;
+
+	originid = replorigin_by_name(name, missing_ok);
+	if (originid != InvalidRepOriginId)
+		replorigin_drop(originid, nowait);
+}
 
 #endif

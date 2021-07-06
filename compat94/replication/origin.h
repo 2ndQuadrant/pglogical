@@ -13,6 +13,7 @@ extern PGDLLIMPORT TimestampTz replorigin_session_origin_timestamp;
 
 extern RepOriginId replorigin_create(char *name);
 extern void pgl_replorigin_drop(RepOriginId roident);
+extern void replorigin_drop_by_name(char *name, bool missing_ok, bool nowait);
 
 extern RepOriginId replorigin_by_name(char *name, bool missing_ok);
 extern void replorigin_session_setup(RepOriginId node);

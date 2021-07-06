@@ -1,6 +1,7 @@
 #ifndef PG_LOGICAL_COMPAT_H
 #define PG_LOGICAL_COMPAT_H
 
+#include "replication/origin.h"
 #include "utils/varlena.h"
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
@@ -112,5 +113,16 @@
 /* 6aba63ef3e60 */
 #define pg_plan_queries(querytrees, query_string, cursorOptions, boundParams) \
 	pg_plan_queries(querytrees, cursorOptions, boundParams)
+
+/* cd142e032ebd50ec7974b3633269477c2c72f1cc removed replorigin_drop */
+inline static void
+replorigin_drop_by_name(char *name, bool missing_ok, bool nowait)
+{
+	RepOriginId	originid;
+
+	originid = replorigin_by_name(name, missing_ok);
+	if (originid != InvalidRepOriginId)
+		replorigin_drop(originid, nowait);
+}
 
 #endif
