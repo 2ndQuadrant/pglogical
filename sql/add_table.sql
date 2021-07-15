@@ -97,7 +97,7 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
 SELECT * FROM pglogical.alter_subscription_synchronize('test_subscription');
 
 BEGIN;
-SET statement_timeout = '10s';
+SET statement_timeout = '20s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_nosync');
 COMMIT;
 
