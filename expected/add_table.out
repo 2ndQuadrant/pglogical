@@ -130,7 +130,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS
 (1 row)
 
 \c :subscriber_dsn
-SET statement_timeout = '10s';
+SET statement_timeout = '20s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
  wait_for_table_sync_complete 
 ------------------------------
@@ -255,7 +255,7 @@ SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscriptio
 (1 row)
 
 BEGIN;
-SET statement_timeout = '10s';
+SET statement_timeout = '20s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
  wait_for_table_sync_complete 
 ------------------------------
@@ -506,7 +506,7 @@ SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscriptio
 (1 row)
 
 BEGIN;
-SET statement_timeout = '10s';
+SET statement_timeout = '20s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'synctest');
  wait_for_table_sync_complete 
 ------------------------------
