@@ -257,13 +257,20 @@ action_error_callback(void *arg)
 	pfree(si.data);
 }
 
+/*
+ * Begin one step (one INSERT, UPDATE, etc) of a replication transaction.
+ *
+ * Start a transaction, if this is the first step (else we keep using the
+ * existing transaction).
+ * Also provide a global snapshot and ensure we run in ApplyMessageContext.
+ */
 static bool
-ensure_transaction(void)
+begin_replication_step(void)
 {
 	if (IsTransactionState())
 	{
-		if (CurrentMemoryContext != MessageContext)
-			MemoryContextSwitchTo(MessageContext);
+		PushActiveSnapshot(GetTransactionSnapshot());
+		MemoryContextSwitchTo(MessageContext);
 		return false;
 	}
 
@@ -278,9 +285,20 @@ ensure_transaction(void)
 
 	StartTransactionCommand();
 	apply_api.on_begin();
+	PushActiveSnapshot(GetTransactionSnapshot());
 	MemoryContextSwitchTo(MessageContext);
 
 	return true;
+}
+
+/*
+ * Finish up one step of a replication transaction.
+ * Callers of begin_replication_step() must also call this.
+ */
+static void
+end_replication_step(void)
+{
+	PopActiveSnapshot();
 }
 
 static void
@@ -504,10 +522,11 @@ handle_origin(StringInfo s)
 		elog(ERROR, "ORIGIN message sent out of order");
 
 	/* We have to start transaction here so that we can work with origins. */
-	ensure_transaction();
+	begin_replication_step();
 
 	origin = pglogical_read_origin(s, &remote_origin_lsn);
 	remote_origin_id = replorigin_by_name(origin, true);
+	end_replication_step();
 }
 
 /*
@@ -529,7 +548,7 @@ handle_insert(StringInfo s)
 {
 	PGLogicalTupleData	newtup;
 	PGLogicalRelation  *rel;
-	bool				started_tx = ensure_transaction();
+	bool				started_tx = begin_replication_step();
 
 	errcallback_arg.action_name = "INSERT";
 	xact_action_counter++;
@@ -541,6 +560,7 @@ handle_insert(StringInfo s)
 	if (!should_apply_changes_for_rel(rel->nspname, rel->relname))
 	{
 		pglogical_relation_close(rel, NoLock);
+		end_replication_step();
 		return;
 	}
 
@@ -615,7 +635,10 @@ handle_insert(StringInfo s)
 //			CommitTransactionCommand();
 	}
 	else
+	{
 		pglogical_relation_close(rel, NoLock);
+		end_replication_step();
+	}
 }
 
 static void
@@ -650,7 +673,7 @@ handle_update(StringInfo s)
 	errcallback_arg.action_name = "UPDATE";
 	xact_action_counter++;
 
-	ensure_transaction();
+	begin_replication_step();
 
 	multi_insert_finish();
 
@@ -662,12 +685,14 @@ handle_update(StringInfo s)
 	if (!should_apply_changes_for_rel(rel->nspname, rel->relname))
 	{
 		pglogical_relation_close(rel, NoLock);
+		end_replication_step();
 		return;
 	}
 
 	apply_api.do_update(rel, hasoldtup ? &oldtup : &newtup, &newtup);
 
 	pglogical_relation_close(rel, NoLock);
+	end_replication_step();
 }
 
 static void
@@ -679,7 +704,7 @@ handle_delete(StringInfo s)
 	memset(&errcallback_arg, 0, sizeof(struct ActionErrCallbackArg));
 	xact_action_counter++;
 
-	ensure_transaction();
+	begin_replication_step();
 
 	multi_insert_finish();
 
@@ -690,12 +715,14 @@ handle_delete(StringInfo s)
 	if (!should_apply_changes_for_rel(rel->nspname, rel->relname))
 	{
 		pglogical_relation_close(rel, NoLock);
+		end_replication_step();
 		return;
 	}
 
 	apply_api.do_delete(rel, &oldtup);
 
 	pglogical_relation_close(rel, NoLock);
+	end_replication_step();
 }
 
 inline static bool

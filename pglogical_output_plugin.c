@@ -28,6 +28,7 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "replication/origin.h"
 
 #include "pglogical_output_plugin.h"
@@ -659,6 +660,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	MemoryContext	old;
 	Bitmapset	   *att_list = NULL;
 
+	PushActiveSnapshot(GetTransactionSnapshot());
 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);
 
@@ -729,6 +731,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	Assert(CurrentMemoryContext == data->context);
 	MemoryContextSwitchTo(old);
 	MemoryContextReset(data->context);
+	PopActiveSnapshot();
 }
 
 #ifdef HAVE_REPLICATION_ORIGINS
