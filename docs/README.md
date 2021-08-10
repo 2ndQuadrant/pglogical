@@ -948,26 +948,29 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
-Version 2.3.4 is security release fixing CVE-2021-3515.
+Version 2.4.0 is a maintenance release of pglogical 2.
 
 ### Changes
 
- * Fix pg_dump/pg_restore execution (CVE-2021-3515)  
-   Correctly escape the connection string for both pg_dump and
-   pg_restore so that exotic database and user names are handled
-   correctly.
+* Add preliminary support for PostgreSQL 14 (beta)
 
-   Reported by Pedro Gallegos
+* Fix pglogical_show_subscription_table to return row rather than set of rows
 
- * Assign collation to the index scan key  
-   When doing lookups for INSERT/UPDATE/DELETE, either to find conflicts
-   or key for the operation to be applied, we should use correct collation.
+* Fix snapshot handling in output plugin and apply worker
 
-   This fixes issues with PostgreSQL 12+ primary key lookups when primary key
-   is on column using one of the textual types.
+* Fix command quoting on Windows so that it actually works  
+  Seems like the API used before has 1024 limit on command line length
 
- * Execute `pg_ctl` with appropriate verbosity in `pglogical_create_subscriber`  
-   When `-v` is passed to `pglogical_create_subscriber`, it will now call
-   `pg_ctl` without silent mode. This is useful for troubleshooting.
+* Make sure that the schema syncing process can be interrupted on Windows
 
- * Clarify documentation regarding `REPLICA IDENTITY` requirements and support
+* Fix compilation issues with pglogical_create_subscriber on Windows
+
+* Fix double closing of relation when a BEFORE ROW DELETE trigger returns NULL
+  in the apply worker
+
+* Fix multi-insert crash in the SPI apply worker
+
+* Fix multi-insert doing insert of last tuple multiple times in apply worker
+
+* Make sure debug_query_string is always set  
+  Newer versions of PostgreSQL require that debug_query_string is always set.
