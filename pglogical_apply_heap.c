@@ -541,8 +541,6 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 #endif
 
-	PushActiveSnapshot(GetTransactionSnapshot());
-
 	/* Search for existing tuple with same key */
 	found = pglogical_tuple_find_replidx(aestate->resultRelInfo, oldtup, localslot,
 										 &replident_idx_id);
@@ -729,8 +727,6 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	localslot = ExecInitExtraTupleSlot(aestate->estate);
 	ExecSetSlotDescriptor(localslot, RelationGetDescr(rel->rel));
 #endif
-
-	PushActiveSnapshot(GetTransactionSnapshot());
 
 	if (pglogical_tuple_find_replidx(aestate->resultRelInfo, oldtup, localslot,
 									 &replident_idx_id))
