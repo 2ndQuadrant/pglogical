@@ -257,8 +257,6 @@ init_apply_exec_state(PGLogicalRelation *rel)
 {
 	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
 
-	PushActiveSnapshot(GetTransactionSnapshot());
-
 	/* Initialize the executor state. */
 	aestate->estate = create_estate_for_relation(rel->rel, true);
 
@@ -303,8 +301,6 @@ finish_apply_exec_state(ApplyExecState *aestate)
 	/* Free the memory. */
 	FreeExecutorState(aestate->estate);
 	pfree(aestate);
-
-	PopActiveSnapshot();
 }
 
 /*

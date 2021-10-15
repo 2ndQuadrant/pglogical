@@ -222,6 +222,40 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 SELECT * FROM public.not_nullcheck_tbl;
 
 \c :provider_dsn
+
+SELECT pglogical.replicate_ddl_command($$
+CREATE FUNCTION public.some_prime_numbers() RETURNS SETOF integer
+	LANGUAGE sql IMMUTABLE STRICT LEAKPROOF
+	AS $_$
+  VALUES (2), (3), (5), (7), (11), (13), (17), (19), (23), (29), (31), (37), (41), (43), (47), (53), (59), (61), (67), (71), (73), (79), (83), (89), (97)
+$_$;
+
+CREATE FUNCTION public.is_prime_lt_100(integer) RETURNS boolean
+    LANGUAGE sql IMMUTABLE STRICT LEAKPROOF
+	AS $_$
+  SELECT EXISTS (SELECT FROM public.some_prime_numbers() s(p) WHERE p = $1)
+$_$;
+
+CREATE DOMAIN public.prime AS integer
+CONSTRAINT prime_check CHECK(public.is_prime_lt_100(VALUE));
+
+CREATE TABLE public.prime_tbl (
+	num public.prime NOT NULL,
+	PRIMARY KEY(num)
+);
+
+INSERT INTO public.prime_tbl (num) VALUES(17), (31), (79);
+$$);
+
+SELECT * FROM pglogical.replication_set_add_table('default', 'public.prime_tbl');
+
+DELETE FROM public.prime_tbl WHERE num = 31;
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+
+\c :subscriber_dsn
+SELECT num FROM public.prime_tbl;
+
+\c :provider_dsn
 \set VERBOSITY terse
 SELECT pglogical.replicate_ddl_command($$
 	DROP TABLE public.funct CASCADE;
@@ -232,4 +266,8 @@ SELECT pglogical.replicate_ddl_command($$
 	DROP FUNCTION public.add(integer, integer);
 	DROP TABLE public.nullcheck_tbl CASCADE;
 	DROP TABLE public.not_nullcheck_tbl CASCADE;
+	DROP TABLE public.prime_tbl CASCADE;
+	DROP DOMAIN public.prime;
+	DROP FUNCTION public.is_prime_lt_100(integer);
+	DROP FUNCTION public.some_prime_numbers();
 $$);
