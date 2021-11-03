@@ -132,6 +132,8 @@ typedef FormData_pglogical_depend *Form_pglogical_depend;
 #define Anum_pglogical_depend_refobjsubid	6
 #define Anum_pglogical_depend_deptype		7
 
+Oid	pglogical_depend_oid = InvalidOid;	/* cache pglogical.depend OID */
+
 static Oid
 get_pglogical_depend_rel_oid(void);
 
@@ -2071,12 +2073,10 @@ doDeletion(const ObjectAddress *object)
 static Oid
 get_pglogical_depend_rel_oid(void)
 {
-	static Oid	dependrelationoid = InvalidOid;
+	if (pglogical_depend_oid == InvalidOid)
+		pglogical_depend_oid = get_pglogical_table_oid(CATALOG_REPSET_RELATION);
 
-	if (dependrelationoid == InvalidOid)
-		dependrelationoid = get_pglogical_table_oid(CATALOG_REPSET_RELATION);
-
-	return dependrelationoid;
+	return pglogical_depend_oid;
 }
 
 

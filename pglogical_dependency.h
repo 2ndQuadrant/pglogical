@@ -13,6 +13,8 @@
 #ifndef PGLOGICAL_DEPENDENCY_H
 #define PGLOGICAL_DEPENDENCY_H
 
+extern Oid	pglogical_depend_oid;
+
 extern void pglogical_recordDependencyOn(const ObjectAddress *depender,
 				   const ObjectAddress *referenced,
 				   DependencyType behavior);

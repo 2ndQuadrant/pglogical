@@ -293,7 +293,12 @@ pglogical_object_access(ObjectAccessType access,
 		if (classId == ExtensionRelationId &&
 			objectId == get_extension_oid(EXTENSION_NAME, true) &&
 			objectId != InvalidOid /* Should not happen but check anyway */)
+		{
 			dropping_pglogical_obj = true;
+
+			/* reset pglogical.depend OID cache */
+			pglogical_depend_oid = InvalidOid;
+		}
 
 		/* Dropping relation within pglogical? */
 		if (classId == RelationRelationId)
