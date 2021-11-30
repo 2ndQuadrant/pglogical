@@ -952,9 +952,22 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.1
+
+Version 2.4.1 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Fix "snapshot still active" warnings and snapshot handling with
+  domains.  Problems introduced in version 2.4.0.
+
+* Flush error state when having failed to drop remote replication slot
+
+### pglogical 2.4.0
+
 Version 2.4.0 is a maintenance release of pglogical 2.
 
-### Changes
+#### Changes
 
 * Add preliminary support for PostgreSQL 14 (beta)
 
