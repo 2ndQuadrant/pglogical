@@ -868,6 +868,23 @@ support for foreign keys in PostgreSQL).
 `TRUNCATE ... RESTART IDENTITY` is not supported. The identity restart step is
 not replicated to the replica.
 
+### GRANT USAGE ON SCHEMA pglogical TO <db_owner>
+
+The `pglogical` schema must have `usage` permission for roles that own databases 
+in order for the role to perform destructive DDL operations (DROP, TRUNCATE, etc.).  
+
+The grant is required for the owners of _all databases on the server_, not 
+just those for which `pglogical` is being used.  
+
+The grant is not required for superuser roles (e.g. `postgres`, or
+`root` on AWS RDS/Aurora).  
+
+For example, if a role `some_app_role` owned the database `some_app_db`:
+
+```sql
+GRANT USAGE ON SCHEMA pglogical TO some_app_role;
+```
+
 ### Sequences
 
 The state of sequences added to replication sets is replicated periodically
