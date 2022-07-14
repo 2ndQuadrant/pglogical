@@ -200,9 +200,6 @@ pglogical_manager_main(Datum main_arg)
 	/* Setup shmem. */
 	pglogical_worker_attach(slot, PGLOGICAL_WORKER_MANAGER);
 
-	/* Establish signal handlers. */
-	pqsignal(SIGTERM, handle_sigterm);
-
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical manager");
 
 	StartTransactionCommand();
