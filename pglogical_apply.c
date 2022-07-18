@@ -1887,9 +1887,6 @@ pglogical_apply_main(Datum main_arg)
 	Assert(MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_APPLY);
 	MyApplyWorker = &MyPGLogicalWorker->worker.apply;
 
-	/* Establish signal handlers. */
-	pqsignal(SIGTERM, handle_sigterm);
-
 	/* Attach to dsm segment. */
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical apply");

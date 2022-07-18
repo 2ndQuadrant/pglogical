@@ -1192,9 +1192,6 @@ pglogical_sync_main(Datum main_arg)
 	MySyncWorker = &MyPGLogicalWorker->worker.sync;
 	MyApplyWorker = &MySyncWorker->apply;
 
-	/* Establish signal handlers. */
-	pqsignal(SIGTERM, handle_sigterm);
-
 	/* Attach to dsm segment. */
 	Assert(CurrentResourceOwner == NULL);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pglogical sync");
