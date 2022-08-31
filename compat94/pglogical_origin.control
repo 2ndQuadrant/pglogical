@@ -1,6 +1,0 @@
-# pglogical_origin extension
-comment = 'PostgreSQL Logical Replication Origin Tracking Emulation for 9.4'
-default_version = '1.0.0'
-module_pathname = '$libdir/pglogical'
-relocatable = false
-schema = pglogical_origin

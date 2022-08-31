@@ -11,9 +11,7 @@ reused from the earlier Slony technology:
 * Replication Set - a collection of tables
 
 pglogical is utilising the latest in-core features, so we have these version restrictions:
-* Provider & subscriber nodes must run PostgreSQL 9.4+
-* PostgreSQL 9.5+ is required for replication origin filtering and conflict detection
-* Additionally, subscriber can be Postgres-XL 9.5+
+* Provider & subscriber nodes must run PostgreSQL 9.6+
 
 Use cases supported are:
 * Upgrades between major versions (given the above restrictions)
@@ -35,7 +33,7 @@ Architectural details:
 
 ## Requirements
 
-To use pglogical the provider and subscriber must be running PostgreSQL 9.4 or newer.
+To use pglogical the provider and subscriber must be running PostgreSQL 9.6 or newer.
 
 The `pglogical` extension must be installed on both provider and subscriber.
 You must `CREATE EXTENSION pglogical` on both.
@@ -73,8 +71,6 @@ If you don’t have PostgreSQL already:
 
  - Install the appropriate PGDG repo rpm from http://yum.postgresql.org/repopackages.php
  - Install PostgreSQL
-    - PostgreSQL 9.4: `yum install postgresql94-server postgresql94-contrib`
-    - PostgreSQL 9.5: `yum install postgresql95-server postgresql95-contrib`
     - PostgreSQL 9.6: `yum install postgresql96-server postgresql96-contrib`
     - PostgreSQL 10: `yum install postgresql10-server postgresql10-contrib`
     - PostgreSQL 11: `yum install postgresql11-server postgresql11-contrib`
@@ -85,8 +81,6 @@ If you don’t have PostgreSQL already:
 Then install the “2ndQuadrant’s General Public” repository for your PostgreSQL
 version, by running the following instructions as root on the destination Linux server:
 
- - PostgreSQL 9.4: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/9.4/rpm | bash`
- - PostgreSQL 9.5: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/9.5/rpm | bash`
  - PostgreSQL 9.6: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/9.6/rpm | bash`
  - PostgreSQL 10: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/10/rpm | bash`
  - PostgreSQL 11: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/11/rpm | bash`
@@ -98,8 +92,6 @@ version, by running the following instructions as root on the destination Linux 
 
 Once the repository is installed, you can proceed to pglogical for your PostgreSQL version:
 
- - PostgreSQL 9.4: `yum install postgresql94-pglogical`
- - PostgreSQL 9.5: `yum install postgresql95-pglogical`
  - PostgreSQL 9.6: `yum install postgresql96-pglogical`
  - PostgreSQL 10: `yum install postgresql10-pglogical`
  - PostgreSQL 11: `yum install postgresql11-pglogical`
@@ -130,8 +122,6 @@ following instructions as root on the destination Linux server: `curl https://te
 
 Once pre-requisites are complete, installing pglogical is simply a matter of executing the following for your version of PostgreSQL:
 
- - PostgreSQL 9.4: `sudo apt-get install postgresql-9.4-pglogical`
- - PostgreSQL 9.5: `sudo apt-get install postgresql-9.5-pglogical`
  - PostgreSQL 9.6: `sudo apt-get install postgresql-9.6-pglogical`
  - PostgreSQL 10: `sudo apt-get install postgresql-10-pglogical`
  - PostgreSQL 11: `sudo apt-get install postgresql-11-pglogical`
@@ -152,12 +142,12 @@ you don't have `pg_config`.
 Then run `make` to compile, and `make install` to
 install. You might need to use `sudo` for the install step.
 
-e.g. for a typical Fedora or RHEL 7 install, assuming you're using the
+e.g. for a typical Fedora or EL 8 install, assuming you're using the
 [yum.postgresql.org](http://yum.postgresql.org) packages for PostgreSQL:
 
-    sudo dnf install postgresql95-devel
-    PATH=/usr/pgsql-9.5/bin:$PATH make clean all
-    sudo PATH=/usr/pgsql-9.5/bin:$PATH make install
+    sudo dnf install postgresql96-devel
+    PATH=/usr/pgsql-9.6/bin:$PATH make clean all
+    sudo PATH=/usr/pgsql-9.6/bin:$PATH make install
 
 ## Usage
 
@@ -175,12 +165,10 @@ decoding:
     max_wal_senders = 10        # one per node needed on provider node
     shared_preload_libraries = 'pglogical'
 
-If you are using PostgreSQL 9.5+ (this won't work on 9.4) and want to handle
-conflict resolution with last/first update wins (see [Conflicts](#conflicts)),
+If you want to handle conflict resolution with last/first update wins (see [Conflicts](#conflicts)),
 you can add this additional option to postgresql.conf:
 
     track_commit_timestamp = on # needed for last/first update wins conflict resolution
-                                # property available in PostgreSQL 9.5+
 
 `pg_hba.conf` has to allow logical replication connections from
 localhost. Up until PostgreSQL 9.6, logical replication connections
@@ -191,11 +179,6 @@ by `pg_hba.conf` as regular connections to the provider database.
 Next the `pglogical` extension has to be installed on all nodes:
 
     CREATE EXTENSION pglogical;
-
-If using PostgreSQL 9.4, then the `pglogical_origin` extension
-also has to be installed on that node:
-
-    CREATE EXTENSION pglogical_origin;
 
 Now create the provider node:
 
