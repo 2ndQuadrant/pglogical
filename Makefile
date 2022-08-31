@@ -6,7 +6,7 @@ PGFILEDESC = "pglogical - logical replication"
 
 MODULES = pglogical_output
 
-DATA = pglogical--1.2.2--2.0.0.sql  pglogical--2.0.0--2.0.1.sql \
+DATA =   pglogical--2.0.0--2.0.1.sql \
 	   pglogical--2.0.0--2.1.0.sql pglogical--2.0.1--2.1.0.sql \
 	   pglogical--2.1.0--2.1.1.sql pglogical--2.1.1--2.2.0.sql \
 	   pglogical--2.2.0.sql \
