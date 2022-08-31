@@ -323,10 +323,6 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 
 	MyProcPort = (Port *) calloc(1, sizeof(Port));
 
-#if PG_VERSION_NUM < 90600
-	set_latch_on_sigusr1 = true;
-#endif
-
 	LWLockAcquire(PGLogicalCtx->lock, LW_EXCLUSIVE);
 
 	before_shmem_exit(pglogical_worker_on_exit, (Datum) 0);

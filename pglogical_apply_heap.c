@@ -138,9 +138,7 @@ UserTableUpdateOpenIndexes(ResultRelInfo *relinfo, EState *estate, TupleTableSlo
 #if PG_VERSION_NUM >= 140000
 											   , update
 #endif
-#if PG_VERSION_NUM >= 90500
 											   , false, NULL, NIL
-#endif
 											   );
 
 		/* FIXME: recheck the indexes */
@@ -329,9 +327,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 #endif
 
 	ExecOpenIndices(aestate->resultRelInfo
-#if PG_VERSION_NUM >= 90500
 					, false
-#endif
 					);
 
 	/*
@@ -659,9 +655,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 #endif
 			{
 				ExecOpenIndices(aestate->resultRelInfo
-#if PG_VERSION_NUM >= 90500
 								, false
-#endif
 							   );
 				recheckIndexes = UserTableUpdateOpenIndexes(aestate->resultRelInfo,
 															aestate->estate,
@@ -809,9 +803,7 @@ pglogical_apply_heap_mi_start(PGLogicalRelation *rel)
 	resultRelInfo = aestate->resultRelInfo;
 
 	ExecOpenIndices(resultRelInfo
-#if PG_VERSION_NUM >= 90500
 					, false
-#endif
 					);
 
 	/* Check if table has any volatile default expressions. */
@@ -920,12 +912,10 @@ pglogical_apply_heap_mi_flush(void)
 									  &(pglmistate->buffered_tuples[i]->t_self),
 #endif
 									  pglmistate->aestate->estate
-#if PG_VERSION_NUM >= 90500
 #if PG_VERSION_NUM >= 140000
 									  , false
 #endif
 									  , false, NULL, NIL
-#endif
 									 );
 			ExecARInsertTriggers(pglmistate->aestate->estate, resultRelInfo,
 								 pglmistate->buffered_tuples[i],

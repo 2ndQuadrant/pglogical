@@ -1788,9 +1788,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	(void) set_config_option("search_path", "",
 							 PGC_USERSET, PGC_S_SESSION,
 							 GUC_ACTION_SAVE, true, 0
-#if PG_VERSION_NUM >= 90500
 							 , false
-#endif
 							 );
 
 	/* Convert the query to json string. */
@@ -1808,12 +1806,7 @@ pglogical_replicate_ddl_command(PG_FUNCTION_ARGS)
 	in_pglogical_replicate_ddl_command = true;
 	PG_TRY();
 	{
-		pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId()
-	#if PG_VERSION_NUM >= 90500
-															   , false
-	#endif
-															   ),
-									  false);
+		pglogical_execute_sql_command(query, GetUserNameFromId(GetUserId(), false), false);
 	}
 	PG_CATCH();
 	{

@@ -679,10 +679,8 @@ pglogical_supervisor_main(Datum main_arg)
 	/* Setup connection to pinned catalogs (we only ever read pg_database). */
 #if PG_VERSION_NUM >= 110000
 	BackgroundWorkerInitializeConnection(NULL, NULL, 0);
-#elif PG_VERSION_NUM >= 90500
-	BackgroundWorkerInitializeConnection(NULL, NULL);
 #else
-	BackgroundWorkerInitializeConnection("postgres", NULL);
+	BackgroundWorkerInitializeConnection(NULL, NULL);
 #endif
 
 	/* Main wait loop. */

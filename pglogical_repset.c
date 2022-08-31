@@ -247,19 +247,7 @@ repset_relcache_init(void)
 	ctl.entrysize = sizeof(PGLogicalTableRepInfo);
 	ctl.hcxt = CacheMemoryContext;
 	hashflags = HASH_ELEM | HASH_CONTEXT;
-#if PG_VERSION_NUM < 90500
-	/*
-	 * Handle the old hash API in PostgreSQL 9.4.
-	 *
-	 * See postgres commit:
-	 *
-	 * 4a14f13a0ab Improve hash_create's API for selecting simple-binary-key hash functions.
-	 */
-	ctl.hash = oid_hash;
-	hashflags |= HASH_FUNCTION;
-#else
 	hashflags |= HASH_BLOBS;
-#endif
 
 	RepSetTableHash = hash_create("pglogical repset table cache",
                                       REPSETTABLEHASH_INITIAL_SIZE, &ctl,

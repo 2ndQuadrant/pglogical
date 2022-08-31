@@ -471,11 +471,7 @@ main(int argc, char **argv)
 	}
 	appendPQExpBuffer(recoveryconfcontents, "recovery_target_name = '%s'\n", restore_point_name);
 	appendPQExpBuffer(recoveryconfcontents, "recovery_target_inclusive = true\n");
-#if PG_VERSION_NUM >= 90500
 	appendPQExpBuffer(recoveryconfcontents, "recovery_target_action = promote\n");
-#else
-	appendPQExpBuffer(recoveryconfcontents, "pause_at_recovery_target = false\n");
-#endif
 	WriteRecoveryConf(recoveryconfcontents);
 
 	free(restore_point_name);

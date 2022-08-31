@@ -252,20 +252,7 @@ pglogical_relcache_init(void)
 	ctl.entrysize = sizeof(PGLogicalRelation);
 	ctl.hcxt = CacheMemoryContext;
 	hashflags = HASH_ELEM | HASH_CONTEXT;
-#if PG_VERSION_NUM < 90500
-	/*
-	 * Handle the old hash API in PostgreSQL 9.4.
-	 * Note, this assumes that Oid is uint32 which is the case for 9.4 anyway.
-	 *
-	 * See postgres commit:
-	 *
-	 * 4a14f13a0ab Improve hash_create's API for selecting simple-binary-key hash functions.
-	 */
-	ctl.hash = oid_hash;
-	hashflags |= HASH_FUNCTION;
-#else
 	hashflags |= HASH_BLOBS;
-#endif
 
 	PGLogicalRelationHash = hash_create("pglogical relation cache",
                                             PGLOGICALRELATIONHASH_INITIAL_SIZE,

@@ -356,15 +356,6 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			data->allow_binary_basetypes = true;
 		}
 
-		/*
-		 * 9.4 lacks origins info so don't forward it.
-		 *
-		 * There's currently no knob for clients to use to suppress
-		 * this info and it's sent if it's supported and available.
-		 */
-		if (PG_VERSION_NUM/100 == 904)
-			data->forward_changeset_origins = false;
-		else
 			data->forward_changeset_origins = true;
 
 		if (started_tx)
@@ -761,7 +752,6 @@ pg_decode_origin_filter(LogicalDecodingContext *ctx,
 
 	return ret;
 }
-#endif
 
 static void
 send_startup_message(LogicalDecodingContext *ctx,
@@ -870,12 +860,7 @@ relmetacache_init(MemoryContext decoding_context)
 		ctl.entrysize = sizeof(struct PGLRelMetaCacheEntry);
 		ctl.hcxt = RelMetaCacheContext;
 
-#if PG_VERSION_NUM >= 90500
 		hash_flags |= HASH_BLOBS;
-#else
-		ctl.hash = tag_hash;
-		hash_flags |= HASH_FUNCTION;
-#endif
 
 		old_ctxt = MemoryContextSwitchTo(RelMetaCacheContext);
 		RelMetaCache = hash_create("pglogical relation metadata cache",
