@@ -71,11 +71,7 @@
 
 #define CATALOG_LOCAL_SYNC_STATUS	"local_sync_status"
 
-#if PG_VERSION_NUM < 90500
-#define PGDUMP_BINARY "pglogical_dump"
-#else
 #define PGDUMP_BINARY "pg_dump"
-#endif
 #define PGRESTORE_BINARY "pg_restore"
 
 #define Natts_local_sync_state	6
@@ -918,9 +914,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 			PG_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
 									CStringGetDatum(tmpfile));
 			{
-#if PG_VERSION_NUM >= 90500
 				Relation replorigin_rel;
-#endif
 
 				StartTransactionCommand();
 
@@ -928,14 +922,10 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 				elog(DEBUG3, "advancing origin with oid %u for forwarded row to %X/%X during subscription sync",
 					originid,
 					(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
-#if PG_VERSION_NUM >= 90500
 				replorigin_rel = table_open(ReplicationOriginRelationId, RowExclusiveLock);
-#endif
 				replorigin_advance(originid, lsn, XactLastCommitEnd, true,
 								   true);
-#if PG_VERSION_NUM >= 90500
 				table_close(replorigin_rel, RowExclusiveLock);
-#endif
 
 				CommitTransactionCommand();
 
@@ -1099,9 +1089,7 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table,
 	PG_ENSURE_ERROR_CLEANUP(pglogical_sync_worker_cleanup_error_cb,
 							PointerGetDatum(sub));
 	{
-#if PG_VERSION_NUM >= 90500
 		Relation replorigin_rel;
-#endif
 
 		StartTransactionCommand();
 		originid = ensure_replication_origin(sub->slot_name);
@@ -1109,14 +1097,10 @@ pglogical_sync_table(PGLogicalSubscription *sub, RangeVar *table,
 			MySubscription->slot_name, originid,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 
-#if PG_VERSION_NUM >= 90500
 		replorigin_rel = table_open(ReplicationOriginRelationId, RowExclusiveLock);
-#endif
 		replorigin_advance(originid, *status_lsn, XactLastCommitEnd, true,
 						   true);
-#if PG_VERSION_NUM >= 90500
 		table_close(replorigin_rel, RowExclusiveLock);
-#endif
 
 		set_table_sync_status(sub->id, table->schemaname, table->relname,
 							  SYNC_STATUS_DATA, *status_lsn);

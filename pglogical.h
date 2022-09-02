@@ -26,8 +26,8 @@
 
 #include "pglogical_compat.h"
 
-#define PGLOGICAL_VERSION "2.4.1"
-#define PGLOGICAL_VERSION_NUM 20401
+#define PGLOGICAL_VERSION "2.5.0"
+#define PGLOGICAL_VERSION_NUM 20500
 
 #define PGLOGICAL_MIN_PROTO_VERSION_NUM 1
 #define PGLOGICAL_MAX_PROTO_VERSION_NUM 1
@@ -36,9 +36,7 @@
 
 #define REPLICATION_ORIGIN_ALL "all"
 
-#if PG_VERSION_NUM >= 90500
 #define HAVE_REPLICATION_ORIGINS
-#endif
 
 extern bool pglogical_synchronous_commit;
 extern char *pglogical_temp_directory;

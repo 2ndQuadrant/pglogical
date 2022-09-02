@@ -82,11 +82,7 @@ queue_message(List *replication_sets, Oid roleoid, char message_type,
 	const char *role;
 	TimestampTz ts = GetCurrentTimestamp();
 
-	role =  GetUserNameFromId(roleoid
-#if PG_VERSION_NUM >= 90500
-							  , false
-#endif
-							 );
+	role =  GetUserNameFromId(roleoid, false);
 
 	rv = makeRangeVar(EXTENSION_NAME, CATALOG_QUEUE, -1);
 	rel = table_openrv(rv, RowExclusiveLock);

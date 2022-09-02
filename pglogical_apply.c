@@ -397,21 +397,15 @@ handle_commit(StringInfo s)
 	if (remote_origin_id != InvalidRepOriginId &&
 		remote_origin_id != replorigin_session_origin)
 	{
-#if PG_VERSION_NUM >= 90500
 		Relation replorigin_rel;
-#endif
 		elog(DEBUG3, "advancing origin oid %u for forwarded row to %X/%X",
 			remote_origin_id,
 			(uint32)(XactLastCommitEnd>>32), (uint32)XactLastCommitEnd);
 
-#if PG_VERSION_NUM >= 90500
 		replorigin_rel = table_open(ReplicationOriginRelationId, RowExclusiveLock);
-#endif
 		replorigin_advance(remote_origin_id, remote_origin_lsn,
 						   XactLastCommitEnd, false, false /* XXX ? */);
-#if PG_VERSION_NUM >= 90500
 		table_close(replorigin_rel, RowExclusiveLock);
-#endif
 	}
 
 	in_remote_transaction = false;

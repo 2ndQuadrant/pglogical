@@ -6,13 +6,7 @@ PGFILEDESC = "pglogical - logical replication"
 
 MODULES = pglogical_output
 
-DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
-	   pglogical--1.0.1--1.1.0.sql \
-	   pglogical--1.1.0--1.1.1.sql pglogical--1.1.1--1.1.2.sql \
-	   pglogical--1.1.2--1.2.0.sql \
-	   pglogical--1.2.0--1.2.1.sql pglogical--1.2.1--1.2.2.sql \
-	   pglogical--1.2.2--2.0.0.sql \
-	   pglogical--2.0.0--2.0.1.sql \
+DATA =   pglogical--2.0.0--2.0.1.sql \
 	   pglogical--2.0.0--2.1.0.sql pglogical--2.0.1--2.1.0.sql \
 	   pglogical--2.1.0--2.1.1.sql pglogical--2.1.1--2.2.0.sql \
 	   pglogical--2.2.0.sql \
@@ -52,8 +46,7 @@ REGRESS = preseed infofuncs init_fail init preseed_check basic extended conflict
 		  row_filter_sampling att_list column_filter apply_delay multiple_upstreams \
 		  node_origin_cascade drop
 
-EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
-			   compat96/pglogical_compat.o compat10/pglogical_compat.o \
+EXTRA_CLEAN += compat96/pglogical_compat.o compat10/pglogical_compat.o \
 			   compat11/pglogical_compat.o compat11/pglogical_compat.bc \
 			   compat12/pglogical_compat.o compat12/pglogical_compat.bc \
 			   compat13/pglogical_compat.o compat13/pglogical_compat.bc \
@@ -79,24 +72,9 @@ SHLIB_LINK += $(libpq) $(filter -lintl, $(LIBS))
 
 OBJS += $(srcdir)/compat$(PGVER)/pglogical_compat.o
 
-ifeq ($(PGVER),94)
-DATA += compat94/pglogical_origin.control compat94/pglogical_origin--1.0.0.sql
-REGRESS = preseed infofuncs init preseed_check basic extended \
-		  toasted replication_set add_table matview primary_key \
-		  interfaces foreign_key functions copy triggers parallel \
-		  att_list column_filter apply_delay multiple_upstreams \
-		  node_origin_cascade drop
-
-REGRESS += --dbname=regression
-SCRIPTS_built += pglogical_dump/pglogical_dump
-SCRIPTS += pglogical_dump/pglogical_dump
-requires = requires=pglogical_origin
-control_path = $(abspath $(abs_top_builddir))/pglogical.control
-else
 DATA += pglogical_origin.control pglogical_origin--1.0.0.sql
 requires =
 control_path = $(abspath $(srcdir))/pglogical.control
-endif
 
 EXTRA_CLEAN += $(control_path)
 
@@ -105,20 +83,6 @@ PGXS = $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 
-ifeq ($(PGVER),94)
-regresscheck: ;
-check: ;
-
-$(srcdir)/pglogical_dump/pg_dump.c:
-	$(warning pglogical_dump empty, trying to fetch as submodule)
-	git submodule init
-	git submodule update
-
-pglogical_dump/pglogical_dump: pglogical_dump/pg_dump.c
-
-SUBDIRS += pglogical_dump
-
-else
 # We can't do a normal 'make check' because PGXS doesn't support
 # creating a temp install. We don't want to use a normal PGXS
 # 'installcheck' though, because it's a pain to set up a temp install
@@ -140,8 +104,6 @@ regresscheck:
 	    $(REGRESS)
 
 check: install regresscheck
-
-endif
 
 pglogical_create_subscriber: pglogical_create_subscriber.o pglogical_fe.o
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDFLAGS_EX) $(libpq_pgport) $(filter-out -lreadline, $(LIBS)) -o $@$(X)
