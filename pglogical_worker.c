@@ -351,13 +351,12 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 
 	LWLockRelease(PGLogicalCtx->lock);
 
-	/* Make it easy to identify our processes. */
-	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
-					PGC_USERSET, PGC_S_SESSION);
+	/* Establish signal handlers. */
+	BackgroundWorkerUnblockSignals();
 
 	/* Make it easy to identify our processes. */
 	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
-					PGC_USERSET, PGC_S_SESSION);
+					PGC_BACKEND, PGC_S_OVERRIDE);
 
 	/* Connect to database if needed. */
 	if (MyPGLogicalWorker->dboid != InvalidOid)
@@ -704,7 +703,12 @@ pglogical_worker_shmem_init(void)
 {
 	int			nworkers;
 
+#if PG_VERSION_NUM >= 150000
+	if (prev_shmem_request_hook)
+		prev_shmem_request_hook();
+#else
 	Assert(process_shared_preload_libraries_in_progress);
+#endif
 
 	/*
 	 * This is cludge for Windows (Postgres des not define the GUC variable

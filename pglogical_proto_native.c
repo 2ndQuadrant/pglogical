@@ -174,7 +174,11 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 
 	/* fixed fields */
 	pq_sendint64(out, txn->final_lsn);
+#if PG_VERSION_NUM >= 150000
+	pq_sendint64(out, txn->xact_time.commit_time);
+#else
 	pq_sendint64(out, txn->commit_time);
+#endif
 	pq_sendint(out, txn->xid, 4);
 }
 
@@ -195,7 +199,11 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	/* send fixed fields */
 	pq_sendint64(out, commit_lsn);
 	pq_sendint64(out, txn->end_lsn);
+#if PG_VERSION_NUM >= 150000
+	pq_sendint64(out, txn->xact_time.commit_time);
+#else
 	pq_sendint64(out, txn->commit_time);
+#endif
 }
 
 /*

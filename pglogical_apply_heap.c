@@ -55,7 +55,6 @@
 #include "tcop/utility.h"
 
 #include "utils/builtins.h"
-#include "utils/int8.h"
 #include "utils/jsonb.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"

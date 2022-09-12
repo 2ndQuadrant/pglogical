@@ -598,6 +598,7 @@ findDependentObjects(const ObjectAddress *object,
 				systable_endscan(scan);
 				return;
 
+#if PG_VERSION_NUM < 150000
 			case DEPENDENCY_PIN:
 
 				/*
@@ -607,6 +608,7 @@ findDependentObjects(const ObjectAddress *object,
 				elog(ERROR, "incorrect use of PIN dependency with %s",
 					 pglogical_getObjectDescription(object));
 				break;
+#endif
 			default:
 				elog(ERROR, "unrecognized dependency type '%c' for %s",
 					 foundDep->deptype, pglogical_getObjectDescription(object));
@@ -696,6 +698,7 @@ findDependentObjects(const ObjectAddress *object,
 			case DEPENDENCY_EXTENSION:
 				subflags = DEPFLAG_EXTENSION;
 				break;
+#if PG_VERSION_NUM < 150000
 			case DEPENDENCY_PIN:
 
 				/*
@@ -708,6 +711,7 @@ findDependentObjects(const ObjectAddress *object,
 								pglogical_getObjectDescription(object))));
 				subflags = 0;	/* keep compiler quiet */
 				break;
+#endif
 			default:
 				elog(ERROR, "unrecognized dependency type '%c' for %s",
 					 foundDep->deptype, pglogical_getObjectDescription(object));

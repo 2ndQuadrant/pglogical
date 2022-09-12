@@ -17,7 +17,6 @@
 #include "nodes/makefuncs.h"
 #include "replication/reorderbuffer.h"
 #include "utils/builtins.h"
-#include "utils/int8.h"
 
 #include "miscadmin.h"
 
@@ -413,9 +412,11 @@ parse_param_bool(DefElem *elem)
 static uint32
 parse_param_uint32(DefElem *elem)
 {
-	int64		res;
+	long long int	res;
 
-	if (!scanint8(strVal(elem->arg), true, &res))
+	errno = 0;
+	res = strtoll(strVal(elem->arg), NULL, 10);
+	if (errno != 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("could not parse integer value \"%s\" for parameter \"%s\"",
@@ -433,9 +434,11 @@ parse_param_uint32(DefElem *elem)
 static int32
 parse_param_int32(DefElem *elem)
 {
-	int64		res;
+	long long int	res;
 
-	if (!scanint8(strVal(elem->arg), true, &res))
+	errno = 0;
+	res = strtoll(strVal(elem->arg), NULL, 10);
+	if (errno != 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("could not parse integer value \"%s\" for parameter \"%s\"",

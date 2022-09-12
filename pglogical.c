@@ -94,6 +94,10 @@ bool	pglogical_use_spi = false;
 bool	pglogical_batch_inserts = true;
 static char *pglogical_temp_directory_config;
 
+#if PG_VERSION_NUM >= 150000
+shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
+
 void _PG_init(void);
 void pglogical_supervisor_main(Datum main_arg);
 char *pglogical_extra_connection_options;
@@ -670,7 +674,7 @@ pglogical_supervisor_main(Datum main_arg)
 
 	/* Make it easy to identify our processes. */
 	SetConfigOption("application_name", MyBgworkerEntry->bgw_name,
-					PGC_USERSET, PGC_S_SESSION);
+					PGC_BACKEND, PGC_S_OVERRIDE);
 
 	elog(LOG, "starting pglogical supervisor");
 
@@ -850,7 +854,12 @@ _PG_init(void)
 		return;
 
 	/* Init workers. */
+#if PG_VERSION_NUM >= 150000
+	prev_shmem_request_hook = shmem_request_hook;
+	shmem_request_hook = pglogical_worker_shmem_init;
+#else
 	pglogical_worker_shmem_init();
+#endif
 
 	/* Init executor module */
 	pglogical_executor_init();

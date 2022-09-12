@@ -1623,7 +1623,6 @@ copy_file(char *fromfile, char *tofile, bool append)
 	int			srcfd;
 	int			dstfd;
 	int			nbytes;
-	off_t		offset;
 
 #define COPY_BUF_SIZE (8 * BLCKSZ)
 
@@ -1644,7 +1643,7 @@ copy_file(char *fromfile, char *tofile, bool append)
 	/*
 	 * Do the data copying.
 	 */
-	for (offset = 0;; offset += nbytes)
+	for (;;)
 	{
 		nbytes = read(srcfd, buffer, COPY_BUF_SIZE);
 		if (nbytes < 0)

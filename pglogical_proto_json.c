@@ -68,9 +68,15 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 		appendStringInfo(out, ", \"origin_lsn\":\"%X/%X\"",
 			(uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
 #endif
+#if PG_VERSION_NUM >= 150000
+		if (txn->xact_time.commit_time != 0)
+		appendStringInfo(out, ", \"commit_time\":\"%s\"",
+			timestamptz_to_str(txn->xact_time.commit_time));
+#else
 		if (txn->commit_time != 0)
 		appendStringInfo(out, ", \"commit_time\":\"%s\"",
 			timestamptz_to_str(txn->commit_time));
+#endif
 	}
 	appendStringInfoChar(out, '}');
 }

@@ -55,7 +55,6 @@
 #include "tcop/utility.h"
 
 #include "utils/builtins.h"
-#include "utils/int8.h"
 #include "utils/jsonb.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -474,8 +473,13 @@ handle_commit(StringInfo s)
 
 	process_syncing_tables(end_lsn);
 
+#if PG_VERSION_NUM < 150000
 	/*
 	 * Ensure any pending signals/self-notifies are sent out.
+	 *
+	 * (This is no longer needed in PG15 and also a no-op in later
+	 * minor versions of PG13 and PG14.  In those versions,
+	 * notifications are sent at transaction commit.)
 	 *
 	 * Note that there is a possibility that this will result in an ERROR,
 	 * which will result in the apply worker being killed and restarted. As
@@ -484,6 +488,7 @@ handle_commit(StringInfo s)
 	 * down - but not stop - replication.
 	 */
 	ProcessCompletedNotifies();
+#endif
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
@@ -1033,7 +1038,7 @@ handle_sequence(QueuedMessage *queued_message)
 
 	nspoid = get_namespace_oid(nspname, false);
 	reloid = get_relname_relid(relname, nspoid);
-	scanint8(last_value_raw, false, &last_value);
+	last_value = strtoll(last_value_raw, NULL, 10);
 
 	DirectFunctionCall2(setval_oid, ObjectIdGetDatum(reloid),
 						Int64GetDatum(last_value));
