@@ -14,10 +14,11 @@
  *
  *-------------------------------------------------------------------------
  */
+#include "postgres.h"
+
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <unistd.h>
-
-#include "postgres.h"
 
 #include "access/htup_details.h"
 #include "access/sysattr.h"
