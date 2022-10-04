@@ -210,7 +210,7 @@ CREATE TABLE pglogical.queue (
     message json NOT NULL
 );
 
-CREATE FUNCTION pglogical.replicate_ddl_command(command text, replication_sets text[] DEFAULT '{ddl_sql}')
+CREATE FUNCTION pglogical.replicate_ddl_command(command text, replication_sets text[] DEFAULT '{ddl_sql}', execute_locally boolean DEFAULT true)
 RETURNS boolean STRICT VOLATILE LANGUAGE c AS 'MODULE_PATHNAME', 'pglogical_replicate_ddl_command';
 
 CREATE OR REPLACE FUNCTION pglogical.queue_truncate()
