@@ -81,6 +81,7 @@ If you don’t have PostgreSQL already:
     - PostgreSQL 12: `yum install postgresql12-server postgresql12-contrib`
     - PostgreSQL 13: `yum install postgresql13-server postgresql13-contrib`
     - PostgreSQL 14: `yum install postgresql14-server postgresql14-contrib`
+    - PostgreSQL 15: `yum install postgresql15-server postgresql15-contrib`
 
 Then install the “2ndQuadrant’s General Public” repository for your PostgreSQL
 version, by running the following instructions as root on the destination Linux server:
@@ -93,6 +94,7 @@ version, by running the following instructions as root on the destination Linux 
  - PostgreSQL 12: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/12/rpm | bash`
  - PostgreSQL 13: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/13/rpm | bash`
  - PostgreSQL 14: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/14/rpm | bash`
+ - PostgreSQL 15: `curl https://techsupport.enterprisedb.com/api/repository/dl/default/release/15/rpm | bash`
 
 ##### Installation
 
@@ -106,6 +108,7 @@ Once the repository is installed, you can proceed to pglogical for your PostgreS
  - PostgreSQL 12: `yum install postgresql12-pglogical`
  - PostgreSQL 13: `yum install postgresql13-pglogical`
  - PostgreSQL 14: `yum install postgresql14-pglogical`
+ - PostgreSQL 15: `yum install postgresql15-pglogical`
 
 You may be prompted to accept the repository GPG key for package signing:
 
@@ -138,6 +141,7 @@ Once pre-requisites are complete, installing pglogical is simply a matter of exe
  - PostgreSQL 12: `sudo apt-get install postgresql-12-pglogical`
  - PostgreSQL 13: `sudo apt-get install postgresql-13-pglogical`
  - PostgreSQL 14: `sudo apt-get install postgresql-14-pglogical`
+ - PostgreSQL 15: `sudo apt-get install postgresql-15-pglogical`
 
 ### From source code
 
@@ -951,6 +955,14 @@ pglogical license is The PostgreSQL License
 pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
+
+### pglogical 2.4.2
+
+Version 2.4.2 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Add support for PostgreSQL 15.
 
 ### pglogical 2.4.1
 
