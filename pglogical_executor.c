@@ -173,6 +173,8 @@ pglogical_finish_truncate(void)
 		nspname = get_namespace_name(get_rel_namespace(reloid));
 		relname = get_rel_name(reloid);
 
+		elog(DEBUG3, "truncating the table %s.%s", nspname, relname);
+
 		/* It's easier to construct json manually than via Jsonb API... */
 		initStringInfo(&json);
 		appendStringInfo(&json, "{\"schema_name\": ");
@@ -192,6 +194,8 @@ pglogical_finish_truncate(void)
 			{
 				PGLogicalRepSet	    *repset = (PGLogicalRepSet *) lfirst(rlc);
 				repset_names = lappend(repset_names, pstrdup(repset->name));
+				elog(DEBUG1, "truncating the table %s.%s for %s repset",
+					 nspname, relname, repset->name);
 			}
 
 			/* Queue the truncate for replication. */
