@@ -694,6 +694,8 @@ pglogical_supervisor_main(Datum main_arg)
     {
 		int rc;
 
+		CHECK_FOR_INTERRUPTS();
+
 		if (PGLogicalCtx->subscriptions_changed)
 		{
 			/*
