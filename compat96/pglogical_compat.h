@@ -33,6 +33,8 @@ extern Oid CatalogTupleInsert(Relation heapRel, HeapTuple tup);
 extern void CatalogTupleUpdate(Relation heapRel, ItemPointer otid, HeapTuple tup);
 extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 
+extern struct dirent * ReadDirExtended(DIR *dir, const char *dirname, int elevel);
+
 /*
  * nowait=true is the standard behavior.  If nowait=false is called,
  * we ignore that, meaning we don't wait even if the caller asked to

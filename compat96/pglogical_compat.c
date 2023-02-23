@@ -88,3 +88,37 @@ CatalogTupleDelete(Relation heapRel, ItemPointer tid)
 {
 	simple_heap_delete(heapRel, tid);
 }
+
+/*
+ * Copied wholesale from Postgres source since it's declared static
+ * there until 10.2.
+ *
+ * Alternate version that allows caller to specify the elevel for any
+ * error report.  If elevel < ERROR, returns NULL on any error.
+ */
+struct dirent *
+ReadDirExtended(DIR *dir, const char *dirname, int elevel)
+{
+        struct dirent *dent;
+
+        /* Give a generic message for AllocateDir failure, if caller didn't */
+        if (dir == NULL)
+        {
+                ereport(elevel,
+                                (errcode_for_file_access(),
+                                 errmsg("could not open directory \"%s\": %m",
+                                                dirname)));
+                return NULL;
+        }
+
+        errno = 0;
+        if ((dent = readdir(dir)) != NULL)
+                return dent;
+
+        if (errno)
+                ereport(elevel,
+                                (errcode_for_file_access(),
+                                 errmsg("could not read directory \"%s\": %m",
+                                                dirname)));
+        return NULL;
+}
