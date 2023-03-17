@@ -88,4 +88,6 @@ replorigin_drop_by_name(char *name, bool missing_ok, bool nowait)
 		replorigin_drop(originid, nowait);
 }
 
+#define PGLreplorigin_session_setup(node) replorigin_session_setup(node)
+
 #endif

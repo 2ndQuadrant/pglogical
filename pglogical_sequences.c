@@ -116,6 +116,9 @@ synchronize_sequences(void)
 		char		   *nspname;
 		char		   *relname;
 		StringInfoData	json;
+#if PG_VERSION_NUM >= 160000
+		TU_UpdateIndexes	updateIndexes = TU_None;
+#endif
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -138,7 +141,11 @@ synchronize_sequences(void)
 									 newseq->cache_size * 2);
 
 		newseq->last_value = last_value + newseq->cache_size;
+#if PG_VERSION_NUM >= 160000
+		simple_heap_update(rel, &tuple->t_self, newtup, &updateIndexes);
+#else
 		simple_heap_update(rel, &tuple->t_self, newtup);
+#endif
 
 		repsets = get_seq_replication_sets(local_node->node->id,
 										   oldseq->seqoid);
@@ -196,6 +203,9 @@ synchronize_sequence(Oid seqoid)
 	char		   *relname;
 	StringInfoData	json;
 	PGLogicalLocalNode	   *local_node = get_local_node(true, false);
+#if PG_VERSION_NUM >= 160000
+	TU_UpdateIndexes	updateIndexes = TU_None;
+#endif
 
 	/* Check if the oid points to actual sequence. */
 	seqrel = table_open(seqoid, AccessShareLock);
@@ -231,7 +241,11 @@ synchronize_sequence(Oid seqoid)
 	last_value = sequence_get_last_value(seqoid);
 
 	newseq->last_value = last_value + newseq->cache_size;
+#if PG_VERSION_NUM >= 160000
+	simple_heap_update(rel, &tuple->t_self, newtup, &updateIndexes);
+#else
 	simple_heap_update(rel, &tuple->t_self, newtup);
+#endif
 
 	repsets = get_seq_replication_sets(local_node->node->id, seqoid);
 	repset_names = NIL;

@@ -86,7 +86,7 @@
 #define Anum_sync_status		5
 #define Anum_sync_statuslsn		6
 
-void pglogical_sync_main(Datum main_arg);
+void PGDLLEXPORT pglogical_sync_main(Datum main_arg);
 
 static PGLogicalSyncWorker	   *MySyncWorker = NULL;
 
@@ -1262,7 +1262,7 @@ pglogical_sync_main(Datum main_arg)
 	originid = replorigin_by_name(MySubscription->slot_name, false);
 	elog(DEBUG2, "setting origin %s (oid %u) for subscription sync",
 		MySubscription->slot_name, originid);
-	replorigin_session_setup(originid);
+	PGLreplorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	Assert(status_lsn == replorigin_session_get_progress(false));
 

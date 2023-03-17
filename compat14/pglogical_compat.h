@@ -93,4 +93,6 @@
 /* 2a10fdc4307a667883f7a3369cb93a721ade9680 */
 #define getObjectDescription(object) getObjectDescription(object, false)
 
+#define PGLreplorigin_session_setup(node) replorigin_session_setup(node)
+
 #endif
