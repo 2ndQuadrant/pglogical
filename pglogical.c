@@ -99,7 +99,7 @@ shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
 
 void _PG_init(void);
-void pglogical_supervisor_main(Datum main_arg);
+void PGDLLEXPORT pglogical_supervisor_main(Datum main_arg);
 char *pglogical_extra_connection_options;
 
 static PGconn * pglogical_connect_base(const char *connstr,

@@ -75,7 +75,7 @@
 #include "pglogical.h"
 
 
-void pglogical_apply_main(Datum main_arg);
+void PGDLLEXPORT pglogical_apply_main(Datum main_arg);
 
 static bool			in_remote_transaction = false;
 static XLogRecPtr	remote_origin_lsn = InvalidXLogRecPtr;
@@ -1971,7 +1971,7 @@ pglogical_apply_main(Datum main_arg)
 	originid = replorigin_by_name(MySubscription->slot_name, false);
 	elog(DEBUG2, "setting up replication origin %s (oid %u)",
 		MySubscription->slot_name, originid);
-	replorigin_session_setup(originid);
+	PGLreplorigin_session_setup(originid);
 	replorigin_session_origin = originid;
 	origin_startpos = replorigin_session_get_progress(false);
 

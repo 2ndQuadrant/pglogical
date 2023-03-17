@@ -36,7 +36,7 @@
 #define MAX_SLEEP 180000L
 #define MIN_SLEEP 5000L
 
-void pglogical_manager_main(Datum main_arg);
+void PGDLLEXPORT pglogical_manager_main(Datum main_arg);
 
 /*
  * Manage the apply workers - start new ones, kill old ones.

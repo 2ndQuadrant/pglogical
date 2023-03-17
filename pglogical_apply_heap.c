@@ -406,7 +406,9 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 
 		if (apply)
 		{
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 160000
+			TU_UpdateIndexes update_indexes;
+#elif PG_VERSION_NUM >= 120000
 			bool update_indexes;
 #endif
 
@@ -633,7 +635,9 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 
 		if (apply)
 		{
-#if PG_VERSION_NUM >= 120000
+#if PG_VERSION_NUM >= 160000
+			TU_UpdateIndexes update_indexes;
+#elif PG_VERSION_NUM >= 120000
 			bool update_indexes;
 #endif
 

@@ -33,7 +33,7 @@
  * handles the stock Pg11 change.
  */ 
 #define ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple) \
- 	ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, NULL)
+	ExecBRDeleteTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, NULL, NULL, NULL)
 
 #undef ExecEvalExpr
 #define ExecEvalExpr(expr, econtext, isNull, isDone) \
@@ -54,7 +54,7 @@
 	ExecARDeleteTriggers(estate, relinfo, tupleid, fdw_trigtuple, NULL, false)
 
 #define ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot) \
-	ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot, NULL)
+	ExecBRUpdateTriggers(estate, epqstate, relinfo, tupleid, fdw_trigtuple, slot, NULL, NULL)
 
 #define makeDefElem(name, arg) makeDefElem(name, arg, -1)
 
@@ -99,6 +99,15 @@
 /* e997a0c642860a96df0151cbeccfecbdf0450d08 */
 #define GetFlushRecPtr() GetFlushRecPtr(NULL)
 
-#define PGLreplorigin_session_setup(node) replorigin_session_setup(node)
+/* 216a784829c2c5f03ab0c43e009126cbb819e9b2 */
+#define PGLreplorigin_session_setup(node) replorigin_session_setup(node, 0)
+
+/* 19d8e2308bc51ec4ab993ce90077342c915dd116 */
+#define ExecInsertIndexTuples(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes) \
+	ExecInsertIndexTuples(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes, false)
+
+/* 70b42f2790292cc30aa07563f343f7ba6749af01 */
+#define EvalPlanQualInit(epqstate, parentestate, subplan, auxrowmarks, epqParam) \
+	EvalPlanQualInit(epqstate, parentestate, subplan, auxrowmarks, epqParam, NIL)
 
 #endif
