@@ -50,7 +50,7 @@ be the same or weaker (more permissive) on the subscriber than the provider.
 Tables must have the same `PRIMARY KEY`s. It is not recommended to add additional
 `UNIQUE` constraints other than the `PRIMARY KEY` (see below).
 
-Some additional requirements are covered in "Limitations and Restrictions", below.
+Some additional requirements are covered in [Limitations and Restrictions](#limitations-and-restrictions).
 
 ## Installation
 
