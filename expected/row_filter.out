@@ -18,6 +18,15 @@ $$);
 
 -- used to check if initial copy does row filtering
 \COPY basic_dml(id, other, data, "SomeThing") FROM STDIN WITH CSV
+-- PR #387
+SELECT pglogical.replicate_ddl_command($$
+  ALTER TABLE public.basic_dml ADD COLUMN other2 text DEFAULT 'pr387';
+$$);
+ replicate_ddl_command 
+-----------------------
+ t
+(1 row)
+
 -- create some functions:
 CREATE FUNCTION funcn_add(integer, integer) RETURNS integer
     AS 'select $1 + $2;'
@@ -150,12 +159,12 @@ SELECT pglogical.wait_for_subscription_sync_complete('test_subscription');
 (1 row)
 
 COMMIT;
-SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
-  id  | other | data | SomeThing 
-------+-------+------+-----------
- 5000 |     1 | aaa  | @ 1 hour
- 5002 |     3 | ccc  | @ 3 mins
- 5003 |     4 | ddd  | @ 4 days
+SELECT id, other, data, "SomeThing", other2 FROM basic_dml ORDER BY id;
+  id  | other | data | SomeThing | other2 
+------+-------+------+-----------+--------
+ 5000 |     1 | aaa  | @ 1 hour  | pr387
+ 5002 |     3 | ccc  | @ 3 mins  | pr387
+ 5003 |     4 | ddd  | @ 4 days  | pr387
 (3 rows)
 
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
