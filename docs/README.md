@@ -956,6 +956,20 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.3
+
+Version 2.4.3 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Apply data filtering on the correct tuple during initial synchronization.
+
+* Restore the correct memory context while decoding a change.
+
+* Drop database never completes in PostgreSQL 15.
+
+* Don't replicate TRUNCATE as global message.
+
 ### pglogical 2.4.2
 
 Version 2.4.2 is a maintenance release of pglogical 2.
