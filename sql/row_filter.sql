@@ -21,6 +21,11 @@ $$);
 5003,4,ddd,4 days
 \.
 
+-- PR #387
+SELECT pglogical.replicate_ddl_command($$
+  ALTER TABLE public.basic_dml ADD COLUMN other2 text DEFAULT 'pr387';
+$$);
+
 -- create some functions:
 CREATE FUNCTION funcn_add(integer, integer) RETURNS integer
     AS 'select $1 + $2;'
@@ -78,7 +83,7 @@ SET LOCAL statement_timeout = '10s';
 SELECT pglogical.wait_for_subscription_sync_complete('test_subscription');
 COMMIT;
 
-SELECT id, other, data, "SomeThing" FROM basic_dml ORDER BY id;
+SELECT id, other, data, "SomeThing", other2 FROM basic_dml ORDER BY id;
 
 ALTER TABLE public.basic_dml ADD COLUMN subonly integer;
 ALTER TABLE public.basic_dml ADD COLUMN subonly_def integer DEFAULT 99;

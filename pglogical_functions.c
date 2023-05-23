@@ -2066,6 +2066,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	TupleDesc	reltupdesc;
 	TableScanDesc scandesc;
 	HeapTuple	htup;
+	HeapTuple   new_htup;
 	List	   *row_filter_list = NIL;
 	EState		   *estate;
 	ExprContext	   *econtext;
@@ -2074,6 +2075,8 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	PGLogicalTableRepInfo *tableinfo;
 	MemoryContext per_query_ctx;
 	MemoryContext oldcontext;
+	Datum *values;
+	bool *nulls;
 
 	node = get_local_node(false, false);
 
@@ -2163,14 +2166,32 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 
 	/* Scan the table. */
 	scandesc = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+	nulls  = (bool *) palloc(reltupdesc->natts * sizeof(bool));
+	values = (Datum *) palloc(reltupdesc->natts * sizeof(Datum));
 
 	while (HeapTupleIsValid(htup = heap_getnext(scandesc, ForwardScanDirection)))
 	{
-		if (!filter_tuple(htup, econtext, row_filter_list))
+		/*
+		 * Create a new version of our current HeapTuple. We can't just
+		 * reuse the current one since it might be possible that not
+		 * every current attribute is correctly filled (e.g when atthasmissing
+		 * is true). This will lead to wrong tuple values and faulty
+		 * filter results. Thus make sure everything is correctly
+		 * deformed by creating a new copy.
+		 */
+		heap_deform_tuple(htup, reltupdesc, values, nulls);
+		new_htup = heap_form_tuple(reltupdesc, values, nulls);
+
+		Assert(new_htup != NULL);
+
+		if (!filter_tuple(new_htup, econtext, row_filter_list))
 			continue;
 
-		tuplestore_puttuple(tupstore, htup);
+		tuplestore_puttuple(tupstore, new_htup);
 	}
+
+	pfree(values);
+	pfree(nulls);
 
 	/* Cleanup. */
 	ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
