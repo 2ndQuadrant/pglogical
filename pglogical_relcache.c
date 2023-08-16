@@ -81,7 +81,6 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 	if (!OidIsValid(entry->reloid))
 	{
 		RangeVar   *rv = makeNode(RangeVar);
-		int			i;
 		TupleDesc	desc;
 
 		rv->schemaname = (char *) entry->nspname;
@@ -89,7 +88,7 @@ pglogical_relation_open(uint32 remoteid, LOCKMODE lockmode)
 		entry->rel = table_openrv(rv, lockmode);
 
 		desc = RelationGetDescr(entry->rel);
-		for (i = 0; i < entry->natts; i++)
+		for (int i = 0; i < entry->natts; i++)
 			entry->attmap[i] = tupdesc_get_att_by_name(desc, entry->attnames[i]);
 
 		entry->reloid = RelationGetRelid(entry->rel);
