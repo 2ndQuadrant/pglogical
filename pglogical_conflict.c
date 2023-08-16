@@ -341,10 +341,10 @@ pglogical_tuple_find_conflict(ResultRelInfo *relinfo, PGLogicalTupleData *tuple,
 	replidxoid = RelationGetReplicaIndex(relinfo->ri_RelationDesc);
 	if (OidIsValid(replidxoid))
 	{
-		ScanKeyData	index_key[INDEX_MAX_KEYS];
+		ScanKeyData	index_key1[INDEX_MAX_KEYS];
 		Relation	idxrel = index_open(replidxoid, RowExclusiveLock);
-		build_index_scan_key(index_key, relinfo->ri_RelationDesc, idxrel, tuple);
-		found = find_index_tuple(index_key, relinfo->ri_RelationDesc, idxrel,
+		build_index_scan_key(index_key1, relinfo->ri_RelationDesc, idxrel, tuple);
+		found = find_index_tuple(index_key1, relinfo->ri_RelationDesc, idxrel,
 							 LockTupleExclusive, outslot);
 		index_close(idxrel, NoLock);
 		if (found)

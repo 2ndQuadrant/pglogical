@@ -572,7 +572,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	{
 		StringInfoData	relname;
 		StringInfoData	repsetarr;
-		ListCell   *lc;
+		ListCell   *lc1;
 
 		initStringInfo(&relname);
 		appendStringInfo(&relname, "%s.%s",
@@ -583,9 +583,9 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 
 		initStringInfo(&repsetarr);
 		first = true;
-		foreach (lc, replication_sets)
+		foreach (lc1, replication_sets)
 		{
-			char	   *repset_name = lfirst(lc);
+			char	   *repset_name = lfirst(lc1);
 
 			if (first)
 				first = false;

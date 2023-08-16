@@ -228,15 +228,15 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 			case PARAM_PGLOGICAL_FORWARD_ORIGINS:
 				{
 					List		   *forward_origin_names;
-					ListCell	   *lc;
+					ListCell	   *lc1;
 					val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_STRING);
 
 					if (!SplitIdentifierString(DatumGetCString(val), ',', &forward_origin_names))
 						elog(ERROR, "Could not parse forward origin name list %s", DatumGetCString(val));
 
-					foreach (lc, forward_origin_names)
+					foreach (lc1, forward_origin_names)
 					{
-						char	   *origin_name = (char *) lfirst(lc);
+						char	   *origin_name = (char *) lfirst(lc1);
 
 						if (strcmp(origin_name, REPLICATION_ORIGIN_ALL) != 0)
 							elog(ERROR, "Only \"%s\" is allowed in forward origin name list at the moment, found \"%s\"",
