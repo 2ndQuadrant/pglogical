@@ -119,7 +119,12 @@ $node_b->safe_psql($dbname,
 			"SELECT * FROM pglogical.replication_set_add_table('set_b', 'b2c', false);");
 
 $node_c->safe_psql($dbname, q[create table a2b( x int primary key)]);
-$node_c->safe_psql($dbname, q[create table b2c( x int primary key)]);
+$node_c->safe_psql($dbname, q[create table b2c( x int)]);
+# Add an INVALID index, then add the real PRIMARY KEY.
+$node_c->safe_psql($dbname, q[insert into b2c values (1),(1)]);
+$node_c->psql($dbname, q[create unique index concurrently on b2c(x)]);
+$node_c->safe_psql($dbname, q[delete from b2c]);
+$node_c->safe_psql($dbname, q[alter table b2c add primary key (x)]);
 
 #insert some rows in the a2b table to check that it actually worked
 $node_a->safe_psql($dbname, q[INSERT INTO a2b VALUES (1)]);

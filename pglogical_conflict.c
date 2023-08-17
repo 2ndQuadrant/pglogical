@@ -397,6 +397,18 @@ pglogical_tuple_find_conflict(ResultRelInfo *relinfo, PGLogicalTupleData *tuple,
 		if (RelationGetRelid(idxrel) == replidxoid)
 			continue;
 
+		/*
+		 * If this index may not be complete enough to exhibit
+		 * uniqueness and drive correct query results, move on to other
+		 * indexes.  If no index meets all qualifications and this one
+		 * is ii_ReadyForInserts, one could argue for using this one
+		 * instead of using no index.  We don't offer that.  (The
+		 * server's infer_arbiter_indexes(), which performs a similar
+		 * role, also requires indisvalid.)
+		 */
+		if (!idxrel->rd_index->indisvalid)
+			continue;
+
 		if (build_index_scan_key(index_key, relinfo->ri_RelationDesc,
 								 idxrel, tuple))
 			continue;
