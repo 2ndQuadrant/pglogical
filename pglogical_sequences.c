@@ -138,7 +138,7 @@ synchronize_sequences(void)
 									 newseq->cache_size * 2);
 
 		newseq->last_value = last_value + newseq->cache_size;
-		simple_heap_update(rel, &tuple->t_self, newtup);
+		CatalogTupleUpdate(rel, &tuple->t_self, newtup);
 
 		repsets = get_seq_replication_sets(local_node->node->id,
 										   oldseq->seqoid);
@@ -231,7 +231,7 @@ synchronize_sequence(Oid seqoid)
 	last_value = sequence_get_last_value(seqoid);
 
 	newseq->last_value = last_value + newseq->cache_size;
-	simple_heap_update(rel, &tuple->t_self, newtup);
+	CatalogTupleUpdate(rel, &tuple->t_self, newtup);
 
 	repsets = get_seq_replication_sets(local_node->node->id, seqoid);
 	repset_names = NIL;
