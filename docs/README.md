@@ -956,6 +956,14 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.4
+
+Version 2.4.4 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Add support for PostgreSQL 16.
+
 ### pglogical 2.4.3
 
 Version 2.4.3 is a maintenance release of pglogical 2.
