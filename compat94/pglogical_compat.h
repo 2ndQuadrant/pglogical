@@ -188,4 +188,6 @@ extern void CatalogTupleDelete(Relation heapRel, ItemPointer tid);
 #define pg_plan_queries(querytrees, query_string, cursorOptions, boundParams) \
 	pg_plan_queries(querytrees, cursorOptions, boundParams)
 
+#define PGLreplorigin_session_setup(node) replorigin_session_setup(node)
+
 #endif
