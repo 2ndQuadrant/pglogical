@@ -21,8 +21,6 @@
 #include <sys/wait.h>
 #endif
 
-#include "libpq-fe.h"
-
 #include "miscadmin.h"
 
 #include "access/genam.h"
@@ -649,6 +647,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				 errdetail("Query '%s': %s", query.data,
 					 PQerrorMessage(origin_conn))));
 	}
+	PQclear(res);
 
 	while ((bytes = PQgetCopyData(origin_conn, &copybuf, false)) > 0)
 	{
@@ -671,6 +670,15 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				 errdetail("source connection returned %d: %s",
 					bytes, PQerrorMessage(origin_conn))));
 	}
+	res = libpqsrv_get_result_last(origin_conn, PG_WAIT_EXTENSION);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		ereport(ERROR,
+				(errmsg("reading from origin table failed"),
+				 errdetail("Query '%s': %s", query.data,
+					 PQerrorMessage(origin_conn))));
+	}
+	PQclear(res);
 
 	/* Send local finish */
 	if (PQputCopyEnd(target_conn, NULL) != 1)
@@ -680,7 +688,14 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				 errdetail("destination connection reported: %s",
 					 PQerrorMessage(target_conn))));
 	}
-
+	res = libpqsrv_get_result_last(target_conn, PG_WAIT_EXTENSION);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		ereport(ERROR,
+				(errmsg("writing to target table failed"),
+				 errdetail("destination connection reported: %s",
+					 PQerrorMessage(target_conn))));
+	}
 	PQclear(res);
 
 	elog(INFO, "finished synchronization of data for table %s.%s",

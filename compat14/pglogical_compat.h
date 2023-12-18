@@ -6,6 +6,9 @@
 #include "access/table.h"
 #include "access/tableam.h"
 #include "utils/varlena.h"
+#include "utils/wait_event.h"
+
+#include "compat94/pglogical_libpq-be-fe-helpers.h"
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
 	WaitLatchOrSocket(latch, wakeEvents, sock, timeout, PG_WAIT_EXTENSION)
