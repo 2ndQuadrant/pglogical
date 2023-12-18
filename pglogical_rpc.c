@@ -80,7 +80,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 						 repsetarr.data);
 	}
 
-	res = PQexec(conn, query.data);
+	res = libpqsrv_exec(conn, query.data, PG_WAIT_EXTENSION);
 	/* TODO: better error message? */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		elog(ERROR, "could not get table list: %s", PQresultErrorMessage(res));
@@ -162,7 +162,7 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 						 repsetarr.data);
 	}
 
-	res = PQexec(conn, query.data);
+	res = libpqsrv_exec(conn, query.data, PG_WAIT_EXTENSION);
 	/* TODO: better error message? */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) != 1)
 		elog(ERROR, "could not get table list: %s", PQresultErrorMessage(res));
@@ -195,11 +195,12 @@ pglogical_remote_slot_active(PGconn *conn, const char *slot_name)
 
 	values[0] = slot_name;
 
-	res = PQexecParams(conn,
-					   "SELECT plugin, active "
-					   "FROM pg_catalog.pg_replication_slots "
-					   "WHERE slot_name = $1",
-					   1, types, values, NULL, NULL, 0);
+	res = libpqsrv_exec_params(conn,
+							   "SELECT plugin, active "
+							   "FROM pg_catalog.pg_replication_slots "
+							   "WHERE slot_name = $1",
+							   1, types, values, NULL, NULL, 0,
+							   PG_WAIT_EXTENSION);
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
@@ -245,11 +246,12 @@ pglogical_drop_remote_slot(PGconn *conn, const char *slot_name)
 	values[0] = slot_name;
 
 	/* Check if the slot exists */
-	res = PQexecParams(conn,
-					   "SELECT plugin "
-					   "FROM pg_catalog.pg_replication_slots "
-					   "WHERE slot_name = $1",
-					   1, types, values, NULL, NULL, 0);
+	res = libpqsrv_exec_params(conn,
+							   "SELECT plugin "
+							   "FROM pg_catalog.pg_replication_slots "
+							   "WHERE slot_name = $1",
+							   1, types, values, NULL, NULL, 0,
+							   PG_WAIT_EXTENSION);
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
@@ -277,8 +279,9 @@ pglogical_drop_remote_slot(PGconn *conn, const char *slot_name)
 
 	PQclear(res);
 
-	res = PQexecParams(conn, "SELECT pg_drop_replication_slot($1)",
-					   1, types, values, NULL, NULL, 0);
+	res = libpqsrv_exec_params(conn, "SELECT pg_drop_replication_slot($1)",
+							   1, types, values, NULL, NULL, 0,
+							   PG_WAIT_EXTENSION);
 
 	/* And finally, drop the slot. */
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -297,7 +300,8 @@ pglogical_remote_node_info(PGconn *conn, Oid *nodeid, char **node_name, char **s
 {
 	PGresult	   *res;
 
-	res = PQexec(conn, "SELECT node_id, node_name, sysid, dbname, replication_sets FROM pglogical.pglogical_node_info()");
+	res = libpqsrv_exec(conn, "SELECT node_id, node_name, sysid, dbname, replication_sets FROM pglogical.pglogical_node_info()",
+						PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		elog(ERROR, "could not fetch remote node info: %s\n", PQerrorMessage(conn));
 
@@ -351,7 +355,8 @@ pglogical_remote_function_exists(PGconn *conn, const char *nspname,
 						 "   AND %s = ANY (proargnames)",
 						 PQescapeLiteral(conn, argname, strlen(argname)));
 
-	res = PQexecParams(conn, query.data, 2, types, values, NULL, NULL, 0);
+	res = libpqsrv_exec_params(conn, query.data, 2, types, values, NULL, NULL,
+							   0, PG_WAIT_EXTENSION);
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 		elog(ERROR, "could not fetch remote function info: %s\n",

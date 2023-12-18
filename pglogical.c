@@ -431,7 +431,8 @@ pglogical_identify_system(PGconn *streamConn, uint64* sysid,
 {
 	PGresult	   *res;
 
-	res = PQexec(streamConn, "IDENTIFY_SYSTEM");
+	res = libpqsrv_exec(streamConn, "IDENTIFY_SYSTEM",
+						PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
 		elog(ERROR, "could not send replication command \"%s\": %s",
@@ -578,7 +579,7 @@ pglogical_start_replication(PGconn *streamConn, const char *slot_name,
 
 	appendStringInfoChar(&command, ')');
 
-	res = PQexec(streamConn, command.data);
+	res = libpqsrv_exec(streamConn, command.data, PG_WAIT_EXTENSION);
 	sqlstate = PQresultErrorField(res, PG_DIAG_SQLSTATE);
 	if (PQresultStatus(res) != PGRES_COPY_BOTH)
 		elog(FATAL, "could not send replication command \"%s\": %s\n, sqlstate: %s",
