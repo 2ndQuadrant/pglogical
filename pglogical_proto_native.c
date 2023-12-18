@@ -29,6 +29,7 @@
 #include "pglogical_output_plugin.h"
 #include "pglogical_output_proto.h"
 #include "pglogical_proto_native.h"
+#include "pglogical.h"
 
 #define IS_REPLICA_IDENTITY 1
 
