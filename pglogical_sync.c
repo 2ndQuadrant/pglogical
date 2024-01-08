@@ -21,8 +21,6 @@
 #include <sys/wait.h>
 #endif
 
-#include "libpq-fe.h"
-
 #include "miscadmin.h"
 
 #include "access/genam.h"
@@ -310,7 +308,7 @@ retry:
 					 use_failover_slot ? " FAILOVER" : "");
 
 
-	res = PQexec(repl_conn, query.data);
+	res = libpqsrv_exec(repl_conn, query.data, PG_WAIT_EXTENSION);
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
 	{
@@ -387,7 +385,7 @@ start_copy_origin_tx(PGconn *conn, const char *snapshot)
 		appendStringInfo(&query, "SET TRANSACTION SNAPSHOT %s;\n", s);
 	}
 
-	res = PQexec(conn, query.data);
+	res = libpqsrv_exec(conn, query.data, PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		elog(ERROR, "BEGIN on origin node failed: %s",
 				PQresultErrorMessage(res));
@@ -427,7 +425,7 @@ start_copy_target_tx(PGconn *conn, const char *origin_name)
 
 	appendStringInfoString(&query, setup_query);
 
-	res = PQexec(conn, query.data);
+	res = libpqsrv_exec(conn, query.data, PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		elog(ERROR, "BEGIN on target node failed: %s",
 				PQresultErrorMessage(res));
@@ -440,7 +438,7 @@ finish_copy_origin_tx(PGconn *conn)
 	PGresult   *res;
 
 	/* Close the  transaction and connection on origin node. */
-	res = PQexec(conn, "ROLLBACK");
+	res = libpqsrv_exec(conn, "ROLLBACK", PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		elog(WARNING, "ROLLBACK on origin node failed: %s",
 				PQresultErrorMessage(res));
@@ -454,7 +452,7 @@ finish_copy_target_tx(PGconn *conn)
 	PGresult   *res;
 
 	/* Close the transaction and connection on target node. */
-	res = PQexec(conn, "COMMIT");
+	res = libpqsrv_exec(conn, "COMMIT", PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
 		elog(ERROR, "COMMIT on target node failed: %s",
 				PQresultErrorMessage(res));
@@ -466,7 +464,8 @@ finish_copy_target_tx(PGconn *conn)
 	 */
 	if (PQserverVersion(conn) >= 90500)
 	{
-		res = PQexec(conn, "SELECT pg_catalog.pg_replication_origin_session_reset();\n");
+		res = libpqsrv_exec(conn, "SELECT pg_catalog.pg_replication_origin_session_reset();\n",
+							PG_WAIT_EXTENSION);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			elog(WARNING, "Resetting session origin on target node failed: %s",
 					PQresultErrorMessage(res));
@@ -620,7 +619,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 
 
 	/* Execute COPY TO. */
-	res = PQexec(origin_conn, query.data);
+	res = libpqsrv_exec(origin_conn, query.data, PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_COPY_OUT)
 	{
 		ereport(ERROR,
@@ -641,7 +640,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	appendStringInfoString(&query, "FROM stdin");
 
 	/* Execute COPY FROM. */
-	res = PQexec(target_conn, query.data);
+	res = libpqsrv_exec(target_conn, query.data, PG_WAIT_EXTENSION);
 	if (PQresultStatus(res) != PGRES_COPY_IN)
 	{
 		ereport(ERROR,
@@ -649,6 +648,7 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				 errdetail("Query '%s': %s", query.data,
 					 PQerrorMessage(origin_conn))));
 	}
+	PQclear(res);
 
 	while ((bytes = PQgetCopyData(origin_conn, &copybuf, false)) > 0)
 	{
@@ -671,6 +671,15 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				 errdetail("source connection returned %d: %s",
 					bytes, PQerrorMessage(origin_conn))));
 	}
+	res = libpqsrv_get_result_last(origin_conn, PG_WAIT_EXTENSION);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		ereport(ERROR,
+				(errmsg("reading from origin table failed"),
+				 errdetail("Query '%s': %s", query.data,
+					 PQerrorMessage(origin_conn))));
+	}
+	PQclear(res);
 
 	/* Send local finish */
 	if (PQputCopyEnd(target_conn, NULL) != 1)
@@ -680,7 +689,14 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 				 errdetail("destination connection reported: %s",
 					 PQerrorMessage(target_conn))));
 	}
-
+	res = libpqsrv_get_result_last(target_conn, PG_WAIT_EXTENSION);
+	if (PQresultStatus(res) != PGRES_COMMAND_OK)
+	{
+		ereport(ERROR,
+				(errmsg("writing to target table failed"),
+				 errdetail("destination connection reported: %s",
+					 PQerrorMessage(target_conn))));
+	}
 	PQclear(res);
 
 	elog(INFO, "finished synchronization of data for table %s.%s",

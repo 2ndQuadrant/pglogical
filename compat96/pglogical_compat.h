@@ -7,6 +7,9 @@
 #include "executor/executor.h"
 #include "replication/origin.h"
 
+#define PG_WAIT_EXTENSION 0
+#include "compat94/pglogical_libpq-be-fe-helpers.h"
+
 #define PGLCreateTrigger CreateTrigger
 
 #define RawStmt Node
