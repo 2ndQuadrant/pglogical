@@ -1980,6 +1980,11 @@ pglogical_show_repset_table_info(PG_FUNCTION_ARGS)
 		/* Skip dropped columns. */
 		if (att->attisdropped)
 			continue;
+#if PG_VERSION_NUM >= 120000
+		/* Skip generated columns as these are not COPY-able */
+		if (att->attgenerated)
+			continue;
+#endif
 
 		/* Skip filtered columns if any. */
 		if (tableinfo->att_list &&
