@@ -489,7 +489,11 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		/* Special case - queue table */
 		if (change->action == REORDER_BUFFER_CHANGE_INSERT)
 		{
+#if PG_VERSION_NUM >= 170000
+			HeapTuple		tup = change->data.tp.newtuple;
+#else
 			HeapTuple		tup = &change->data.tp.newtuple->tuple;
+#endif
 			QueuedMessage  *q;
 			ListCell	   *qlc;
 
@@ -537,12 +541,21 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		PGLogicalRepSet	   *replicated_set;
 		ListCell		   *plc;
 
+#if PG_VERSION_NUM >= 170000
+		if (change->action == REORDER_BUFFER_CHANGE_UPDATE)
+			 tup = change->data.tp.newtuple;
+		else if (change->action == REORDER_BUFFER_CHANGE_DELETE)
+			 tup = change->data.tp.oldtuple;
+		else
+			return false;
+#else
 		if (change->action == REORDER_BUFFER_CHANGE_UPDATE)
 			 tup = &change->data.tp.newtuple->tuple;
 		else if (change->action == REORDER_BUFFER_CHANGE_DELETE)
 			 tup = &change->data.tp.oldtuple->tuple;
 		else
 			return false;
+#endif
 
 		replicated_set = replication_set_from_tuple(tup);
 		foreach (plc, data->replication_sets)
@@ -608,10 +621,15 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		EState		   *estate;
 		ExprContext	   *econtext;
 		TupleDesc		tupdesc = RelationGetDescr(relation);
+#if PG_VERSION_NUM >= 170000
+		HeapTuple		oldtup = change->data.tp.oldtuple;
+		HeapTuple		newtup = change->data.tp.newtuple;
+#else
 		HeapTuple		oldtup = change->data.tp.oldtuple ?
 			&change->data.tp.oldtuple->tuple : NULL;
 		HeapTuple		newtup = change->data.tp.newtuple ?
 			&change->data.tp.newtuple->tuple : NULL;
+#endif
 
 		/* Skip empty changes. */
 		if (!newtup && !oldtup)
@@ -698,20 +716,36 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
 			OutputPluginPrepareWrite(ctx, true);
+#if PG_VERSION_NUM >= 170000
+			data->api->write_insert(ctx->out, data, relation,
+									change->data.tp.newtuple,
+									att_list);
+#else
 			data->api->write_insert(ctx->out, data, relation,
 									&change->data.tp.newtuple->tuple,
 									att_list);
+#endif
 			OutputPluginWrite(ctx, true);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			{
+#if PG_VERSION_NUM >= 170000
+				HeapTuple oldtuple = change->data.tp.oldtuple;
+#else
 				HeapTuple oldtuple = change->data.tp.oldtuple ?
 					&change->data.tp.oldtuple->tuple : NULL;
+#endif
 
 				OutputPluginPrepareWrite(ctx, true);
+#if PG_VERSION_NUM >= 170000
+				data->api->write_update(ctx->out, data, relation, oldtuple,
+										change->data.tp.newtuple,
+										att_list);
+#else
 				data->api->write_update(ctx->out, data, relation, oldtuple,
 										&change->data.tp.newtuple->tuple,
 										att_list);
+#endif
 				OutputPluginWrite(ctx, true);
 				break;
 			}
@@ -719,9 +753,15 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			if (change->data.tp.oldtuple)
 			{
 				OutputPluginPrepareWrite(ctx, true);
+#if PG_VERSION_NUM >= 170000
+				data->api->write_delete(ctx->out, data, relation,
+										change->data.tp.oldtuple,
+										att_list);
+#else
 				data->api->write_delete(ctx->out, data, relation,
 										&change->data.tp.oldtuple->tuple,
 										att_list);
+#endif
 				OutputPluginWrite(ctx, true);
 			}
 			else

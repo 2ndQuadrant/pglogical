@@ -305,9 +305,15 @@ ensure_replication_slot_snapshot(PGconn *sql_conn, PGconn *repl_conn,
 retry:
 	initStringInfo(&query);
 
+#if PG_VERSION_NUM >= 170000
+	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s%s",
+					 slot_name, "pglogical_output",
+					 use_failover_slot ? " (FAILOVER)" : "");
+#else
 	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s%s",
 					 slot_name, "pglogical_output",
 					 use_failover_slot ? " FAILOVER" : "");
+#endif
 
 
 	res = PQexec(repl_conn, query.data);
