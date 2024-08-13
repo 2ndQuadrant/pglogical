@@ -958,6 +958,18 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.5
+
+Version 2.4.5 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Add support for PostgreSQL 17.
+
+* Maintain indexes when updating pglogical.sequence_state.
+
+* Don't use invalid indexes for conflict resolution.
+
 ### pglogical 2.4.4
 
 Version 2.4.4 is a maintenance release of pglogical 2.
