@@ -305,15 +305,9 @@ ensure_replication_slot_snapshot(PGconn *sql_conn, PGconn *repl_conn,
 retry:
 	initStringInfo(&query);
 
-#if PG_VERSION_NUM >= 170000
-	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s%s",
-					 slot_name, "pglogical_output",
-					 use_failover_slot ? " (FAILOVER)" : "");
-#else
 	appendStringInfo(&query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL %s%s",
 					 slot_name, "pglogical_output",
 					 use_failover_slot ? " FAILOVER" : "");
-#endif
 
 
 	res = PQexec(repl_conn, query.data);
@@ -889,7 +883,7 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 		PGconn	   *origin_conn_repl;
 		RepOriginId	originid;
 		char	   *snapshot;
-		bool		use_failover_slot;
+		bool		use_failover_slot = false;
 
 		elog(INFO, "initializing subscriber %s", sub->name);
 
@@ -897,11 +891,13 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 										sub->name, "snap");
 
 		/* 2QPG9.6 and 2QPG11 support failover slots */
+#if defined(SECONDQ_VERSION_NUM) && PG_VERSION_NUM < 120000
 		use_failover_slot =
 			pglogical_remote_function_exists(origin_conn, "pg_catalog",
 											 "pg_create_logical_replication_slot",
 											 -1,
 											 "failover");
+#endif
 		origin_conn_repl = pglogical_connect_replica(sub->origin_if->dsn,
 													 sub->name, "snap");
 
