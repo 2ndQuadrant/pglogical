@@ -93,3 +93,52 @@ NOTICE:  drop cascades to table public.test_tablesample membership in replicatio
  t
 (1 row)
 
+CREATE TABLE sample_rowfilter_table(id int primary key, name text);
+\COPY sample_rowfilter_table(id, name) FROM STDIN WITH CSV
+SELECT pglogical.create_replication_set('sample_publisher_set', true, true, true, true);
+ create_replication_set 
+------------------------
+             1195464429
+(1 row)
+
+SELECT pglogical.replication_set_add_table(set_name := 'sample_publisher_set', relation := 'public.sample_rowfilter_table', row_filter := $$ id >= 1  and id <= 3 $$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.table_data_filtered(NULL::"public"."sample_rowfilter_table", '"public"."sample_rowfilter_table"'::regclass, ARRAY['sample_publisher_set']);
+ id | name 
+----+------
+  1 | John
+  2 | Jane
+  3 | Bob
+(3 rows)
+
+SELECT pglogical.replication_set_remove_table('sample_publisher_set', '"public"."sample_rowfilter_table"'::regclass);
+ replication_set_remove_table 
+------------------------------
+ t
+(1 row)
+
+SELECT pglogical.replication_set_add_table(set_name := 'sample_publisher_set', relation := 'public.sample_rowfilter_table', row_filter := $$ id >= 4  and id <= 6 $$);
+ replication_set_add_table 
+---------------------------
+ t
+(1 row)
+
+SELECT * FROM pglogical.table_data_filtered(NULL::"public"."sample_rowfilter_table", '"public"."sample_rowfilter_table"'::regclass, ARRAY['sample_publisher_set']);
+ id |  name   
+----+---------
+  4 | Alice
+  5 | Charlie
+  6 | Eve
+(3 rows)
+
+SELECT pglogical.drop_replication_set('sample_publisher_set');
+ drop_replication_set 
+----------------------
+ t
+(1 row)
+
+DROP TABLE sample_rowfilter_table;
