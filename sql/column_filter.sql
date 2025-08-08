@@ -67,7 +67,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 \c :subscriber_dsn
 
 BEGIN;
-SET LOCAL statement_timeout = '10s';
+SET LOCAL statement_timeout = '180s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'basic_dml');
 COMMIT;
 

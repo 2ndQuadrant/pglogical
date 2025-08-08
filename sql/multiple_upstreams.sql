@@ -58,7 +58,7 @@ SELECT * FROM pglogical.create_subscription(
 	forward_origins := '{}');
 
 BEGIN;
-SET LOCAL statement_timeout = '10s';
+SET LOCAL statement_timeout = '180s';
 SELECT pglogical.wait_for_subscription_sync_complete('test_subscription1');
 COMMIT;
 

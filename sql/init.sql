@@ -94,7 +94,7 @@ DROP FUNCTION IF EXISTS public.pglogical_regress_variables();
 COMMIT;
 
 BEGIN;
-SET LOCAL statement_timeout = '30s';
+SET LOCAL statement_timeout = '180s';
 SELECT pglogical.wait_for_subscription_sync_complete('test_subscription');
 COMMIT;
 

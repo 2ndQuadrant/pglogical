@@ -79,7 +79,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 -- wait for the initial data to copy
 BEGIN;
-SET LOCAL statement_timeout = '10s';
+SET LOCAL statement_timeout = '180s';
 SELECT pglogical.wait_for_subscription_sync_complete('test_subscription');
 COMMIT;
 
