@@ -210,24 +210,12 @@ repset_relcache_invalidate_callback(Datum arg, Oid reloid)
 		while ((entry = hash_seq_search(&status)) != NULL)
 		{
 			entry->isvalid = false;
-			if (entry->att_list)
-				pfree(entry->att_list);
-			entry->att_list = NULL;
-			if (list_length(entry->row_filter))
-				list_free_deep(entry->row_filter);
-			entry->row_filter = NIL;
 		}
 	}
 	else if ((entry = hash_search(RepSetTableHash, &reloid,
 								  HASH_FIND, NULL)) != NULL)
 	{
 		entry->isvalid = false;
-		if (entry->att_list)
-			pfree(entry->att_list);
-		entry->att_list = NULL;
-		if (list_length(entry->row_filter))
-			list_free_deep(entry->row_filter);
-		entry->row_filter = NIL;
 	}
 }
 
@@ -405,14 +393,20 @@ get_table_replication_info(Oid nodeid, Relation table,
 	if (found && entry->isvalid)
 		return entry;
 
-	/* Fill the entry */
-	entry->reloid = reloid;
-	entry->replicate_insert = false;
-	entry->replicate_update = false;
-	entry->replicate_delete = false;
-	entry->att_list = NULL;
-	entry->row_filter = NIL;
+	/* If an entry was found but entry is Invalid, free its att_list and row_filter fields if they are allocated */
+	if (found)
+	{
+		if (entry->att_list)
+			pfree(entry->att_list);
 
+		if (list_length(entry->row_filter))
+			list_free_deep(entry->row_filter);
+	}
+
+	/* Reset all fields in the entry structure except for reloid */
+	MemSet(((char *) entry) + sizeof(entry->reloid), 0, sizeof(PGLogicalTableRepInfo) - sizeof(Oid));
+
+	/* Fill the entry */
 	/*
 	 * Check for match between table's replication sets and the subscription
 	 * list of replication sets that was given as parameter.
