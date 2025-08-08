@@ -61,9 +61,11 @@ SELECT pglogical.create_replication_set('sample_publisher_set', true, true, true
 SELECT pglogical.replication_set_add_table(set_name := 'sample_publisher_set', relation := 'public.sample_rowfilter_table', row_filter := $$ id >= 1  and id <= 3 $$);
 SELECT * FROM pglogical.table_data_filtered(NULL::"public"."sample_rowfilter_table", '"public"."sample_rowfilter_table"'::regclass, ARRAY['sample_publisher_set']);
 
--- NOTE: For developers: try to trigger cache invalidation for the sample_rowfilter_table relation
--- while program execution is inside create_estate_for_relation() called from pglogical_table_data_filtered().
--- This helps verify whether row_filter is applied correctly even during cache invalidation.
+-- Try to trigger cache invalidation for the sample_rowfilter_table relation
+-- while program execution is inside create_estate_for_relation(), called from
+-- pglogical_table_data_filtered().  To reach that reliably, one can run the
+-- test suite under debug_discard_caches=1.  This helps verify row_filter is
+-- applied correctly even during cache invalidation.
 
 SELECT pglogical.replication_set_remove_table('sample_publisher_set', '"public"."sample_rowfilter_table"'::regclass);
 SELECT pglogical.replication_set_add_table(set_name := 'sample_publisher_set', relation := 'public.sample_rowfilter_table', row_filter := $$ id >= 4  and id <= 6 $$);

@@ -398,14 +398,14 @@ get_table_replication_info(Oid nodeid, Relation table,
 	{
 		if (entry->att_list)
 			pfree(entry->att_list);
-		
+
 		if (list_length(entry->row_filter))
 			list_free_deep(entry->row_filter);
 	}
 
 	/* Reset all fields in the entry structure except for reloid */
-    MemSet(((char *) entry) + sizeof(entry->reloid), 0, sizeof(PGLogicalTableRepInfo) - sizeof(Oid));
-	
+	MemSet(((char *) entry) + sizeof(entry->reloid), 0, sizeof(PGLogicalTableRepInfo) - sizeof(Oid));
+
 	/* Fill the entry */
 	/*
 	 * Check for match between table's replication sets and the subscription
