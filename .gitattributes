@@ -1,0 +1,2 @@
+# Follow postgresql.git for test output files
+*.out					-whitespace
