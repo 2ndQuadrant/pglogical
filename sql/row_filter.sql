@@ -366,11 +366,26 @@ BEGIN
 END;
 $$;
 
--- fails with SRF context error
+-- fails with PostgreSQL-version-specific SRF context error
 BEGIN;
 SELECT * FROM pglogical.replication_set_remove_table('default', 'basic_dml');
-SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
-	row_filter := $rf$ (func_plpgsql_srf_retq(other)).result = 500 $rf$);
+\set VERBOSITY terse
+DO $$
+DECLARE
+	want text[] := array['argument of row_filter must not return a set', -- before v10
+						 'set-returning functions are not allowed in check constraints'];
+BEGIN
+	SELECT * FROM pglogical.replication_set_add_table('default', 'basic_dml', false,
+		row_filter := $rf$ (func_plpgsql_srf_retq(other)).result = 500 $rf$);
+EXCEPTION WHEN OTHERS THEN
+	IF sqlerrm = ANY(want) THEN
+		RAISE 'one of: %', want;
+	ELSE
+		RAISE;
+	END IF;
+END
+$$;
+\set VERBOSITY default
 ROLLBACK;
 
 CREATE FUNCTION func_plpgsql_call_set(arg integer)
