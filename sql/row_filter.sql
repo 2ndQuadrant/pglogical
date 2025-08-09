@@ -70,7 +70,14 @@ SELECT nspname, relname, set_name FROM pglogical.tables WHERE relname = 'basic_d
 
 -- fail, the membership in repset depends on data column
 \set VERBOSITY terse
-ALTER TABLE basic_dml DROP COLUMN data;
+DO $$
+BEGIN
+	ALTER TABLE basic_dml DROP COLUMN data;
+EXCEPTION WHEN dependent_objects_still_exist THEN
+	-- hide PostgreSQL-version-specific sqlerrm
+	RAISE 'got dependent_objects_still_exist';
+END
+$$;
 \set VERBOSITY default
 
 SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
