@@ -119,11 +119,18 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	StringInfoData	query;
 	StringInfoData	repsetarr;
 	StringInfoData	relname;
+	char       *escaped_schemaname = NULL;
+	char       *escaped_relname = NULL;
 
 	initStringInfo(&relname);
-	appendStringInfo(&relname, "%s.%s",
-					 PQescapeIdentifier(conn, rv->schemaname, strlen(rv->schemaname)),
-					 PQescapeIdentifier(conn, rv->relname, strlen(rv->relname)));
+	
+	escaped_schemaname = PQescapeIdentifier(conn, rv->schemaname, strlen(rv->schemaname));
+	escaped_relname = PQescapeIdentifier(conn, rv->relname, strlen(rv->relname));
+	appendStringInfo(&relname, "%s.%s", escaped_schemaname, escaped_relname);
+	PQfreemem(escaped_schemaname);
+	PQfreemem(escaped_relname);
+	escaped_schemaname = NULL;
+	escaped_relname = NULL;
 
 	initStringInfo(&repsetarr);
 	foreach (lc, replication_sets)

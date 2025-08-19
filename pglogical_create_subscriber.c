@@ -949,9 +949,13 @@ install_extension(PGconn *conn, const char *extname)
 {
 	PQExpBuffer		query = createPQExpBuffer();
 	PGresult	   *res;
+	char           *escaped_extname = NULL;
 
-	printfPQExpBuffer(query, "CREATE EXTENSION IF NOT EXISTS %s;",
-					  PQescapeIdentifier(conn, extname, strlen(extname)));
+	escaped_extname = PQescapeIdentifier(conn, extname, strlen(extname));
+	printfPQExpBuffer(query, "CREATE EXTENSION IF NOT EXISTS %s;", escaped_extname);
+	PQfreemem(escaped_extname);
+	escaped_extname = NULL;
+
 	res = PQexec(conn, query->data);
 
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
