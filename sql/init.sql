@@ -61,7 +61,24 @@ END;
 $$;
 ALTER EXTENSION pglogical UPDATE;
 
-\dx pglogical
+-- v18 \dx pglogical (v18 added column "Default version")
+SELECT
+	e.extname AS "Name",
+	e.extversion AS "Version",
+	ae.default_version AS "Default version",
+	n.nspname AS "Schema",
+	d.description AS "Description"
+FROM
+	pg_catalog.pg_extension e
+	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+	LEFT JOIN pg_catalog.pg_description d ON
+		d.objoid = e.oid AND
+		d.classoid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+	LEFT JOIN pg_catalog.pg_available_extensions()
+		ae(name, default_version, comment) ON ae.name = e.extname
+WHERE
+	e.extname = 'pglogical' COLLATE pg_catalog.default
+ORDER BY 1;
 
 SELECT * FROM pglogical.create_node(node_name := 'test_provider', dsn := (SELECT provider_dsn FROM pglogical_regress_variables()) || ' user=super');
 

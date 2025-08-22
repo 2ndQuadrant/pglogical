@@ -135,7 +135,7 @@ typedef struct PGLFlushPosition
 	XLogRecPtr remote_end;
 } PGLFlushPosition;
 
-dlist_head lsn_mapping = DLIST_STATIC_INIT(lsn_mapping);
+static dlist_head lsn_mapping = DLIST_STATIC_INIT(lsn_mapping);
 
 typedef struct ApplyExecState
 {
@@ -152,7 +152,7 @@ struct ActionErrCallbackArg
 	bool is_ddl_or_drop;
 };
 
-struct ActionErrCallbackArg errcallback_arg;
+static struct ActionErrCallbackArg errcallback_arg;
 static TransactionId remote_xid;
 
 static void multi_insert_finish(void);
