@@ -90,6 +90,7 @@ If you don’t have PostgreSQL already:
     - PostgreSQL 15: `yum install postgresql15-server postgresql15-contrib`
     - PostgreSQL 16: `yum install postgresql16-server postgresql16-contrib`
     - PostgreSQL 17: `yum install postgresql17-server postgresql17-contrib`
+    - PostgreSQL 18: `yum install postgresql18-server postgresql18-contrib`
 
 ##### Installation
 
@@ -105,6 +106,7 @@ You can proceed to install pglogical for your PostgreSQL version:
  - PostgreSQL 15: `yum install pglogical_15`
  - PostgreSQL 16: `yum install pglogical_16`
  - PostgreSQL 17: `yum install pglogical_17`
+ - PostgreSQL 18: `yum install pglogical_18`
 
 #### Installing pglogical with APT
 
@@ -125,6 +127,7 @@ Debian (e.g. Ubuntu).
     - PostgreSQL 15: `sudo apt-get install postgresql-15`
     - PostgreSQL 16: `sudo apt-get install postgresql-16`
     - PostgreSQL 17: `sudo apt-get install postgresql-17`
+    - PostgreSQL 18: `sudo apt-get install postgresql-18`
 
 ##### Installation
 
@@ -140,6 +143,7 @@ Once pre-requisites are complete, installing pglogical is simply a matter of exe
  - PostgreSQL 15: `sudo apt-get install postgresql-15-pglogical`
  - PostgreSQL 16: `sudo apt-get install postgresql-16-pglogical`
  - PostgreSQL 17: `sudo apt-get install postgresql-17-pglogical`
+ - PostgreSQL 18: `sudo apt-get install postgresql-18-pglogical`
 
 ### From source code
 
