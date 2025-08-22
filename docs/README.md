@@ -962,6 +962,18 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.6
+
+Version 2.4.6 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Add support for PostgreSQL 18.
+
+* Fix additional deadlock during DROP DATABASE.
+
+* Fix incorrect row_filter processing after cache invalidation.
+
 ### pglogical 2.4.5
 
 Version 2.4.5 is a maintenance release of pglogical 2.
