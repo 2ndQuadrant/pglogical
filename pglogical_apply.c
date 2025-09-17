@@ -1382,6 +1382,40 @@ apply_work(PGconn *streamConn)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
+		/* Periodic completion check for sync workers to handle race conditions */
+		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC)
+		{
+			static TimestampTz last_completion_check = 0;
+			TimestampTz now = GetCurrentTimestamp();
+			
+			/* Check every 5 seconds for completion */
+			if (TimestampDifferenceExceeds(last_completion_check, now, 5000))
+			{
+				XLogRecPtr current_lsn = replorigin_session_get_progress(false);
+				
+				/* Check if we've reached our target */
+				if (current_lsn >= MyApplyWorker->replay_stop_lsn)
+				{
+					elog(LOG, "sync worker detected completion during periodic check, current LSN %X/%X >= target LSN %X/%X",
+						 (uint32)(current_lsn >> 32), (uint32)current_lsn,
+						 (uint32)(MyApplyWorker->replay_stop_lsn >> 32), 
+						 (uint32)MyApplyWorker->replay_stop_lsn);
+					
+					StartTransactionCommand();
+					set_table_sync_status(MyApplyWorker->subid,
+										  NameStr(MyPGLogicalWorker->worker.sync.nspname),
+										  NameStr(MyPGLogicalWorker->worker.sync.relname),
+										  SYNC_STATUS_SYNCDONE, current_lsn);
+					CommitTransactionCommand();
+					
+					/* Exit apply_work() to trigger cleanup */
+					return;
+				}
+				
+				last_completion_check = now;
+			}
+		}			
+
 		if (rc & WL_SOCKET_READABLE)
 			PQconsumeInput(applyconn);
 
