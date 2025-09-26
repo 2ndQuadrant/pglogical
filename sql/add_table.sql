@@ -57,7 +57,7 @@ SELECT * FROM pglogical.replication_set_add_table('default', '"strange.schema-IS
 
 
 \c :subscriber_dsn
-SET statement_timeout = '180s';
+SET statement_timeout = '60s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', '"strange.schema-IS".test_strangeschema');
 RESET statement_timeout;
@@ -97,7 +97,7 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
 SELECT * FROM pglogical.alter_subscription_synchronize('test_subscription');
 
 BEGIN;
-SET statement_timeout = '180s';
+SET statement_timeout = '60s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_nosync');
 COMMIT;
 
@@ -111,16 +111,16 @@ SELECT * FROM public.test_publicschema;
 SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', 'test_publicschema');
 
 BEGIN;
-SET statement_timeout = '180s';
+SET statement_timeout = '60s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
 COMMIT;
 
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 SELECT * FROM public.test_publicschema;
 
 \x
-SELECT nspname, relname, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+SELECT nspname, relname, status, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 \x
 
 BEGIN;
@@ -254,7 +254,7 @@ INSERT INTO synctest VALUES (2, '2');
 SELECT * FROM pglogical.alter_subscription_resynchronize_table('test_subscription', 'synctest');
 
 BEGIN;
-SET statement_timeout = '180s';
+SET statement_timeout = '60s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'synctest');
 COMMIT;
 
