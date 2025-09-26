@@ -1361,7 +1361,7 @@ apply_work(PGconn *streamConn)
 		int			rc;
 		int			r;
 
-                CHECK_FOR_INTERRUPTS();
+		CHECK_FOR_INTERRUPTS();
 
 		/*
 		 * Background workers mustn't call usleep() or any direct equivalent:
@@ -1382,7 +1382,6 @@ apply_work(PGconn *streamConn)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		/* KRISHNA */
 		/* Periodic completion check for sync workers to handle race conditions */
 		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC &&
 			MyApplyWorker->replay_stop_lsn != InvalidXLogRecPtr)
@@ -1436,7 +1435,6 @@ apply_work(PGconn *streamConn)
 				last_completion_check = now;
 			}
 		}
-		/* KRISHNA */
 
 		if (rc & WL_SOCKET_READABLE)
 			PQconsumeInput(applyconn);
