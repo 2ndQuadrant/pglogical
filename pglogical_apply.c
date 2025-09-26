@@ -1361,7 +1361,7 @@ apply_work(PGconn *streamConn)
 		int			rc;
 		int			r;
 
-		CHECK_FOR_INTERRUPTS();
+                CHECK_FOR_INTERRUPTS();
 
 		/*
 		 * Background workers mustn't call usleep() or any direct equivalent:
