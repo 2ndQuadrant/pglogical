@@ -1386,54 +1386,36 @@ apply_work(PGconn *streamConn)
 		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC &&
 			MyApplyWorker->replay_stop_lsn != InvalidXLogRecPtr)
 		{
-			static TimestampTz last_completion_check = 0;
 			static XLogRecPtr last_processed_lsn = InvalidXLogRecPtr;
-			TimestampTz now = GetCurrentTimestamp();
 			
-			/* Track the highest LSN we've processed */
 			if (last_received != InvalidXLogRecPtr && last_received > last_processed_lsn)
 				last_processed_lsn = last_received;
 			
-			/* Check every 5 seconds for completion */
-			if (TimestampDifferenceExceeds(last_completion_check, now, 5000))
-			{
-				elog(LOG, "sync worker periodic check: target LSN %X/%X, last_processed %X/%X",
+			elog(DEBUG1, "sync worker periodic check: target LSN %X/%X, last_processed %X/%X",
 					 (uint32)(MyApplyWorker->replay_stop_lsn >> 32), 
 					 (uint32)MyApplyWorker->replay_stop_lsn,
 					 (uint32)(last_processed_lsn >> 32), (uint32)last_processed_lsn);
 				
-				/* 
-				 * Check if we've reached our target using the same logic as handle_commit().
-				 * Use the tracked last_processed_lsn which represents the highest end_lsn
-				 * we've seen from processed messages.
-				 */
-				if (last_processed_lsn != InvalidXLogRecPtr && 
-					MyApplyWorker->replay_stop_lsn <= last_processed_lsn)
-				{
-					elog(LOG, "sync worker detected completion during periodic check, processed LSN %X/%X >= target LSN %X/%X",
-						 (uint32)(last_processed_lsn >> 32), (uint32)last_processed_lsn,
-						 (uint32)(MyApplyWorker->replay_stop_lsn >> 32), 
-						 (uint32)MyApplyWorker->replay_stop_lsn);
+			if (last_processed_lsn != InvalidXLogRecPtr && 
+				MyApplyWorker->replay_stop_lsn <= last_processed_lsn)
+			{
+				elog(LOG, "sync worker detected completion during periodic check, processed LSN %X/%X >= target LSN %X/%X",
+					 (uint32)(last_processed_lsn >> 32), (uint32)last_processed_lsn,
+					 (uint32)(MyApplyWorker->replay_stop_lsn >> 32), 
+					 (uint32)MyApplyWorker->replay_stop_lsn);
 					
-					StartTransactionCommand();
-					set_table_sync_status(MyApplyWorker->subid,
-										  NameStr(MyPGLogicalWorker->worker.sync.nspname),
-										  NameStr(MyPGLogicalWorker->worker.sync.relname),
-										  SYNC_STATUS_SYNCDONE, last_processed_lsn);
-					CommitTransactionCommand();
-					
-					/* Disconnect before calling pglogical_sync_worker_finish() */
-					PQfinish(applyconn);
-					
-					/* Finish the sync worker properly */
-					pglogical_sync_worker_finish();
-					
-					/* Exit gracefully with code 0 */
-					proc_exit(0);					
-				}
-				
-				last_completion_check = now;
+				StartTransactionCommand();
+				set_table_sync_status(MyApplyWorker->subid,
+						  NameStr(MyPGLogicalWorker->worker.sync.nspname),
+						  NameStr(MyPGLogicalWorker->worker.sync.relname),
+						  SYNC_STATUS_SYNCDONE, last_processed_lsn);
+				CommitTransactionCommand();
+				XLogFlush(GetXLogWriteRecPtr());	
+				PQfinish(applyconn);
+				pglogical_sync_worker_finish();
+				proc_exit(0);					
 			}
+				
 		}
 
 		if (rc & WL_SOCKET_READABLE)
