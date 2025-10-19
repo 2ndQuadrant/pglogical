@@ -1382,40 +1382,42 @@ apply_work(PGconn *streamConn)
 		if (rc & WL_POSTMASTER_DEATH)
 			proc_exit(1);
 
-		/* Periodic completion check for sync workers to handle race conditions */
+		/*
+		* Completion check for tablesync workers:
+		* If we've already applied up to replay_stop_lsn, mark SYNC_STATUS_SYNCDONE
+		* and exit, without waiting for a new commit record from the publisher.
+		*/
 		if (MyPGLogicalWorker->worker_type == PGLOGICAL_WORKER_SYNC &&
 			MyApplyWorker->replay_stop_lsn != InvalidXLogRecPtr)
 		{
 			static XLogRecPtr last_processed_lsn = InvalidXLogRecPtr;
-			
+
 			if (last_received != InvalidXLogRecPtr && last_received > last_processed_lsn)
 				last_processed_lsn = last_received;
-			
-			elog(DEBUG1, "sync worker periodic check: target LSN %X/%X, last_processed %X/%X",
-					 (uint32)(MyApplyWorker->replay_stop_lsn >> 32), 
+
+			elog(DEBUG1, "sync worker check: target LSN %X/%X, last_processed %X/%X",
+					 (uint32)(MyApplyWorker->replay_stop_lsn >> 32),
 					 (uint32)MyApplyWorker->replay_stop_lsn,
 					 (uint32)(last_processed_lsn >> 32), (uint32)last_processed_lsn);
-				
-			if (last_processed_lsn != InvalidXLogRecPtr && 
+
+			if (last_processed_lsn != InvalidXLogRecPtr &&
 				MyApplyWorker->replay_stop_lsn <= last_processed_lsn)
 			{
-				elog(LOG, "sync worker detected completion during periodic check, processed LSN %X/%X >= target LSN %X/%X",
+				elog(DEBUG1, "sync worker completion: processed LSN %X/%X >= target LSN %X/%X",
 					 (uint32)(last_processed_lsn >> 32), (uint32)last_processed_lsn,
-					 (uint32)(MyApplyWorker->replay_stop_lsn >> 32), 
+					 (uint32)(MyApplyWorker->replay_stop_lsn >> 32),
 					 (uint32)MyApplyWorker->replay_stop_lsn);
-					
 				StartTransactionCommand();
 				set_table_sync_status(MyApplyWorker->subid,
 						  NameStr(MyPGLogicalWorker->worker.sync.nspname),
 						  NameStr(MyPGLogicalWorker->worker.sync.relname),
 						  SYNC_STATUS_SYNCDONE, last_processed_lsn);
 				CommitTransactionCommand();
-				XLogFlush(GetXLogWriteRecPtr());	
+				XLogFlush(GetXLogWriteRecPtr());
 				PQfinish(applyconn);
 				pglogical_sync_worker_finish();
-				proc_exit(0);					
+				proc_exit(0);
 			}
-				
 		}
 
 		if (rc & WL_SOCKET_READABLE)
