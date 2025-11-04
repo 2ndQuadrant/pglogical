@@ -122,14 +122,14 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	StringInfoData	query;
 	StringInfoData	repsetarr;
 	StringInfoData	relname;
-	char       *escaped_schemaname = NULL;
-	char       *escaped_relname = NULL;
-	char       *escaped_repset_name = NULL;
-	char       *escaped_relname_data = NULL;
-	
+	char	   *escaped_schemaname = NULL;
+	char	   *escaped_relname = NULL;
+	char	   *escaped_repset_name = NULL;
+	char	   *escaped_relname_data = NULL;
+
 
 	initStringInfo(&relname);
-	
+
 	escaped_schemaname = PQescapeIdentifier(conn, rv->schemaname, strlen(rv->schemaname));
 	escaped_relname = PQescapeIdentifier(conn, rv->relname, strlen(rv->relname));
 	appendStringInfo(&relname, "%s.%s", escaped_schemaname, escaped_relname);
@@ -368,7 +368,8 @@ pglogical_remote_function_exists(PGconn *conn, const char *nspname,
 	if (nargs >= 0)
 		appendStringInfo(&query,
 						 "   AND pronargs = '%d'", nargs);
-	if (argname != NULL) {
+	if (argname != NULL)
+	{
 		escaped_argname = PQescapeLiteral(conn, argname, strlen(argname));
 		appendStringInfo(&query,
 						 "   AND %s = ANY (proargnames)",

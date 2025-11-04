@@ -974,7 +974,7 @@ install_extension(PGconn *conn, const char *extname)
 {
 	PQExpBuffer		query = createPQExpBuffer();
 	PGresult	   *res;
-	char           *escaped_extname = NULL;
+	char		   *escaped_extname = NULL;
 
 	escaped_extname = PQescapeIdentifier(conn, extname, strlen(extname));
 	printfPQExpBuffer(query, "CREATE EXTENSION IF NOT EXISTS %s;", escaped_extname);
@@ -1077,14 +1077,17 @@ initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn)
 	else
 	{
 		escaped_origin_name = PQescapeLiteral(conn, origin_name, strlen(origin_name));
-		escaped_remote_lsn = PQescapeLiteral(conn, remote_lsn, strlen(remote_lsn));
+		escaped_remote_lsn = remote_lsn ? PQescapeLiteral(conn, remote_lsn, strlen(remote_lsn)) : NULL;
 		printfPQExpBuffer(query, "INSERT INTO pglogical_origin.replication_origin (roident, roname, roremote_lsn) SELECT COALESCE(MAX(roident::int), 0) + 1, %s, %s FROM pglogical_origin.replication_origin",
 						  escaped_origin_name,
 						  remote_lsn ? escaped_remote_lsn : "0");
 		PQfreemem(escaped_origin_name);
-		PQfreemem(escaped_remote_lsn);
 		escaped_origin_name = NULL;
-		escaped_remote_lsn = NULL;
+		if (escaped_remote_lsn)
+		{
+			PQfreemem(escaped_remote_lsn);
+			escaped_remote_lsn = NULL;
+		}
 
 		res = PQexec(conn, query->data);
 
