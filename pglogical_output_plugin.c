@@ -630,6 +630,7 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		HeapTuple		newtup = change->data.tp.newtuple ?
 			&change->data.tp.newtuple->tuple : NULL;
 #endif
+		bool			result;
 
 		/* Skip empty changes. */
 		if (!newtup && !oldtup)
@@ -646,6 +647,7 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 		ExecStoreHeapTuple(newtup ? newtup : oldtup, econtext->ecxt_scantuple, false);
 
 		/* Next try the row_filters if there are any. */
+		result = true;
 		foreach (lc, tblinfo->row_filter)
 		{
 			Node	   *row_filter = (Node *) lfirst(lc);
@@ -656,17 +658,19 @@ pglogical_change_filter(PGLogicalOutputData *data, Relation relation,
 			res = ExecEvalExpr(exprstate, econtext, &isnull, NULL);
 
 			/* NULL is same as false for our use. */
-			if (isnull)
-				return false;
-
-			if (!DatumGetBool(res))
-				return false;
+			if (isnull || !DatumGetBool(res))
+			{
+				result = false;
+				break;
+			}
 		}
 
 		ExecDropSingleTupleTableSlot(econtext->ecxt_scantuple);
 		FreeExecutorState(estate);
 
 		PopActiveSnapshot();
+		if (!result)
+			return false;
 	}
 
 	/* Make sure caller is aware of any attribute filter. */
