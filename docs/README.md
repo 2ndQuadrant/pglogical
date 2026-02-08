@@ -1,4 +1,4 @@
-# pglogical 2
+womboartcompany@gmail.com# pglogical 2
 
 The pglogical 2 extension provides logical streaming replication for PostgreSQL,
 using a publish/subscribe model. It is based on technology developed as part
