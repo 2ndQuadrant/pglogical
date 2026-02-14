@@ -263,13 +263,13 @@ SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publics
 (1 row)
 
 COMMIT;
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
- sync_kind | sync_subid |   sync_nspname    |    sync_relname    | ?column? 
------------+------------+-------------------+--------------------+----------
- d         | 3848008564 | public            | test_nosync        | t
- d         | 3848008564 | public            | test_publicschema  | t
- d         | 3848008564 | strange.schema-IS | test_strangeschema | t
- f         | 3848008564 |                   |                    | t
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+ sync_kind | sync_subid |   sync_nspname    |    sync_relname    | sync_status | ?column? 
+-----------+------------+-------------------+--------------------+-------------+----------
+ d         | 3848008564 | public            | test_nosync        | r           | t
+ d         | 3848008564 | public            | test_publicschema  | r           | t
+ d         | 3848008564 | strange.schema-IS | test_strangeschema | r           | t
+ f         | 3848008564 |                   |                    | r           | t
 (4 rows)
 
 SELECT * FROM public.test_publicschema;
@@ -282,10 +282,11 @@ SELECT * FROM public.test_publicschema;
 (4 rows)
 
 \x
-SELECT nspname, relname, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+SELECT nspname, relname, status, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 -[ RECORD 1 ]---------------
 nspname  | public
 relname  | test_publicschema
+status   | replicating
 ?column? | t
 
 \x

@@ -115,12 +115,12 @@ SET statement_timeout = '180s';
 SELECT pglogical.wait_for_table_sync_complete('test_subscription', 'test_publicschema');
 COMMIT;
 
-SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
+SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status, sync_status IN ('y', 'r') FROM pglogical.local_sync_status ORDER BY 2,3,4;
 
 SELECT * FROM public.test_publicschema;
 
 \x
-SELECT nspname, relname, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
+SELECT nspname, relname, status, status IN ('synchronized', 'replicating') FROM pglogical.show_subscription_table('test_subscription', 'test_publicschema');
 \x
 
 BEGIN;
