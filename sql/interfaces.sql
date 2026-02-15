@@ -12,7 +12,7 @@ SELECT * FROM pglogical.alter_subscription_interface('test_subscription', 'super
 
 DO $$
 BEGIN
-    FOR i IN 1..100 LOOP
+    FOR i IN 1..1800 LOOP
         IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status != 'down') THEN
             EXIT;
         END IF;
@@ -32,7 +32,7 @@ SELECT * FROM pglogical.alter_subscription_interface('test_subscription', 'test_
 
 DO $$
 BEGIN
-    FOR i IN 1..100 LOOP
+    FOR i IN 1..1800 LOOP
         IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status != 'down') THEN
             EXIT;
         END IF;

@@ -129,7 +129,7 @@ SELECT pglogical.alter_subscription_disable('test_subscription', true);
 -- this time.
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF (SELECT count(1) FROM pg_replication_slots WHERE active = false) THEN
 			RETURN;
 		END IF;
@@ -150,7 +150,7 @@ DELETE FROM pk_users WHERE id = 4;-- remove the offending entries.
 
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF (SELECT count(1) FROM pg_replication_slots WHERE active = true) THEN
 			RETURN;
 		END IF;

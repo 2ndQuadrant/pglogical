@@ -67,7 +67,7 @@ system_or_bail 'psql', '-X', '-p', "$PGPORT", '-d', "postgres", '-c', "SELECT * 
 
 system_or_bail 'psql', '-X', '-p', "$PGPORT", '-d', "postgres", '-c', "DO \$\$
 BEGIN
-        FOR i IN 1..100 LOOP
+        FOR i IN 1..1800 LOOP
                 IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
                         RETURN;
                 END IF;

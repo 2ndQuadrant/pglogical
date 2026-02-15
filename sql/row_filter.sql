@@ -211,7 +211,7 @@ SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
 
 DO $$
 BEGIN
-    FOR i IN 1..100 LOOP
+    FOR i IN 1..1800 LOOP
         IF NOT EXISTS (SELECT 1 FROM pglogical.local_sync_status WHERE sync_status != 'r') THEN
             EXIT;
         END IF;

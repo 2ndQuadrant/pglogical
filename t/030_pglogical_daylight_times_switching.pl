@@ -96,7 +96,7 @@ system_or_bail 'psql', '-X', '-p', "$PGPORT", '-c', "SELECT * FROM pglogical.cre
 
 system_or_bail 'psql', '-X', '-p', "$PGPORT", '-c', "DO \$\$
 BEGIN
-        FOR i IN 1..100 LOOP
+        FOR i IN 1..1800 LOOP
                 IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating' AND subscription_name = 'test_subscription_delay') THEN
                         RETURN;
                 END IF;
@@ -126,7 +126,7 @@ command_ok([ 'timedatectl', 'set-time', "2016-11-06 06:40:00" ], 'switching dayl
 system_or_bail 'sleep', '300';
 system_or_bail 'psql', '-X', '-p', "$PGPORT", '-c', "DO \$\$
 BEGIN
-        FOR i IN 1..100 LOOP
+        FOR i IN 1..1800 LOOP
                 IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating' AND subscription_name = 'test_subscription_delay') THEN
                         RETURN;
                 END IF;

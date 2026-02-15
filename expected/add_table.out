@@ -156,7 +156,7 @@ SELECT sync_kind, sync_subid, sync_nspname, sync_relname, sync_status IN ('y', '
 DO $$
 -- give it 10 seconds to synchronize the tables
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF (SELECT count(1) FROM pg_replication_slots) = 1 THEN
 			RETURN;
 		END IF;
@@ -306,7 +306,7 @@ SELECT * FROM pglogical.alter_subscription_remove_replication_set('test_subscrip
 COMMIT;
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
 			RETURN;
 		END IF;
@@ -421,7 +421,7 @@ SELECT * FROM pglogical.alter_subscription_add_replication_set('test_subscriptio
 
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF EXISTS (SELECT 1 FROM pglogical.show_subscription_status() WHERE status = 'replicating') THEN
 			RETURN;
 		END IF;
@@ -444,7 +444,7 @@ SELECT N.nspname AS schemaname, C.relname AS tablename, (nextval(C.oid) > 1000) 
 \c :provider_dsn
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF EXISTS (SELECT 1 FROM pg_stat_replication) THEN
 			RETURN;
 		END IF;

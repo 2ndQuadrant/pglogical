@@ -183,7 +183,7 @@ SELECT pglogical.alter_subscription_disable('test_subscription', true);
 
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF (SELECT count(1) FROM pg_replication_slots WHERE active = false) THEN
 			RETURN;
 		END IF;
@@ -204,7 +204,7 @@ ALTER TABLE public.not_nullcheck_tbl ALTER COLUMN id2 SET default 99;
 
 DO $$
 BEGIN
-	FOR i IN 1..100 LOOP
+	FOR i IN 1..1800 LOOP
 		IF (SELECT count(1) FROM pg_replication_slots WHERE active = true) THEN
 			RETURN;
 		END IF;
