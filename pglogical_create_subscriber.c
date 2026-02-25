@@ -857,7 +857,7 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 				slot_name);
 
 		print_msg(VERBOSITY_VERBOSE,
-				  _("Droping existing slot %s ...\n"), slot_name);
+				  _("Dropping existing slot %s ...\n"), slot_name);
 
 		escaped_slot_name = PQescapeLiteral(conn, slot_name, strlen(slot_name));
 		printfPQExpBuffer(&query,
