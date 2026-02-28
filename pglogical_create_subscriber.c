@@ -801,17 +801,29 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 {
 	PQExpBufferData		query;
 	char			   *slot_name;
+	char			   *escaped_dbname = NULL;
+	char			   *escaped_provider_node_name = NULL;
+	char			   *escaped_subscription_name = NULL;
+	char			   *escaped_slot_name = NULL;
 	PGresult		   *res;
 
 	/* Generate the slot name. */
 	initPQExpBuffer(&query);
+
+	escaped_dbname = PQescapeLiteral(conn, dbname, strlen(dbname));
+	escaped_provider_node_name = PQescapeLiteral(conn, provider_node_name, strlen(provider_node_name));
+	escaped_subscription_name = PQescapeLiteral(conn, subscription_name, strlen(subscription_name));
 	printfPQExpBuffer(&query,
 					  "SELECT pglogical.pglogical_gen_slot_name(%s, %s, %s)",
-					  PQescapeLiteral(conn, dbname, strlen(dbname)),
-					  PQescapeLiteral(conn, provider_node_name,
-									  strlen(provider_node_name)),
-					  PQescapeLiteral(conn, subscription_name,
-									  strlen(subscription_name)));
+					  escaped_dbname,
+					  escaped_provider_node_name,
+					  escaped_subscription_name);
+	PQfreemem(escaped_dbname);
+	PQfreemem(escaped_provider_node_name);
+	PQfreemem(escaped_subscription_name);
+	escaped_dbname = NULL;
+	escaped_provider_node_name = NULL;
+	escaped_subscription_name = NULL;
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -823,9 +835,12 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 	resetPQExpBuffer(&query);
 
 	/* Check if the current slot exists. */
+	escaped_slot_name = PQescapeLiteral(conn, slot_name, strlen(slot_name));
 	printfPQExpBuffer(&query,
 					  "SELECT 1 FROM pg_catalog.pg_replication_slots WHERE slot_name = %s",
-					  PQescapeLiteral(conn, slot_name, strlen(slot_name)));
+					  escaped_slot_name);
+	PQfreemem(escaped_slot_name);
+	escaped_slot_name = NULL;
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -842,11 +857,14 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 				slot_name);
 
 		print_msg(VERBOSITY_VERBOSE,
-				  _("Droping existing slot %s ...\n"), slot_name);
+				  _("Dropping existing slot %s ...\n"), slot_name);
 
+		escaped_slot_name = PQescapeLiteral(conn, slot_name, strlen(slot_name));
 		printfPQExpBuffer(&query,
 						  "SELECT pg_catalog.pg_drop_replication_slot(%s)",
-						  PQescapeLiteral(conn, slot_name, strlen(slot_name)));
+						  escaped_slot_name);
+		PQfreemem(escaped_slot_name);
+		escaped_slot_name = NULL;
 
 		res = PQexec(conn, query.data);
 		if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -858,9 +876,12 @@ initialize_replication_slot(PGconn *conn, char *dbname,
 	resetPQExpBuffer(&query);
 
 	/* And finally, create the slot. */
+	escaped_slot_name = PQescapeLiteral(conn, slot_name, strlen(slot_name));
 	appendPQExpBuffer(&query, "SELECT pg_create_logical_replication_slot(%s, '%s');",
-					  PQescapeLiteral(conn, slot_name, strlen(slot_name)),
+					  escaped_slot_name,
 					  "pglogical_output");
+	PQfreemem(escaped_slot_name);
+	escaped_slot_name = NULL;
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -922,9 +943,13 @@ extension_exists(PGconn *conn, const char *extname)
 	PQExpBuffer		query = createPQExpBuffer();
 	PGresult	   *res;
 	bool			ret;
+	char		   *escaped_extname = PQescapeLiteral(conn, extname, strlen(extname));
 
 	printfPQExpBuffer(query, "SELECT 1 FROM pg_catalog.pg_extension WHERE extname = %s;",
-					  PQescapeLiteral(conn, extname, strlen(extname)));
+					  escaped_extname);
+	PQfreemem(escaped_extname);
+	escaped_extname = NULL;
+
 	res = PQexec(conn, query->data);
 
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -949,9 +974,13 @@ install_extension(PGconn *conn, const char *extname)
 {
 	PQExpBuffer		query = createPQExpBuffer();
 	PGresult	   *res;
+	char		   *escaped_extname = NULL;
 
-	printfPQExpBuffer(query, "CREATE EXTENSION IF NOT EXISTS %s;",
-					  PQescapeIdentifier(conn, extname, strlen(extname)));
+	escaped_extname = PQescapeIdentifier(conn, extname, strlen(extname));
+	printfPQExpBuffer(query, "CREATE EXTENSION IF NOT EXISTS %s;", escaped_extname);
+	PQfreemem(escaped_extname);
+	escaped_extname = NULL;
+
 	res = PQexec(conn, query->data);
 
 	if (PQresultStatus(res) != PGRES_COMMAND_OK)
@@ -1005,11 +1034,15 @@ initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn)
 {
 	PGresult   *res;
 	PQExpBuffer query = createPQExpBuffer();
+	char	   *escaped_origin_name = NULL;
+	char	   *escaped_remote_lsn = NULL;
 
 	if (PQserverVersion(conn) >= 90500)
 	{
-		printfPQExpBuffer(query, "SELECT pg_replication_origin_create(%s)",
-						  PQescapeLiteral(conn, origin_name, strlen(origin_name)));
+		escaped_origin_name = PQescapeLiteral(conn, origin_name, strlen(origin_name));
+		printfPQExpBuffer(query, "SELECT pg_replication_origin_create(%s)", escaped_origin_name);
+		PQfreemem(escaped_origin_name);
+		escaped_origin_name = NULL;
 
 		res = PQexec(conn, query->data);
 
@@ -1023,9 +1056,12 @@ initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn)
 
 		if (remote_lsn)
 		{
+			escaped_origin_name = PQescapeLiteral(conn, origin_name, strlen(origin_name));
 			printfPQExpBuffer(query, "SELECT pg_replication_origin_advance(%s, '%s')",
-							  PQescapeLiteral(conn, origin_name, strlen(origin_name)),
+							  escaped_origin_name,
 							  remote_lsn);
+			PQfreemem(escaped_origin_name);
+			escaped_origin_name = NULL;
 
 			res = PQexec(conn, query->data);
 
@@ -1040,9 +1076,18 @@ initialize_replication_origin(PGconn *conn, char *origin_name, char *remote_lsn)
 	}
 	else
 	{
+		escaped_origin_name = PQescapeLiteral(conn, origin_name, strlen(origin_name));
+		escaped_remote_lsn = remote_lsn ? PQescapeLiteral(conn, remote_lsn, strlen(remote_lsn)) : NULL;
 		printfPQExpBuffer(query, "INSERT INTO pglogical_origin.replication_origin (roident, roname, roremote_lsn) SELECT COALESCE(MAX(roident::int), 0) + 1, %s, %s FROM pglogical_origin.replication_origin",
-						  PQescapeLiteral(conn, origin_name, strlen(origin_name)),
-						  remote_lsn ? PQescapeLiteral(conn, remote_lsn, strlen(remote_lsn)) : "0");
+						  escaped_origin_name,
+						  remote_lsn ? escaped_remote_lsn : "0");
+		PQfreemem(escaped_origin_name);
+		escaped_origin_name = NULL;
+		if (escaped_remote_lsn)
+		{
+			PQfreemem(escaped_remote_lsn);
+			escaped_remote_lsn = NULL;
+		}
 
 		res = PQexec(conn, query->data);
 
@@ -1093,12 +1138,23 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 	PQExpBufferData		query;
 	PQExpBufferData		repsets;
 	PGresult		   *res;
+	char			   *escaped_subscriber_name = NULL;
+	char			   *escaped_subscriber_dsn = NULL;
+	char			   *escaped_provider_dsn = NULL;
+	char			   *escaped_repsets_data = NULL;
 
 	initPQExpBuffer(&query);
+
+	escaped_subscriber_name = PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name));
+	escaped_subscriber_dsn = PQescapeLiteral(conn, subscriber_dsn, strlen(subscriber_dsn));
 	printfPQExpBuffer(&query,
 					  "SELECT pglogical.create_node(node_name := %s, dsn := %s);",
-					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
-					  PQescapeLiteral(conn, subscriber_dsn, strlen(subscriber_dsn)));
+					  escaped_subscriber_name,
+					  escaped_subscriber_dsn);
+	PQfreemem(escaped_subscriber_name);
+	PQfreemem(escaped_subscriber_dsn);
+	escaped_subscriber_name = NULL;
+	escaped_subscriber_dsn = NULL;
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -1112,6 +1168,10 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 	initPQExpBuffer(&repsets);
 
 	printfPQExpBuffer(&repsets, "{%s}", replication_sets);
+
+	escaped_subscriber_name = PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name));
+	escaped_provider_dsn = PQescapeLiteral(conn, provider_dsn, strlen(provider_dsn));
+	escaped_repsets_data = PQescapeLiteral(conn, repsets.data, repsets.len);
 	printfPQExpBuffer(&query,
 					  "SELECT pglogical.create_subscription("
 					  "subscription_name := %s, provider_dsn := %s, "
@@ -1120,10 +1180,16 @@ pglogical_subscribe(PGconn *conn, char *subscriber_name, char *subscriber_dsn,
 					  "synchronize_structure := false, "
 					  "synchronize_data := false, "
 					  "force_text_transfer := '%s');",
-					  PQescapeLiteral(conn, subscriber_name, strlen(subscriber_name)),
-					  PQescapeLiteral(conn, provider_dsn, strlen(provider_dsn)),
-					  PQescapeLiteral(conn, repsets.data, repsets.len),
+					  escaped_subscriber_name,
+					  escaped_provider_dsn,
+					  escaped_repsets_data,
 					  apply_delay, (force_text_transfer ? "t" : "f"));
+	PQfreemem(escaped_subscriber_name);
+	PQfreemem(escaped_provider_dsn);
+	PQfreemem(escaped_repsets_data);
+	escaped_subscriber_name = NULL;
+	escaped_provider_dsn = NULL;
+	escaped_repsets_data = NULL;
 
 	res = PQexec(conn, query.data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)

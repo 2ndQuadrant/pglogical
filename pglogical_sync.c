@@ -385,6 +385,8 @@ start_copy_origin_tx(PGconn *conn, const char *snapshot)
 	{
 		s = PQescapeLiteral(conn, snapshot, strlen(snapshot));
 		appendStringInfo(&query, "SET TRANSACTION SNAPSHOT %s;\n", s);
+		PQfreemem(s);
+		s = NULL;
 	}
 
 	res = PQexec(conn, query.data);
@@ -423,6 +425,7 @@ start_copy_target_tx(PGconn *conn, const char *origin_name)
 						 "SELECT pg_catalog.pg_replication_origin_session_setup(%s);\n",
 						 s);
 		PQfreemem(s);
+		s = NULL;
 	}
 
 	appendStringInfoString(&query, setup_query);
@@ -528,6 +531,11 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 	PGresult   *res;
 	int			bytes;
 	char	   *copybuf;
+	char	   *escaped_attname = NULL;
+	char	   *escaped_nspname = NULL;
+	char	   *escaped_relname = NULL;
+	char	   *escaped_repset_name = NULL;
+	char	   *escaped_relname_data = NULL;
 	List	   *attnamelist;
 	ListCell   *lc;
 	bool		first;
@@ -552,9 +560,11 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 			first = false;
 		else
 			appendStringInfoString(&attlist, ",");
-		appendStringInfoString(&attlist,
-							   PQescapeIdentifier(origin_conn, attname,
-												  strlen(attname)));
+
+		escaped_attname = PQescapeIdentifier(origin_conn, attname, strlen(attname));
+		appendStringInfoString(&attlist, escaped_attname);
+		PQfreemem(escaped_attname);
+		escaped_attname = NULL;
 	}
 	MemoryContextSwitchTo(oldctx);
 	pglogical_relation_close(rel, AccessShareLock);
@@ -575,11 +585,14 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 		ListCell   *lc1;
 
 		initStringInfo(&relname);
-		appendStringInfo(&relname, "%s.%s",
-						 PQescapeIdentifier(origin_conn, remoterel->nspname,
-											strlen(remoterel->nspname)),
-						 PQescapeIdentifier(origin_conn, remoterel->relname,
-											strlen(remoterel->relname)));
+
+		escaped_nspname = PQescapeIdentifier(origin_conn, remoterel->nspname, strlen(remoterel->nspname));
+		escaped_relname = PQescapeIdentifier(origin_conn, remoterel->relname, strlen(remoterel->relname));
+		appendStringInfo(&relname, "%s.%s", escaped_nspname, escaped_relname);
+		PQfreemem(escaped_nspname);
+		PQfreemem(escaped_relname);
+		escaped_nspname = NULL;
+		escaped_relname = NULL;
 
 		initStringInfo(&repsetarr);
 		first = true;
@@ -592,26 +605,32 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 			else
 				appendStringInfoChar(&repsetarr, ',');
 
-			appendStringInfo(&repsetarr, "%s",
-							 PQescapeLiteral(origin_conn, repset_name,
-											 strlen(repset_name)));
+			escaped_repset_name = PQescapeLiteral(origin_conn, repset_name, strlen(repset_name));
+			appendStringInfo(&repsetarr, "%s", escaped_repset_name);
+			PQfreemem(escaped_repset_name);
+			escaped_repset_name = NULL;
 		}
 
+		escaped_relname_data = PQescapeLiteral(origin_conn, relname.data, relname.len);
 		appendStringInfo(&query,
 						 "(SELECT %s FROM pglogical.table_data_filtered(NULL::%s, %s::regclass, ARRAY[%s])) ",
 						 list_length(attnamelist) ? attlist.data : "*",
 						 relname.data,
-						 PQescapeLiteral(origin_conn, relname.data, relname.len),
+						 escaped_relname_data,
 						 repsetarr.data);
+		PQfreemem(escaped_relname_data);
+		escaped_relname_data = NULL;
 	}
 	else
 	{
 		/* Otherwise just copy the table. */
-		appendStringInfo(&query, "%s.%s ",
-						 PQescapeIdentifier(origin_conn, remoterel->nspname,
-											strlen(remoterel->nspname)),
-						 PQescapeIdentifier(origin_conn, remoterel->relname,
-											strlen(remoterel->relname)));
+		escaped_nspname = PQescapeIdentifier(origin_conn, remoterel->nspname, strlen(remoterel->nspname));
+		escaped_relname = PQescapeIdentifier(origin_conn, remoterel->relname, strlen(remoterel->relname));
+		appendStringInfo(&query, "%s.%s ", escaped_nspname, escaped_relname);
+		PQfreemem(escaped_nspname);
+		PQfreemem(escaped_relname);
+		escaped_nspname = NULL;
+		escaped_relname = NULL;
 
 		if (list_length(attnamelist))
 			appendStringInfo(&query, "(%s) ", attlist.data);
@@ -631,11 +650,15 @@ copy_table_data(PGconn *origin_conn, PGconn *target_conn,
 
 	/* Build COPY FROM query. */
 	resetStringInfo(&query);
-	appendStringInfo(&query, "COPY %s.%s ",
-					 PQescapeIdentifier(origin_conn, remoterel->nspname,
-										strlen(remoterel->nspname)),
-					 PQescapeIdentifier(origin_conn, remoterel->relname,
-										strlen(remoterel->relname)));
+
+	escaped_nspname = PQescapeIdentifier(origin_conn, remoterel->nspname, strlen(remoterel->nspname));
+	escaped_relname = PQescapeIdentifier(origin_conn, remoterel->relname, strlen(remoterel->relname));
+	appendStringInfo(&query, "COPY %s.%s ", escaped_nspname, escaped_relname);
+	PQfreemem(escaped_nspname);
+	PQfreemem(escaped_relname);
+	escaped_nspname = NULL;
+	escaped_relname = NULL;
+
 	if (list_length(attnamelist))
 		appendStringInfo(&query, "(%s) ", attlist.data);
 	appendStringInfoString(&query, "FROM stdin");

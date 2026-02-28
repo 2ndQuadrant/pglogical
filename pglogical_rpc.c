@@ -43,6 +43,7 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 	bool		first = true;
 	StringInfoData	query;
 	StringInfoData	repsetarr;
+	char		   *escaped_repset_name = NULL;
 
 	initStringInfo(&repsetarr);
 	foreach (lc, replication_sets)
@@ -54,8 +55,10 @@ pg_logical_get_remote_repset_tables(PGconn *conn, List *replication_sets)
 		else
 			appendStringInfoChar(&repsetarr, ',');
 
-		appendStringInfo(&repsetarr, "%s",
-						 PQescapeLiteral(conn, repset_name, strlen(repset_name)));
+		escaped_repset_name = PQescapeLiteral(conn, repset_name, strlen(repset_name));
+		appendStringInfo(&repsetarr, "%s", escaped_repset_name);
+		PQfreemem(escaped_repset_name);
+		escaped_repset_name = NULL;
 	}
 
 	initStringInfo(&query);
@@ -119,11 +122,21 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 	StringInfoData	query;
 	StringInfoData	repsetarr;
 	StringInfoData	relname;
+	char	   *escaped_schemaname = NULL;
+	char	   *escaped_relname = NULL;
+	char	   *escaped_repset_name = NULL;
+	char	   *escaped_relname_data = NULL;
+
 
 	initStringInfo(&relname);
-	appendStringInfo(&relname, "%s.%s",
-					 PQescapeIdentifier(conn, rv->schemaname, strlen(rv->schemaname)),
-					 PQescapeIdentifier(conn, rv->relname, strlen(rv->relname)));
+
+	escaped_schemaname = PQescapeIdentifier(conn, rv->schemaname, strlen(rv->schemaname));
+	escaped_relname = PQescapeIdentifier(conn, rv->relname, strlen(rv->relname));
+	appendStringInfo(&relname, "%s.%s", escaped_schemaname, escaped_relname);
+	PQfreemem(escaped_schemaname);
+	PQfreemem(escaped_relname);
+	escaped_schemaname = NULL;
+	escaped_relname = NULL;
 
 	initStringInfo(&repsetarr);
 	foreach (lc, replication_sets)
@@ -135,31 +148,39 @@ pg_logical_get_remote_repset_table(PGconn *conn, RangeVar *rv,
 		else
 			appendStringInfoChar(&repsetarr, ',');
 
-		appendStringInfo(&repsetarr, "%s",
-						 PQescapeLiteral(conn, repset_name, strlen(repset_name)));
+		escaped_repset_name = PQescapeLiteral(conn, repset_name, strlen(repset_name));
+		appendStringInfo(&repsetarr, "%s", escaped_repset_name);
+		PQfreemem(escaped_repset_name);
+		escaped_repset_name = NULL;
 	}
 
 	initStringInfo(&query);
 	if (pglogical_remote_function_exists(conn, "pglogical", "show_repset_table_info", 2, NULL))
 	{
 		/* PGLogical 2.0+ */
+		escaped_relname_data = PQescapeLiteral(conn, relname.data, relname.len);
 		appendStringInfo(&query,
 						 "SELECT i.relid, i.nspname, i.relname, i.att_list,"
 						 "       i.has_row_filter"
 						 "  FROM pglogical.show_repset_table_info(%s::regclass, ARRAY[%s]) i",
-						 PQescapeLiteral(conn, relname.data, relname.len),
+						 escaped_relname_data,
 						 repsetarr.data);
+		PQfreemem(escaped_relname_data);
+		escaped_relname_data = NULL;
 	}
 	else
 	{
 		/* PGLogical 1.x */
+		escaped_relname_data = PQescapeLiteral(conn, relname.data, relname.len);
 		appendStringInfo(&query,
 						 "SELECT r.oid AS relid, t.nspname, t.relname, ARRAY(SELECT attname FROM pg_attribute WHERE attrelid = r.oid AND NOT attisdropped AND attnum > 0) AS att_list,"
 						 "       false AS has_row_filter"
 						 "  FROM pglogical.tables t, pg_catalog.pg_class r, pg_catalog.pg_namespace n"
 						 " WHERE r.oid = %s::regclass AND t.set_name = ANY(ARRAY[%s]) AND r.relname = t.relname AND n.oid = r.relnamespace AND n.nspname = t.nspname",
-						 PQescapeLiteral(conn, relname.data, relname.len),
+						 escaped_relname_data,
 						 repsetarr.data);
+		PQfreemem(escaped_relname_data);
+		escaped_relname_data = NULL;
 	}
 
 	res = PQexec(conn, query.data);
@@ -329,6 +350,7 @@ pglogical_remote_function_exists(PGconn *conn, const char *nspname,
 	Oid				types[2] = { TEXTOID, TEXTOID };
 	bool			ret;
 	StringInfoData	query;
+	char		   *escaped_argname = NULL;
 
 	values[0] = proname;
 	values[1] = nspname;
@@ -347,9 +369,14 @@ pglogical_remote_function_exists(PGconn *conn, const char *nspname,
 		appendStringInfo(&query,
 						 "   AND pronargs = '%d'", nargs);
 	if (argname != NULL)
+	{
+		escaped_argname = PQescapeLiteral(conn, argname, strlen(argname));
 		appendStringInfo(&query,
 						 "   AND %s = ANY (proargnames)",
-						 PQescapeLiteral(conn, argname, strlen(argname)));
+						 escaped_argname);
+		PQfreemem(escaped_argname);
+		escaped_argname = NULL;
+	}
 
 	res = PQexecParams(conn, query.data, 2, types, values, NULL, NULL, 0);
 
