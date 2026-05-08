@@ -16,12 +16,17 @@
 
 #include "access/xact.h"
 
+#if PG_VERSION_NUM < 190000
 #include "commands/dbcommands.h"
+#endif
 #include "commands/extension.h"
 
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
+#if PG_VERSION_NUM >= 190000
+#include "utils/lsyscache.h"
+#endif
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/timestamp.h"

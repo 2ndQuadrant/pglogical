@@ -70,6 +70,7 @@ static const struct config_enum_entry PGLogicalConflictResolvers[] = {
 	{NULL, 0, false}
 };
 
+#if PG_VERSION_NUM < 190000
 /* copied fom guc.c */
 static const struct config_enum_entry server_message_level_options[] = {
 	{"debug", DEBUG2, true},
@@ -87,6 +88,7 @@ static const struct config_enum_entry server_message_level_options[] = {
 	{"panic", PANIC, false},
 	{NULL, 0, false}
 };
+#endif
 
 bool	pglogical_synchronous_commit = false;
 char   *pglogical_temp_directory = "";

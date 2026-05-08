@@ -72,6 +72,7 @@ EXTRA_CLEAN += compat94/pglogical_compat.o compat95/pglogical_compat.o \
 			   compat16/pglogical_compat.o compat16/pglogical_compat.bc \
 			   compat17/pglogical_compat.o compat17/pglogical_compat.bc \
 			   compat18/pglogical_compat.o compat18/pglogical_compat.bc \
+			   compat19/pglogical_compat.o compat19/pglogical_compat.bc \
 			   pglogical_create_subscriber.o
 
 # The # in #define is taken as a comment, per https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=142043

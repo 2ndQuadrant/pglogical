@@ -69,7 +69,7 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 		appendStringInfo(out, ", \"origin_lsn\":\"%X/%X\"",
 			(uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
 #endif
-#if PG_VERSION_NUM >= 150000
+#if PG_VERSION_NUM >= 150000 && PG_VERSION_NUM < 190000
 		if (txn->xact_time.commit_time != 0)
 		appendStringInfo(out, ", \"commit_time\":\"%s\"",
 			timestamptz_to_str(txn->xact_time.commit_time));
@@ -229,8 +229,10 @@ typedef enum					/* type categories for datum_to_json */
 	JSONTYPE_OTHER				/* all else */
 } JsonTypeCategory;
 
+#if PG_VERSION_NUM < 190000
 static void composite_to_json(Datum composite, StringInfo result,
 				  bool use_line_feeds);
+#endif
 static void array_dim_to_json(StringInfo result, int dim, int ndims, int *dims,
 				  Datum *vals, bool *nulls, int *valcount,
 				  JsonTypeCategory tcategory, Oid outfuncoid,
@@ -573,6 +575,7 @@ array_to_json_internal(Datum array, StringInfo result, bool use_line_feeds)
 	pfree(nulls);
 }
 
+#if PG_VERSION_NUM < 190000
 /*
  * Turn a composite / record into JSON.
  */
@@ -641,6 +644,7 @@ composite_to_json(Datum composite, StringInfo result, bool use_line_feeds)
 	appendStringInfoChar(result, '}');
 	ReleaseTupleDesc(tupdesc);
 }
+#endif
 
 
 /*
@@ -684,7 +688,7 @@ json_write_tuple(StringInfo out, Relation rel, HeapTuple tuple,
 		 * them.
 		 */
 		if (!isnull[i] && att->attlen == -1 &&
-			VARATT_IS_EXTERNAL_ONDISK(values[i]))
+			VARATT_IS_EXTERNAL_ONDISK(DatumGetPointer(values[i])))
 			continue;
 
 		if (needsep)
