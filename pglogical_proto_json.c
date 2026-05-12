@@ -70,6 +70,11 @@ pglogical_json_write_begin(StringInfo out, PGLogicalOutputData *data, ReorderBuf
 			(uint32)(txn->origin_lsn >> 32), (uint32)(txn->origin_lsn));
 #endif
 #if PG_VERSION_NUM >= 150000 && PG_VERSION_NUM < 190000
+		/*
+		 * In 15-18, commit_time is accessed via txn->xact_time.commit_time.
+		 * Commit 57d46dff9b0b converted xact_time to an anonymous union,
+		 * making commit_time directly accessible again.
+		 */
 		if (txn->xact_time.commit_time != 0)
 		appendStringInfo(out, ", \"commit_time\":\"%s\"",
 			timestamptz_to_str(txn->xact_time.commit_time));

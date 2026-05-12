@@ -175,6 +175,11 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	/* fixed fields */
 	pq_sendint64(out, txn->final_lsn);
 #if PG_VERSION_NUM >= 150000 && PG_VERSION_NUM < 190000
+	/*
+	 * In 15-18, commit_time is accessed via txn->xact_time.commit_time.
+	 * Commit 57d46dff9b0b converted xact_time to an anonymous union, making
+	 * commit_time directly accessible again.
+	 */
 	pq_sendint64(out, txn->xact_time.commit_time);
 #else
 	pq_sendint64(out, txn->commit_time);
@@ -200,6 +205,11 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	pq_sendint64(out, commit_lsn);
 	pq_sendint64(out, txn->end_lsn);
 #if PG_VERSION_NUM >= 150000 && PG_VERSION_NUM < 190000
+	/*
+	 * In 15-18, commit_time is accessed via txn->xact_time.commit_time.
+	 * Commit 57d46dff9b0b converted xact_time to an anonymous union, making
+	 * commit_time directly accessible again.
+	 */
 	pq_sendint64(out, txn->xact_time.commit_time);
 #else
 	pq_sendint64(out, txn->commit_time);

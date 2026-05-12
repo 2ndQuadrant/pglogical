@@ -18,9 +18,7 @@
 
 #include "access/xact.h"
 
-#if PG_VERSION_NUM < 190000
 #include "commands/dbcommands.h"
-#endif
 
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -28,9 +26,7 @@
 #include "storage/procarray.h"
 
 #include "utils/guc.h"
-#if PG_VERSION_NUM >= 190000
 #include "utils/lsyscache.h"
-#endif
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 

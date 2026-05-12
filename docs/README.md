@@ -91,6 +91,7 @@ If you don’t have PostgreSQL already:
     - PostgreSQL 16: `yum install postgresql16-server postgresql16-contrib`
     - PostgreSQL 17: `yum install postgresql17-server postgresql17-contrib`
     - PostgreSQL 18: `yum install postgresql18-server postgresql18-contrib`
+    - PostgreSQL 19: `yum install postgresql19-server postgresql19-contrib`
 
 ##### Installation
 
@@ -107,6 +108,7 @@ You can proceed to install pglogical for your PostgreSQL version:
  - PostgreSQL 16: `yum install pglogical_16`
  - PostgreSQL 17: `yum install pglogical_17`
  - PostgreSQL 18: `yum install pglogical_18`
+ - PostgreSQL 19: `yum install pglogical_19`
 
 #### Installing pglogical with APT
 
@@ -128,6 +130,7 @@ Debian (e.g. Ubuntu).
     - PostgreSQL 16: `sudo apt-get install postgresql-16`
     - PostgreSQL 17: `sudo apt-get install postgresql-17`
     - PostgreSQL 18: `sudo apt-get install postgresql-18`
+    - PostgreSQL 19: `sudo apt-get install postgresql-19`
 
 ##### Installation
 
@@ -144,6 +147,7 @@ Once pre-requisites are complete, installing pglogical is simply a matter of exe
  - PostgreSQL 16: `sudo apt-get install postgresql-16-pglogical`
  - PostgreSQL 17: `sudo apt-get install postgresql-17-pglogical`
  - PostgreSQL 18: `sudo apt-get install postgresql-18-pglogical`
+ - PostgreSQL 19: `sudo apt-get install postgresql-19-pglogical`
 
 ### From source code
 
@@ -161,9 +165,9 @@ install. You might need to use `sudo` for the install step.
 e.g. for a typical Fedora or RHEL 9 install, assuming you're using the
 [yum.postgresql.org](http://yum.postgresql.org) packages for PostgreSQL:
 
-    sudo dnf install postgresql17-devel
-    PATH=/usr/pgsql-17/bin:$PATH make clean all
-    sudo PATH=/usr/pgsql-17/bin:$PATH make install
+    sudo dnf install postgresql19-devel
+    PATH=/usr/pgsql-19/bin:$PATH make clean all
+    sudo PATH=/usr/pgsql-19/bin:$PATH make install
 
 ## Usage
 
