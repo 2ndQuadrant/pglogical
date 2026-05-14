@@ -762,7 +762,7 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 		int			attid = rel->attmap[i];
 		Form_pg_attribute att = TupleDescAttr(desc,attid);
 		char		kind = pq_getmsgbyte(in);
-		const char *data;
+		char	   *data;
 		int			len;
 
 		switch (kind)
@@ -780,9 +780,59 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 				tuple->changed[attid] = true;
 
 				len = pq_getmsgint(in, 4); /* read length */
-				data = pq_getmsgbytes(in, len);
+
+				if (len < 0)
+					elog(ERROR, "invalid length %d for attribute \"%s\"",
+						 len, NameStr(att->attname));
 
 				/* and data */
+				data = palloc0(len + 1);
+				pq_copymsgbytes(in, data, len);
+
+				/*
+				 * The data must agree with the local definition of the
+				 * attribute.  The sender writes exactly attlen bytes for a
+				 * fixed-length type and VARSIZE_ANY() bytes for a varlena one.
+				 */
+				if (att->attlen > 0)
+				{
+					if (len != att->attlen)
+						elog(ERROR, "invalid length %d for attribute \"%s\" (expected %d)",
+							 len, NameStr(att->attname), att->attlen);
+				}
+				else if (att->attlen == -1)
+				{
+					/*
+					 * Reject external datums; the sender never writes a TOAST
+					 * pointer in this format (an unchanged toast column is
+					 * sent as 'u' and an indirect one is expanded inline), and
+					 * accepting one would point us at an arbitrary TOAST
+					 * value.  Order matters below: only the first byte of the
+					 * header may be examined until the length is known to
+					 * cover a longer one.
+					 */
+					if (len < (int) VARHDRSZ_SHORT || VARATT_IS_EXTERNAL(data))
+						elog(ERROR, "invalid varlena datum for attribute \"%s\"",
+							 NameStr(att->attname));
+
+					if (VARATT_IS_SHORT(data))
+					{
+						if ((int) VARSIZE_SHORT(data) != len)
+							elog(ERROR, "invalid varlena length %d for attribute \"%s\" (expected %d)",
+								 (int) VARSIZE_SHORT(data), NameStr(att->attname), len);
+					}
+					else if (len < (int) VARHDRSZ || (int) VARSIZE(data) != len)
+					{
+						elog(ERROR, "invalid varlena length for attribute \"%s\"",
+							 NameStr(att->attname));
+					}
+				}
+				else
+				{
+					elog(ERROR, "unsupported type length %d for attribute \"%s\"",
+						 att->attlen, NameStr(att->attname));
+				}
+
 				if (att->attbyval)
 					tuple->values[attid] = fetch_att(data, true, len);
 				else
@@ -802,11 +852,13 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 					getTypeBinaryInputInfo(att->atttypid,
 										   &typreceive, &typioparam);
 
-					/* create StringInfo pointing into the bigger buffer */
+					/* create StringInfo with room for the attribute data */
 					initStringInfo(&buf);
+					enlargeStringInfo(&buf, len);
 					/* and data */
-					buf.data = (char *) pq_getmsgbytes(in, len);
+					pq_copymsgbytes(in, buf.data, len);
 					buf.len = len;
+					buf.data[len] = '\0';
 					tuple->values[attid] = OidReceiveFunctionCall(
 						typreceive, &buf, typioparam, att->atttypmod);
 
@@ -828,9 +880,10 @@ pglogical_read_tuple(StringInfo in, PGLogicalRelation *rel,
 
 					getTypeInputInfo(att->atttypid, &typinput, &typioparam);
 					/* and data */
-					data = (char *) pq_getmsgbytes(in, len);
+					data = palloc0(len + 1);
+					pq_copymsgbytes(in, data, len);
 					tuple->values[attid] = OidInputFunctionCall(
-						typinput, (char *) data, typioparam, att->atttypmod);
+						typinput, data, typioparam, att->atttypmod);
 				}
 				break;
 			default:
