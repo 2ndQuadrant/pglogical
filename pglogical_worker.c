@@ -583,7 +583,8 @@ pglogical_worker_kill(PGLogicalWorker *worker)
 static void
 signal_worker_xact_callback(XactEvent event, void *arg)
 {
-	if (event == XACT_EVENT_COMMIT && xacthook_signal_workers)
+	if ((event == XACT_EVENT_COMMIT || event == XACT_EVENT_PARALLEL_COMMIT) &&
+		xacthook_signal_workers)
 	{
 		PGLogicalWorker	   *w;
 		ListCell	   *l;
@@ -620,6 +621,12 @@ signal_worker_xact_callback(XactEvent event, void *arg)
 		list_free_deep(signal_workers);
 		signal_workers = NIL;
 
+		xacthook_signal_workers = false;
+	}
+	else if ((event == XACT_EVENT_ABORT || event == XACT_EVENT_PARALLEL_ABORT) &&
+			xacthook_signal_workers)
+	{
+		signal_workers = NIL;	/* list was freed by TopTransactionContext reset */
 		xacthook_signal_workers = false;
 	}
 }
