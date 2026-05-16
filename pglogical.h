@@ -20,7 +20,38 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 
+/* v19+: always use libpqsrv_PGresult wrapping */
+#ifdef LIBPQ_FE_H
+#error included libpq-fe.h too early
+#endif
+#if PG_VERSION_NUM >= 190000
+#include "libpq/libpq-be-fe.h"
+/* Core PostgreSQL backend never uses these symbols, so it omits wrappers. */
+static inline libpqsrv_PGresult *
+libpqsrv_PQexec(PGconn *conn, const char *query)
+{
+	return libpqsrv_PQwrap(PQexec(conn, query));
+}
+static inline libpqsrv_PGresult *
+libpqsrv_PQexecParams(PGconn *conn,
+					  const char *command,
+					  int nParams,
+					  const Oid *paramTypes,
+					  const char *const *paramValues,
+					  const int *paramLengths,
+					  const int *paramFormats,
+					  int resultFormat)
+{
+	return libpqsrv_PQwrap(PQexecParams(conn, command, nParams,
+										paramTypes, paramValues,
+										paramLengths,
+										paramFormats, resultFormat));
+}
+#define PQexec libpqsrv_PQexec
+#define PQexecParams libpqsrv_PQexecParams
+#else
 #include "libpq-fe.h"
+#endif
 
 #include "pglogical_fe.h"
 #include "pglogical_node.h"

@@ -12,8 +12,6 @@
  */
 #include "postgres.h"
 
-#include "libpq-fe.h"
-
 #include "miscadmin.h"
 
 #include "access/commit_ts.h"
