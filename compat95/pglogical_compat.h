@@ -9,6 +9,9 @@
 #include "replication/origin.h"
 #include "storage/lwlock.h"
 
+#define PG_WAIT_EXTENSION 0
+#include "compat94/pglogical_libpq-be-fe-helpers.h"
+
 extern LWLockPadded *GetNamedLWLockTranche(const char *tranche_name);
 extern void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks);
 

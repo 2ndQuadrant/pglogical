@@ -17,6 +17,7 @@
 #include "pglogical_output_proto.h"
 #include "pglogical_proto_native.h"
 #include "pglogical_proto_json.h"
+#include "pglogical.h"
 
 PGLogicalProtoAPI *
 pglogical_init_api(PGLogicalProtoType typ)

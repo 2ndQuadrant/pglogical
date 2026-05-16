@@ -16,9 +16,6 @@
 #include "nodes/pg_list.h"
 #include "nodes/primnodes.h"
 
-/* summon cross-PG-version compatibility voodoo */
-#include "pglogical_compat.h"
-
 /* typedef appears in pglogical_output_plugin.h */
 typedef struct PGLogicalOutputData
 {

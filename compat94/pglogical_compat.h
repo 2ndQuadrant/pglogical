@@ -12,6 +12,9 @@
 #include "storage/lwlock.h"
 #include "utils/array.h"
 
+#define PG_WAIT_EXTENSION 0
+#include "compat94/pglogical_libpq-be-fe-helpers.h"
+
 /* 9.4 lacks PG_*_MAX */
 #ifndef PG_UINT32_MAX
 #define PG_UINT32_MAX	(0xFFFFFFFF)

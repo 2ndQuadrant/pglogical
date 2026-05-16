@@ -37,6 +37,7 @@
 
 #include "pglogical_output_plugin.h"
 #include "pglogical_proto_json.h"
+#include "pglogical.h"
 
 #ifdef HAVE_REPLICATION_ORIGINS
 #include "replication/origin.h"

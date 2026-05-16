@@ -47,6 +47,7 @@
 
 #include "pglogical_conflict.h"
 #include "pglogical_proto_native.h"
+#include "pglogical.h"
 
 int		pglogical_conflict_resolver = PGLOGICAL_RESOLVE_APPLY_REMOTE;
 int		pglogical_conflict_log_level = LOG;

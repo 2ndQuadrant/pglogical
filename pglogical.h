@@ -20,8 +20,6 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 
-#include "libpq-fe.h"
-
 #include "pglogical_fe.h"
 #include "pglogical_node.h"
 

@@ -8,6 +8,8 @@
 #include "replication/origin.h"
 #include "utils/varlena.h"
 
+#include "compat94/pglogical_libpq-be-fe-helpers.h"
+
 #define PGLCreateTrigger CreateTrigger
 
 #define WaitLatchOrSocket(latch, wakeEvents, sock, timeout) \
