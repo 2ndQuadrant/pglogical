@@ -13,8 +13,6 @@
 #ifndef PGLOGICAL_SYNC_H
 #define PGLOGICAL_SYNC_H
 
-#include "libpq-fe.h"
-
 #include "nodes/primnodes.h"
 #include "pglogical_node.h"
 

@@ -21,8 +21,6 @@
 #include <sys/wait.h>
 #endif
 
-#include "libpq-fe.h"
-
 #include "miscadmin.h"
 
 #include "access/genam.h"

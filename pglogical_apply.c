@@ -13,7 +13,6 @@
 #include "postgres.h"
 
 #include "miscadmin.h"
-#include "libpq-fe.h"
 #include "pgstat.h"
 
 #include "access/htup_details.h"
