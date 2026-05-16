@@ -1029,6 +1029,9 @@ pglogical_show_subscription_table(PG_FUNCTION_ARGS)
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "nspname", TEXTOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "relname", TEXTOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "status", TEXTOID, -1, 0);
+#if PG_VERSION_NUM >= 190000
+	TupleDescFinalize(tupdesc);
+#endif
 	tupdesc = BlessTupleDesc(tupdesc);
 
 	nspname = get_namespace_name(get_rel_namespace(reloid));
@@ -2340,6 +2343,9 @@ pglogical_xact_commit_timestamp_origin(PG_FUNCTION_ARGS)
 					   TIMESTAMPTZOID, -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "roident",
 					   OIDOID, -1, 0);
+#if PG_VERSION_NUM >= 190000
+	TupleDescFinalize(tupdesc);
+#endif
 	tupdesc = BlessTupleDesc(tupdesc);
 
 #ifdef HAVE_REPLICATION_ORIGINS

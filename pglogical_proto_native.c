@@ -174,7 +174,12 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 
 	/* fixed fields */
 	pq_sendint64(out, txn->final_lsn);
-#if PG_VERSION_NUM >= 150000
+#if PG_VERSION_NUM >= 150000 && PG_VERSION_NUM < 190000
+	/*
+	 * In 15-18, commit_time is accessed via txn->xact_time.commit_time.
+	 * Commit 57d46dff9b0b converted xact_time to an anonymous union, making
+	 * commit_time directly accessible again.
+	 */
 	pq_sendint64(out, txn->xact_time.commit_time);
 #else
 	pq_sendint64(out, txn->commit_time);
@@ -199,7 +204,12 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 	/* send fixed fields */
 	pq_sendint64(out, commit_lsn);
 	pq_sendint64(out, txn->end_lsn);
-#if PG_VERSION_NUM >= 150000
+#if PG_VERSION_NUM >= 150000 && PG_VERSION_NUM < 190000
+	/*
+	 * In 15-18, commit_time is accessed via txn->xact_time.commit_time.
+	 * Commit 57d46dff9b0b converted xact_time to an anonymous union, making
+	 * commit_time directly accessible again.
+	 */
 	pq_sendint64(out, txn->xact_time.commit_time);
 #else
 	pq_sendint64(out, txn->commit_time);
@@ -402,7 +412,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 			pq_sendbyte(out, 'n');	/* null column */
 			continue;
 		}
-		else if (att->attlen == -1 && VARATT_IS_EXTERNAL_ONDISK(values[i]))
+		else if (att->attlen == -1 && VARATT_IS_EXTERNAL_ONDISK(DatumGetPointer(values[i])))
 		{
 			pq_sendbyte(out, 'u');	/* unchanged toast column */
 			continue;
@@ -447,7 +457,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 					char *data = DatumGetPointer(values[i]);
 
 					/* send indirect datums inline */
-					if (VARATT_IS_EXTERNAL_INDIRECT(values[i]))
+					if (VARATT_IS_EXTERNAL_INDIRECT(DatumGetPointer(values[i])))
 					{
 						struct varatt_indirect redirect;
 						VARATT_EXTERNAL_GET_POINTER(redirect, data);

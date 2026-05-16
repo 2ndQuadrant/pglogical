@@ -22,6 +22,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/timestamp.h"

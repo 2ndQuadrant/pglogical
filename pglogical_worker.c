@@ -26,6 +26,7 @@
 #include "storage/procarray.h"
 
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 

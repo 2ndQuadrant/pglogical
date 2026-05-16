@@ -834,7 +834,7 @@ tuple_to_stringinfo(StringInfo s, TupleDesc tupdesc, HeapTuple tuple)
 
 		if (isnull)
 			outputstr = "(null)";
-		else if (typisvarlena && VARATT_IS_EXTERNAL_ONDISK(origval))
+		else if (typisvarlena && VARATT_IS_EXTERNAL_ONDISK(DatumGetPointer(origval)))
 			outputstr = "(unchanged-toast-datum)";
 		else if (typisvarlena)
 			val = PointerGetDatum(PG_DETOAST_DATUM(origval));

@@ -17,6 +17,8 @@
 
 #include "replication/logical.h"
 
+#include "pglogical_compat.h"
+
 PG_MODULE_MAGIC;
 
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
