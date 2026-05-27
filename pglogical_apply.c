@@ -1886,6 +1886,7 @@ start_sync_worker(Name nspname, Name relname)
 	memset(&worker, 0, sizeof(PGLogicalWorker));
 	worker.worker_type = PGLOGICAL_WORKER_SYNC;
 	worker.dboid = MyPGLogicalWorker->dboid;
+	worker.userid = MyPGLogicalWorker->userid;
 	worker.worker.apply.subid = MyApplyWorker->subid;
 	worker.worker.apply.sync_pending = false; /* Makes no sense for sync worker. */
 

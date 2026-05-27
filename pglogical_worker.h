@@ -54,6 +54,9 @@ typedef struct PGLogicalWorker {
 	/* Database id to connect to. */
 	Oid		dboid;
 
+	/* User to use for connection. */
+	Oid		userid;
+
 	/* Type-specific worker info */
 	union
 	{

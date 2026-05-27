@@ -365,7 +365,7 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 		MemoryContext oldcontext;
 
 		BackgroundWorkerInitializeConnectionByOid(MyPGLogicalWorker->dboid,
-												  InvalidOid
+												  MyPGLogicalWorker->userid
 #if PG_VERSION_NUM >= 110000
 												  , 0 /* flags */
 #endif
@@ -375,6 +375,13 @@ pglogical_worker_attach(int slot, PGLogicalWorkerType type)
 		StartTransactionCommand();
 		oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 		MyProcPort->database_name = pstrdup(get_database_name(MyPGLogicalWorker->dboid));
+#if PG_VERSION_NUM >= 90500
+		if (OidIsValid(MyPGLogicalWorker->userid))
+			MyProcPort->user_name = pstrdup(GetUserNameFromId(MyPGLogicalWorker->userid, true));
+#else
+		if (OidIsValid(MyPGLogicalWorker->userid))
+			MyProcPort->user_name = pstrdup(GetUserNameFromId(MyPGLogicalWorker->userid));
+#endif
 		MemoryContextSwitchTo(oldcontext);
 		CommitTransactionCommand();
 	}
@@ -431,6 +438,7 @@ pglogical_worker_detach(bool crash)
 		/* Worker has finished work, clean up its state from shmem. */
 		MyPGLogicalWorker->worker_type = PGLOGICAL_WORKER_NONE;
 		MyPGLogicalWorker->dboid = InvalidOid;
+		MyPGLogicalWorker->userid = InvalidOid;
 	}
 
 	MyPGLogicalWorker = NULL;

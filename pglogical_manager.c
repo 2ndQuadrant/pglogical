@@ -158,6 +158,7 @@ manage_apply_workers(void)
 		memset(&apply, 0, sizeof(PGLogicalWorker));
 		apply.worker_type = PGLOGICAL_WORKER_APPLY;
 		apply.dboid = MyPGLogicalWorker->dboid;
+		apply.userid = MyPGLogicalWorker->userid;
 		apply.worker.apply.subid = sub->id;
 		apply.worker.apply.sync_pending = true;
 		apply.worker.apply.replay_stop_lsn = InvalidXLogRecPtr;
