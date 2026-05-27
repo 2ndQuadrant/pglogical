@@ -776,12 +776,73 @@ In this state, conflicts are not detected.
   Default is empty, which tells PGLogical to use default temporary directory
   based on environment and operating system settings.
 
+- `pglogical.subscription_owner`
+  Defines that the subscriptions will be run with the permissions of the
+  specified role. The specified role needs privileges to SELECT, INSERT, UPDATE,
+  and DELETE from the target table. A relation that has row level security
+  enabled is refused, since the apply worker has no way to honor the policies.
+
+  These privileges are not granted for you by `synchronize_structure`. The
+  tables that `pglogical.create_subscription()` creates on the subscriber are
+  owned by the user from the local node connection string, not by the role
+  specified here. The initial synchronization therefore succeeds and the first
+  change replicated afterwards fails with a "permission denied" error. Grant
+  the privileges once the synchronization has finished:
+
+  ```
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
+      TO subowner;
+  ```
+
+  The specified role also needs access to the pglogical catalogs on the
+  subscriber. Without it, the manager worker exits with a "permission denied
+  for schema pglogical" error as soon as it starts, and no subscription is ever
+  launched. Grant it on each database that has a pglogical node:
+
+  ```
+  GRANT USAGE ON SCHEMA pglogical TO subowner;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pglogical
+      TO subowner;
+  ```
+
+  Note that `ALL TABLES` only covers the tables that exist at the time the
+  command is run, so the grants have to be repeated after an extension upgrade
+  that adds new catalogs.
+
+  Replicated DDL (see `pglogical.replicate_ddl_command`) and `TRUNCATE` are not
+  applied directly. They are queued and replayed with the role that executed
+  them on the provider, which means the apply worker issues a `SET ROLE` to
+  that role. The specified role must therefore be a member of every role that
+  runs replicated DDL or `TRUNCATE` on the provider:
+
+  ```
+  GRANT ddl_role TO subowner;
+  ```
+
+  Otherwise the apply worker fails with a "permission denied to set role"
+  error. Since it retries the same queued command after restarting, the
+  subscription makes no further progress until the membership is granted. As
+  superuser is a member of every role, this restriction does not apply when
+  this parameter is not set.
+
+  Keep in mind that such a membership also gives the specified role every
+  privilege the other role holds on the objects it owns, including the ability
+  to bypass row level security on them. Replicating DDL executed by a superuser
+  thus leaves little of the isolation this parameter is meant to provide.
+
+  Default is empty, which tells PGLogical to run as superuser.
+
 ## Limitations and restrictions
 
-### Superuser is required
+### Superuser is required for administration
 
-Currently pglogical replication and administration requires superuser
-privileges. It may be later extended to more granular privileges.
+Administration requires superuser privileges. The extension has to be installed
+by a superuser and no privileges on its schema, catalogs or functions are
+granted to anyone else, so the functions that manage nodes, subscriptions and
+replication sets can only be executed by a superuser. Applying the changes on
+the subscriber does not require superuser privileges. Use parameter
+`pglogical.subscription_owner` to run the subscriptions with the permissions of
+a regular role.
 
 ### `UNLOGGED` and `TEMPORARY` not replicated
 

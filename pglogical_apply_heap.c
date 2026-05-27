@@ -19,6 +19,9 @@
 #include "access/xact.h"
 
 #include "catalog/namespace.h"
+#if PG_VERSION_NUM >= 110000
+#include "catalog/objectaddress.h"
+#endif
 
 #include "commands/dbcommands.h"
 #include "commands/sequence.h"
@@ -53,10 +56,14 @@
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
 
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/jsonb.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#if PG_VERSION_NUM >= 90500
+#include "utils/rls.h"
+#endif
 #include "utils/snapmgr.h"
 
 #include "pglogical_conflict.h"
@@ -250,10 +257,52 @@ fill_missing_defaults(PGLogicalRelation *rel, EState *estate,
 												NULL);
 }
 
+/*
+ * Check that the role the apply worker runs as is allowed to perform the
+ * action on the target relation.
+ *
+ * These routines write to the relation through the low level interface, which
+ * bypasses the permission checking the executor does for us in the SPI
+ * variant, so we have to do it ourselves. This is a no-op when
+ * pglogical.subscription_owner is not set, as the worker then runs as
+ * superuser.
+ */
+static void
+check_target_privileges(Relation rel, AclMode mode)
+{
+	Oid			relid = RelationGetRelid(rel);
+	AclResult	aclresult;
+
+	aclresult = pg_class_aclcheck(relid, GetUserId(), mode);
+	if (aclresult != ACLCHECK_OK)
+		aclcheck_error(aclresult,
+#if PG_VERSION_NUM >= 110000
+					   get_relkind_objtype(rel->rd_rel->relkind),
+#else
+					   ACL_KIND_CLASS,
+#endif
+					   get_rel_name(relid));
+
+	/*
+	 * We have no way to honor row level security policies while applying
+	 * changes, so refuse the relation instead of silently bypassing them.
+	 */
+#if PG_VERSION_NUM >= 90500
+	if (check_enable_rls(relid, InvalidOid, false) == RLS_ENABLED)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("user \"%s\" cannot replicate into relation with row level security enabled: \"%s\"",
+						GetUserNameFromId(GetUserId(), true),
+						get_rel_name(relid))));
+#endif
+}
+
 static ApplyExecState *
-init_apply_exec_state(PGLogicalRelation *rel)
+init_apply_exec_state(PGLogicalRelation *rel, AclMode mode)
 {
 	ApplyExecState	   *aestate = palloc0(sizeof(ApplyExecState));
+
+	check_target_privileges(rel->rel, mode);
 
 	/* Initialize the executor state. */
 	aestate->estate = create_estate_for_relation(rel->rel, true);
@@ -318,7 +367,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 	bool				has_before_triggers = false;
 
 	/* Initialize the executor state. */
-	aestate = init_apply_exec_state(rel);
+	aestate = init_apply_exec_state(rel, ACL_INSERT);
 #if PG_VERSION_NUM >= 120000
 	localslot = table_slot_create(rel->rel, &aestate->estate->es_tupleTable);
 #else
@@ -529,7 +578,7 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 	bool				has_before_triggers = false;
 
 	/* Initialize the executor state. */
-	aestate = init_apply_exec_state(rel);
+	aestate = init_apply_exec_state(rel, ACL_UPDATE);
 #if PG_VERSION_NUM >= 120000
 	localslot = table_slot_create(rel->rel, &aestate->estate->es_tupleTable);
 #else
@@ -718,7 +767,7 @@ pglogical_apply_heap_delete(PGLogicalRelation *rel, PGLogicalTupleData *oldtup)
 	bool				has_before_triggers = false;
 
 	/* Initialize the executor state. */
-	aestate = init_apply_exec_state(rel);
+	aestate = init_apply_exec_state(rel, ACL_DELETE);
 #if PG_VERSION_NUM >= 120000
 	localslot = table_slot_create(rel->rel, &aestate->estate->es_tupleTable);
 #else
@@ -806,7 +855,7 @@ pglogical_apply_heap_mi_start(PGLogicalRelation *rel)
 	pglmistate->rel = rel;
 
 	/* Initialize the executor state. */
-	pglmistate->aestate = aestate = init_apply_exec_state(rel);
+	pglmistate->aestate = aestate = init_apply_exec_state(rel, ACL_INSERT);
 	MemoryContextSwitchTo(TopTransactionContext);
 	resultRelInfo = aestate->resultRelInfo;
 

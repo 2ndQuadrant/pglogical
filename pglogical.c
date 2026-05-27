@@ -43,6 +43,7 @@
 #include "storage/ipc.h"
 #include "storage/proc.h"
 
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -95,6 +96,10 @@ char   *pglogical_temp_directory = "";
 bool	pglogical_use_spi = false;
 bool	pglogical_batch_inserts = true;
 static char *pglogical_temp_directory_config;
+char   *pglogical_subscription_owner = "";
+
+/* Have we already complained about pglogical.subscription_owner? */
+static bool subowner_missing = false;
 
 #if PG_VERSION_NUM >= 150000
 shmem_request_hook_type prev_shmem_request_hook = NULL;
@@ -608,6 +613,42 @@ start_manager_workers(void)
 	Relation	rel;
 	TableScanDesc scan;
 	HeapTuple	tup;
+	Oid			subowner = InvalidOid;
+
+	/* Get subscription owner. */
+	if (pglogical_subscription_owner[0])
+	{
+		subowner = get_role_oid(pglogical_subscription_owner, true);
+		if (!OidIsValid(subowner))
+		{
+			/*
+			 * The role is looked up here and not in a GUC check hook because
+			 * this is a postmaster-level parameter and there is no catalog
+			 * access at the time it is assigned.
+			 *
+			 * Don't throw an error. The postmaster would just restart the
+			 * supervisor, which would fail again on the next iteration, and
+			 * the whole thing turns into a restart loop that fills the log.
+			 * Complain once and retry on the next wakeup instead, so that
+			 * creating the role is enough to get replication going.
+			 */
+			ereport(subowner_missing ? DEBUG1 : WARNING,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid value for parameter \"%s\": \"%s\"",
+							"pglogical.subscription_owner", pglogical_subscription_owner),
+					 errdetail("Role does not exist."),
+					 errhint("No pglogical worker is started until the role is created.")));
+
+			subowner_missing = true;
+
+			/* Make sure we look the role up again on the next wakeup. */
+			PGLogicalCtx->subscriptions_changed = true;
+
+			return;
+		}
+
+		subowner_missing = false;
+	}
 
 	/* Run manager worker for every connectable database. */
 	rel = table_open(DatabaseRelationId, AccessShareLock);
@@ -645,6 +686,7 @@ start_manager_workers(void)
 		memset(&worker, 0, sizeof(PGLogicalWorker));
 		worker.worker_type = PGLOGICAL_WORKER_MANAGER;
 		worker.dboid = dboid;
+		worker.userid = subowner;
 
 		pglogical_worker_register(&worker);
 	}
@@ -851,6 +893,15 @@ _PG_init(void)
 							   &pglogical_extra_connection_options,
 							   "",
 							   PGC_SIGHUP,
+							   0,
+							   NULL, NULL, NULL);
+
+	DefineCustomStringVariable("pglogical.subscription_owner",
+							   "user that owns the subscriptions",
+							   NULL,
+							   &pglogical_subscription_owner,
+							   "",
+							   PGC_POSTMASTER,
 							   0,
 							   NULL, NULL, NULL);
 
