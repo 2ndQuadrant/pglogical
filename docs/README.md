@@ -966,6 +966,18 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.7
+
+Version 2.4.7 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* Add support for PostgreSQL 19.
+
+* Fix sync worker hang with idle source database.
+
+* Fix some memory leaks.
+
 ### pglogical 2.4.6
 
 Version 2.4.6 is a maintenance release of pglogical 2.

@@ -43,6 +43,8 @@ DATA = pglogical--1.0.0.sql pglogical--1.0.0--1.0.1.sql \
 	   pglogical--2.4.5.sql \
 	   pglogical--2.4.5--2.4.6.sql \
 	   pglogical--2.4.6.sql \
+	   pglogical--2.4.6--2.4.7.sql \
+	   pglogical--2.4.7.sql \
 
 OBJS = pglogical_apply.o pglogical_conflict.o pglogical_manager.o \
 	   pglogical.o pglogical_node.o pglogical_relcache.o \
