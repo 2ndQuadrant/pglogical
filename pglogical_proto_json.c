@@ -118,10 +118,11 @@ pglogical_json_write_change(StringInfo out, const char *change, Relation rel,
 							Bitmapset *att_list)
 {
 	appendStringInfoChar(out, '{');
-	appendStringInfo(out, "\"action\":\"%s\",\"relation\":[\"%s\",\"%s\"]",
-					 change,
-					 get_namespace_name(RelationGetNamespace(rel)),
-					 RelationGetRelationName(rel));
+	appendStringInfo(out, "\"action\":\"%s\",\"relation\":[", change);
+	escape_json(out, get_namespace_name(RelationGetNamespace(rel)));
+	appendStringInfoChar(out, ',');
+	escape_json(out, RelationGetRelationName(rel));
+	appendStringInfoChar(out, ']');
 
 	if (oldtuple)
 	{
