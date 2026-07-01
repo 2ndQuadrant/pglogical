@@ -181,8 +181,8 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_BINARY_FLOAT8BYVAL:
 				val = get_param_value(elem, false, OUTPUT_PARAM_TYPE_BOOL);
-				data->client_binary_float4byval_set = true;
-				data->client_binary_float4byval = DatumGetBool(val);
+				data->client_binary_float8byval_set = true;
+				data->client_binary_float8byval = DatumGetBool(val);
 				break;
 
 			case PARAM_BINARY_INTEGER_DATETIMES:
