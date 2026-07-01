@@ -271,6 +271,12 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 					if (!SplitIdentifierString(strVal(elem->arg), '.', &replicate_only_table))
 						elog(ERROR, "Could not parse replicate_only_table %s", strVal(elem->arg));
 
+					if (list_length(replicate_only_table) != 2)
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("invalid replication_only_table %s", strVal(elem->arg)),
+								 errhint("You must use a table-qualified name.")));
+
 					data->replicate_only_table = makeRangeVar(pstrdup(linitial(replicate_only_table)),
 															  pstrdup(lsecond(replicate_only_table)), -1);
 					break;
