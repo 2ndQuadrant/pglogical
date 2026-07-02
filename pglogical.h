@@ -140,7 +140,7 @@ extern bool in_pglogical_replicate_ddl_command;
  * the worker type, etc, prefixed by PGLOGICAL:, in the Valgrind logs. We
  * need to stub it out if we aren't using valgrind.
  */
-static inline void pg_attribute_printf(1, 2) pg_attribute_unused() VALGRIND_PRINTF(const char *format, ...) {}
+static inline void pg_attribute_printf(1, 2) VALGRIND_PRINTF(const char *format, ...) {}
 
 #endif
 
