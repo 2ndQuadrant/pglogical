@@ -84,6 +84,58 @@
 #define Anum_sync_status		5
 #define Anum_sync_statuslsn		6
 
+/*
+ * PG_ENSURE_ERROR_CLEANUP()/PG_END_ENSURE_ERROR_CLEANUP(), as defined in
+ * storage/ipc.h, expand to a plain PG_TRY()/PG_CATCH()/PG_END_TRY() with no
+ * suffix argument.  Nesting two such blocks in the same function (as
+ * happens below, in pglogical_sync_subscription()) makes the inner block's
+ * PG_TRY()-generated locals shadow the outer block's, which trips
+ * -Wshadow=compatible-local on modern gcc.  This is purely cosmetic: each
+ * PG_TRY() only ever touches its own copy of the saved exception/context
+ * stack, so the shadowing has no runtime effect.
+ *
+ * As of PG 16, core's PG_TRY()/PG_CATCH()/PG_END_TRY() accept an optional
+ * suffix argument specifically to let nested blocks use distinct variable
+ * names and silence this warning -- but PG_ENSURE_ERROR_CLEANUP() itself
+ * doesn't forward that suffix through. On PG 16+ we define local wrappers
+ * that do. On PG 14/15, PG_TRY() and friends take no arguments at all, so
+ * there's no way to avoid the warning short of restructuring the code (e.g.
+ * moving the inner block into a separate function); we just fall back to
+ * the plain core macros there and accept the harmless warning.
+ *
+ * These wrappers can be removed if/when upstream teaches
+ * PG_ENSURE_ERROR_CLEANUP() to forward a suffix through itself on all
+ * still-supported branches.
+ */
+#if PG_VERSION_NUM >= 160000
+
+#define PGLOGICAL_ENSURE_ERROR_CLEANUP_SUFFIX(cleanup_function, arg, suffix) \
+	do { \
+		before_shmem_exit(cleanup_function, arg); \
+		PG_TRY(suffix)
+
+#define PGLOGICAL_END_ENSURE_ERROR_CLEANUP_SUFFIX(cleanup_function, arg, suffix) \
+		cancel_before_shmem_exit(cleanup_function, arg); \
+		PG_CATCH(suffix); \
+		{ \
+			cancel_before_shmem_exit(cleanup_function, arg); \
+			cleanup_function(0, arg); \
+			PG_RE_THROW(); \
+		} \
+		PG_END_TRY(suffix); \
+	} while (0)
+
+#else							/* PG_VERSION_NUM < 160000 */
+
+/* suffix is unused here; kept so call sites don't need to vary by version */
+#define PGLOGICAL_ENSURE_ERROR_CLEANUP_SUFFIX(cleanup_function, arg, suffix) \
+	PG_ENSURE_ERROR_CLEANUP(cleanup_function, arg)
+
+#define PGLOGICAL_END_ENSURE_ERROR_CLEANUP_SUFFIX(cleanup_function, arg, suffix) \
+	PG_END_ENSURE_ERROR_CLEANUP(cleanup_function, arg)
+
+#endif							/* PG_VERSION_NUM < 160000 */
+
 void PGDLLEXPORT pglogical_sync_main(Datum main_arg);
 
 static PGLogicalSyncWorker	   *MySyncWorker = NULL;
@@ -938,8 +990,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					 pglogical_temp_directory, MyProcPid);
 			canonicalize_path(tmpfile);
 
-			PG_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
-									CStringGetDatum(tmpfile));
+			PGLOGICAL_ENSURE_ERROR_CLEANUP_SUFFIX(pglogical_sync_tmpfile_cleanup_cb,
+												  CStringGetDatum(tmpfile), 2);
 			{
 #if PG_VERSION_NUM >= 90500
 				Relation replorigin_rel;
@@ -1044,8 +1096,8 @@ pglogical_sync_subscription(PGLogicalSubscription *sub)
 					restore_structure(sub, tmpfile, "post-data");
 				}
 			}
-			PG_END_ENSURE_ERROR_CLEANUP(pglogical_sync_tmpfile_cleanup_cb,
-										CStringGetDatum(tmpfile));
+			PGLOGICAL_END_ENSURE_ERROR_CLEANUP_SUFFIX(pglogical_sync_tmpfile_cleanup_cb,
+													  CStringGetDatum(tmpfile), 2);
 			pglogical_sync_tmpfile_cleanup_cb(0,
 											  CStringGetDatum(tmpfile));
 		}
