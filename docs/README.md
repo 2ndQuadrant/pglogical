@@ -1027,6 +1027,29 @@ pglogical copyright is donated to PostgreSQL Global Development Group
 
 ## Appendix B: Release Notes
 
+### pglogical 2.4.8
+
+Version 2.4.8 is a maintenance release of pglogical 2.
+
+#### Changes
+
+* CVE-2026-50735: Sanitize tuple data received from the upstream node. Reported
+  by Mehmet Ince (@mdisec).
+
+* CVE-2026-50736 / CVE-2026-50737: Add subscription_owner parameter to
+  subscriptions.
+
+* CVE-2026-50738: Avoid list use-after-free on transaction abort. Reported by
+  Mehmet Ince (@mdisec).
+
+* Escape relation names in the JSON protocol.
+
+* Reject malformed replication_only_table parameter.
+
+* Fix float8 by-value compatibility check that was never executed.
+
+* Fix compilation with GCC 15 and newer.
+
 ### pglogical 2.4.7
 
 Version 2.4.7 is a maintenance release of pglogical 2.
