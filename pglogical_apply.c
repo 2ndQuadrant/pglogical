@@ -564,6 +564,10 @@ handle_insert(StringInfo s)
 		{
 			apply_api.multi_insert_add_tuple(rel, &newtup);
 			last_insert_rel_cnt++;
+
+			pglogical_relation_close(rel, NoLock);
+			PopActiveSnapshot();
+			CommandCounterIncrement();
 			return;
 		}
 	}
