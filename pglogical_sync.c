@@ -505,7 +505,7 @@ make_copy_attnamelist(PGLogicalRelation *rel)
 		int		remoteattnum = physatt_in_attmap(rel, attnum);
 
 		/* Skip dropped attributes. */
-		if (TupleDescAttr(desc,attnum)->attisdropped)
+		if (TupleDescAttr(desc,attnum)->attisdropped || TupleDescAttr(desc,attnum)->attgenerated != '\0')
 			continue;
 
 		if (remoteattnum < 0)
