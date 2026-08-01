@@ -534,6 +534,10 @@ Using `synchronize_data=true` with a valid `row_filter` is like a one-time opera
 Executing it again with modified `row_filter` won't synchronize data to subscriber. Subscribers
 may need to call `pglogical.alter_subscription_resynchronize_table()` to fix it.
 
+  **Note on column filtering and UPDATE events**: When you specify a column list in the columns parameter (i.e., enable column filtering), pglogical will still send UPDATE replication events to subscribers if an update occurs — even when the changed columns are those that were excluded by the column list. In other words, column filtering controls which column values are transmitted, but it does not suppress UPDATE events themselves.
+  
+  This behavior differs from native PostgreSQL logical replication using the pgoutput protocol: with pgoutput and column-level publication filtering, the server will not send an UPDATE to subscribers if the only changed columns are excluded by the column list.
+
 - `pglogical.replication_set_add_all_tables(set_name name, schema_names text[], synchronize_data boolean)`
   Adds all tables in given schemas. Only existing tables are added, table that
   will be created in future will not be added automatically. For how to ensure
