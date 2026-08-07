@@ -17,6 +17,13 @@
 
 #include "pglogical.h"
 
+#ifdef WIN32
+#include "storage/ipc.h"	/* defines shmem_startup_hook_type */
+
+extern void PGDLLEXPORT pglogical_worker_shmem_startup(void);
+extern PGDLLEXPORT shmem_startup_hook_type prev_shmem_startup_hook;
+#endif
+
 typedef enum {
 	PGLOGICAL_WORKER_NONE,		/* Unused slot. */
 	PGLOGICAL_WORKER_MANAGER,	/* Manager. */

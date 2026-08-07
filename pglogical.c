@@ -105,7 +105,7 @@ static bool subowner_missing = false;
 shmem_request_hook_type prev_shmem_request_hook = NULL;
 #endif
 
-void _PG_init(void);
+void PGDLLEXPORT _PG_init(void);
 void PGDLLEXPORT pglogical_supervisor_main(Datum main_arg);
 char *pglogical_extra_connection_options;
 
@@ -701,6 +701,15 @@ start_manager_workers(void)
 void
 pglogical_supervisor_main(Datum main_arg)
 {
+#if defined(WIN32) && PG_VERSION_NUM >= 150000
+	/* Don't overwrite if already set */
+	if (shmem_startup_hook != pglogical_worker_shmem_startup)
+	{
+		prev_shmem_startup_hook = shmem_startup_hook;
+		shmem_startup_hook = pglogical_worker_shmem_startup;
+	}
+#endif
+
 	/* Establish signal handlers. */
 	pqsignal(SIGTERM, handle_sigterm);
 	BackgroundWorkerUnblockSignals();
@@ -793,7 +802,7 @@ pglogical_temp_directory_assing_hook(const char *newval, void *extra)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("could not locate temporary directory: %s\n",
 							!ret ? strerror(errno) : "")));
-			return false;
+			return;
 		}
 #endif
 
@@ -912,6 +921,14 @@ _PG_init(void)
 #if PG_VERSION_NUM >= 150000
 	prev_shmem_request_hook = shmem_request_hook;
 	shmem_request_hook = pglogical_worker_shmem_init;
+#ifdef WIN32
+	/* Don't overwrite if already set */
+	if (shmem_startup_hook != pglogical_worker_shmem_startup)
+	{
+		prev_shmem_startup_hook = shmem_startup_hook;
+		shmem_startup_hook = pglogical_worker_shmem_startup;
+	}
+#endif
 #else
 	pglogical_worker_shmem_init();
 #endif
