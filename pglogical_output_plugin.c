@@ -44,7 +44,7 @@
 #include "replication/origin.h"
 #endif
 
-extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
+extern void		PGDLLEXPORT _PG_output_plugin_init(OutputPluginCallbacks *cb);
 
 static void pg_decode_startup(LogicalDecodingContext * ctx,
 							  OutputPluginOptions *opt, bool is_init);

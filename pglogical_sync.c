@@ -2087,7 +2087,7 @@ QuoteWindowsArgvElement(StringInfo cmdline, const char *arg, bool force)
  * (This should arguably be part of libpq_fe.c, but I didn't want to expand our
  * abuse of PqExpBuffer.)
  */
-static void
+void
 QuoteWindowsArgv(StringInfo cmdline, const char * argv[])
 {
 	/* argv0 is required */
@@ -2126,7 +2126,7 @@ static int
 exec_cmd_win32(const char *cmd, char *cmdargv[])
 {
 	BOOL					ret;
-	int						exitcode = -1;
+	DWORD					exitcode = -1;
 	PROCESS_INFORMATION 	pi;
 
 	elog(DEBUG1, "trying to launch \"%s\"", cmd);
@@ -2139,7 +2139,7 @@ exec_cmd_win32(const char *cmd, char *cmdargv[])
 
 		/* Deal with insane windows command line quoting */
 		initStringInfo(&cmdline);
-		QuoteWindowsArgv(&cmdline, cmdargv);
+		QuoteWindowsArgv(&cmdline, (const char **)cmdargv);
 
 		/* CreateProcess may scribble on the cmd string */
 		cmd_tmp = pstrdup(cmd);

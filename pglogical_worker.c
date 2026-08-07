@@ -45,7 +45,7 @@ static	List *signal_workers = NIL;
 
 volatile sig_atomic_t	got_SIGTERM = false;
 
-PGLogicalContext	   *PGLogicalCtx = NULL;
+PGDLLEXPORT PGLogicalContext	   *PGLogicalCtx = NULL;
 PGLogicalWorker		   *MyPGLogicalWorker = NULL;
 static uint16			MyPGLogicalWorkerGeneration;
 
@@ -53,7 +53,11 @@ static bool xacthook_signal_workers = false;
 static bool xact_cb_installed = false;
 
 
+#ifdef WIN32
+shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+#else
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+#endif
 
 static void pglogical_worker_detach(bool crash);
 static void wait_for_worker_startup(PGLogicalWorker *worker,
@@ -680,14 +684,31 @@ worker_shmem_size(int nworkers)
 /*
  * Init shmem needed for workers.
  */
+#ifdef WIN32
+void
+#else
 static void
+#endif
 pglogical_worker_shmem_startup(void)
 {
 	bool        found;
 	int			nworkers;
+#ifdef WIN32
+	static bool already_attached = false;
+#endif
 
+#ifdef WIN32
+	/* Chained hook must not recurse into our own hook on re-registration. */
+	if (prev_shmem_startup_hook && prev_shmem_startup_hook != pglogical_worker_shmem_startup)
+		prev_shmem_startup_hook();
+	/* Windows children re-initialize shared memory; init the context once. */
+	if (already_attached)
+		return;
+	already_attached = true;
+#else
 	if (prev_shmem_startup_hook != NULL)
 		prev_shmem_startup_hook();
+#endif
 
 	/*
 	 * This is kludge for Windows (Postgres does not define the GUC variable
@@ -699,6 +720,11 @@ pglogical_worker_shmem_startup(void)
 	/* Init signaling context for the various processes. */
 	PGLogicalCtx = ShmemInitStruct("pglogical_context",
 								   worker_shmem_size(nworkers), &found);
+
+#ifdef WIN32
+	if (!PGLogicalCtx)
+		return;
+#endif
 
 	if (!found)
 	{

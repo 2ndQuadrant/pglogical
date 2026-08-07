@@ -24,7 +24,11 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
+#ifndef WIN32
 #include <sys/stat.h>
+#endif
+
 #include <unistd.h>
 #include <stdlib.h>
 
@@ -485,7 +489,7 @@ main(int argc, char **argv)
 	 * Start subscriber node with pglogical disabled, and wait until it starts
 	 * accepting connections which means it has caught up to the restore point.
 	 */
-	pg_ctl_ret = run_pg_ctl("start -l \"pglogical_create_subscriber_postgres.log\" -o \"-c shared_preload_libraries=''\"");
+	pg_ctl_ret = run_pg_ctl("start -l \"pglogical_create_subscriber_postgres.log\" -o \"-c shared_preload_libraries=\"");
 	if (pg_ctl_ret != 0)
 		die(_("Postgres startup for restore point catchup failed with %d. See pglogical_create_subscriber_postgres.log."), pg_ctl_ret);
 
@@ -1856,6 +1860,10 @@ static char *
 generate_restore_point_name(void)
 {
 	char *rpn = malloc(NAMEDATALEN);
+#ifdef WIN32
+	snprintf(rpn, NAMEDATALEN-1, "pglogical_create_subscriber_%x", rand());
+#else
 	snprintf(rpn, NAMEDATALEN-1, "pglogical_create_subscriber_%lx", random());
+#endif
 	return rpn;
 }
