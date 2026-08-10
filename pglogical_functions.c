@@ -2080,6 +2080,7 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 	MemoryContext oldcontext;
 	Datum *values;
 	bool *nulls;
+	bool tuple_matches;
 
 	node = get_local_node(false, false);
 
@@ -2174,6 +2175,8 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 
 	while (HeapTupleIsValid(htup = heap_getnext(scandesc, ForwardScanDirection)))
 	{
+		ResetExprContext(econtext);
+
 		/*
 		 * Create a new version of our current HeapTuple. We can't just
 		 * reuse the current one since it might be possible that not
@@ -2187,10 +2190,12 @@ pglogical_table_data_filtered(PG_FUNCTION_ARGS)
 
 		Assert(new_htup != NULL);
 
-		if (!filter_tuple(new_htup, econtext, row_filter_list))
-			continue;
+		tuple_matches = filter_tuple(new_htup, econtext, row_filter_list);
+		if (tuple_matches)
+			tuplestore_puttuple(tupstore, new_htup);
 
-		tuplestore_puttuple(tupstore, new_htup);
+		ExecClearTuple(econtext->ecxt_scantuple);
+		heap_freetuple(new_htup);
 	}
 
 	pfree(values);
