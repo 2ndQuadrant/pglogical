@@ -158,6 +158,9 @@ SELECT * FROM "strange.schema-IS".test_strangeschema;
 
 SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := false, replicate_update := false, replicate_delete := false, replicate_truncate := false);
 
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+SELECT pg_sleep(0.5);
+
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(3);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(4);
 UPDATE "strange.schema-IS".test_diff_repset SET data = 'data';
@@ -173,6 +176,9 @@ SELECT * FROM "strange.schema-IS".test_diff_repset;
 \c :provider_dsn
 
 SELECT * FROM pglogical.alter_replication_set('repset_test', replicate_insert := true, replicate_truncate := true);
+
+SELECT pglogical.wait_slot_confirm_lsn(NULL, NULL);
+SELECT pg_sleep(0.5);
 
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(5);
 INSERT INTO "strange.schema-IS".test_diff_repset VALUES(6);
