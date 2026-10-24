@@ -92,6 +92,16 @@
 #define ExecInsertIndexTuples(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes) \
 	ExecInsertIndexTuples(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes, false)
 
+/*
+ * Variant of the above that passes onlySummarizing through.  It must be used
+ * when inserting index tuples after table_tuple_update(), with
+ * onlySummarizing = (update_indexes == TU_Summarizing), so that the new
+ * heap-only tuple of a HOT update is only added to summarizing indexes.
+ * The parentheses around the function name suppress the macro above.
+ */
+#define PGLExecInsertIndexTuplesForUpdate(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes, onlySummarizing) \
+	(ExecInsertIndexTuples)(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes, onlySummarizing)
+
 /* 70b42f2790292cc30aa07563f343f7ba6749af01 */
 #define EvalPlanQualInit(epqstate, parentestate, subplan, auxrowmarks, epqParam) \
 	EvalPlanQualInit(epqstate, parentestate, subplan, auxrowmarks, epqParam, NIL)

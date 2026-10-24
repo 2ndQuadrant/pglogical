@@ -124,13 +124,37 @@ pglogical_apply_heap_commit(void)
 }
 
 
+/*
+ * Since PostgreSQL 16, heap_update() may perform a HOT update even if columns
+ * covered by summarizing indexes (e.g. BRIN) changed; it then reports
+ * TU_Summarizing.  The new tuple is heap-only, so it must be inserted into the
+ * summarizing indexes only: an entry in any other index pointing at a
+ * heap-only tuple corrupts that index (index entries must point at the root
+ * of the HOT chain), which is later reported as "heap tid from index tuple
+ * ... points to heap-only tuple".  This is what core's
+ * ExecSimpleRelationUpdate() does.
+ */
+#if PG_VERSION_NUM >= 160000
+#define UpdateOnlySummarizing(update_indexes) ((update_indexes) == TU_Summarizing)
+#else
+#define UpdateOnlySummarizing(update_indexes) false
+#endif
+
 static List *
-UserTableUpdateOpenIndexes(ResultRelInfo *relinfo, EState *estate, TupleTableSlot *slot, bool update)
+UserTableUpdateOpenIndexes(ResultRelInfo *relinfo, EState *estate, TupleTableSlot *slot, bool update,
+						   bool onlySummarizing)
 {
 	List	   *recheckIndexes = NIL;
 
 	if (relinfo->ri_NumIndices > 0)
 	{
+#if PG_VERSION_NUM >= 160000
+		recheckIndexes = PGLExecInsertIndexTuplesForUpdate(relinfo, slot,
+														   estate, update,
+														   false, NULL, NIL,
+														   onlySummarizing);
+#else
+		Assert(!onlySummarizing);
 		recheckIndexes = ExecInsertIndexTuples(
 #if PG_VERSION_NUM >= 140000
 											   relinfo,
@@ -147,6 +171,7 @@ UserTableUpdateOpenIndexes(ResultRelInfo *relinfo, EState *estate, TupleTableSlo
 											   , false, NULL, NIL
 #endif
 											   );
+#endif
 
 		/* FIXME: recheck the indexes */
 		if (recheckIndexes != NIL)
@@ -517,7 +542,8 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 				recheckIndexes = UserTableUpdateOpenIndexes(aestate->resultRelInfo,
 															aestate->estate,
 															aestate->slot,
-															true);
+															true,
+															UpdateOnlySummarizing(update_indexes));
 
 			/* AFTER ROW UPDATE Triggers */
 #if PG_VERSION_NUM >= 120000
@@ -543,7 +569,7 @@ pglogical_apply_heap_insert(PGLogicalRelation *rel, PGLogicalTupleData *newtup)
 #else
 		simple_heap_insert(rel->rel, TTS_TUP(aestate->slot));
 #endif
-		UserTableUpdateOpenIndexes(aestate->resultRelInfo, aestate->estate, aestate->slot, false);
+		UserTableUpdateOpenIndexes(aestate->resultRelInfo, aestate->estate, aestate->slot, false, false);
 
 		/* AFTER ROW INSERT Triggers */
 #if PG_VERSION_NUM >= 120000
@@ -717,7 +743,8 @@ pglogical_apply_heap_update(PGLogicalRelation *rel, PGLogicalTupleData *oldtup,
 				recheckIndexes = UserTableUpdateOpenIndexes(aestate->resultRelInfo,
 															aestate->estate,
 															aestate->slot,
-															true);
+															true,
+															UpdateOnlySummarizing(update_indexes));
 			}
 
 			/* AFTER ROW UPDATE Triggers */

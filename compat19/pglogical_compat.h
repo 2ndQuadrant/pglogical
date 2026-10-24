@@ -182,6 +182,20 @@ typedef enum ObjectClass
 		((update) ? EIIT_IS_UPDATE : 0) | ((noDupErr) ? EIIT_NO_DUPE_ERROR : 0), \
 		slot, arbiterIndexes, specConflict)
 
+/*
+ * Variant of the above that passes onlySummarizing through (as
+ * EIIT_ONLY_SUMMARIZING).  It must be used when inserting index tuples after
+ * table_tuple_update(), with onlySummarizing =
+ * (update_indexes == TU_Summarizing), so that the new heap-only tuple of a
+ * HOT update is only added to summarizing indexes.  The parentheses around
+ * the function name suppress the macro above.
+ */
+#define PGLExecInsertIndexTuplesForUpdate(resultRelInfo, slot, estate, update, noDupErr, specConflict, arbiterIndexes, onlySummarizing) \
+	(ExecInsertIndexTuples)(resultRelInfo, estate, \
+		((update) ? EIIT_IS_UPDATE : 0) | ((noDupErr) ? EIIT_NO_DUPE_ERROR : 0) | \
+		((onlySummarizing) ? EIIT_ONLY_SUMMARIZING : 0), \
+		slot, arbiterIndexes, specConflict)
+
 /* 137d05df2f2014c584b229310b8635fa6a8572ba */
 #define AssertVariableIsOfType(varname, typename) \
 	StaticAssertVariableIsOfType(varname, typename)
